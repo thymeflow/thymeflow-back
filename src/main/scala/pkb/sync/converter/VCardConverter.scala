@@ -33,7 +33,7 @@ class VCardConverter(valueFactory: ValueFactory) {
     convert(Ezvcard.parse(file).all.asScala)
   }
 
-  def convert(vCards: Iterable[VCard]): Model = {
+  private def convert(vCards: Iterable[VCard]): Model = {
     val model = new LinkedHashModel
 
     for (vCard <- vCards) {
@@ -148,8 +148,13 @@ class VCardConverter(valueFactory: ValueFactory) {
     Option(photo.getUrl).map(uri => {
       valueFactory.createIRI(uri)
     }).orElse({
-      Option(photo.getData).map(binary => {
-        valueFactory.createIRI(new DataUri(photo.getContentType.getMediaType, binary).toString)
+      Option(photo.getData).flatMap(binary => {
+        Option(photo.getContentType).map(contentType => {
+          valueFactory.createIRI(new DataUri(contentType.getMediaType, binary).toString)
+        }).orElse({
+          logger.warn("Photo without content type")
+          None
+        })
       })
     }).map(photoResource => {
       model.add(photoResource, RDF.TYPE, SchemaOrg.IMAGE_OBJECT)
@@ -186,7 +191,6 @@ class VCardConverter(valueFactory: ValueFactory) {
         logger.warn("The URL " + url.getValue + " is invalid", e)
         None
     }
-
   }
 
   private def resourceFromUid(uid: Uid): Resource = {
@@ -195,5 +199,9 @@ class VCardConverter(valueFactory: ValueFactory) {
     } else {
       uuidConverter.convert(uid.getValue)
     }
+  }
+
+  def convert(str: String): Model = {
+    convert(Ezvcard.parse(str).all.asScala)
   }
 }

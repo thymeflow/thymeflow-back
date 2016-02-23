@@ -1,14 +1,15 @@
 package pkb.sync.converter
 
-import java.io.{File, FileInputStream}
-import java.util.Date
+import java.io.File
+import java.net.{MalformedURLException, URI, URL}
+import java.text.SimpleDateFormat
 
-import net.fortuna.ical4j.data.CalendarBuilder
-import net.fortuna.ical4j.model.component.VEvent
-import net.fortuna.ical4j.model.property._
-import net.fortuna.ical4j.model.{Calendar, Parameter, Property}
+import biweekly.{Biweekly, ICalendar}
+import biweekly.component.VEvent
+import biweekly.property._
+import biweekly.util.ICalDate
 import org.openrdf.model.impl.LinkedHashModel
-import org.openrdf.model.vocabulary.RDF
+import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
 import org.slf4j.LoggerFactory
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageConverter, GeoCoordinatesConverter, UUIDConverter}
@@ -30,75 +31,77 @@ class ICalConverter(valueFactory: ValueFactory) {
 
 
   def convert(file: File): Model = {
-    val inputStream = new FileInputStream(file)
-    val builder = new CalendarBuilder
-    convert(builder.build(inputStream))
+    convert(Biweekly.parse(file).all.asScala)
   }
 
-  def convert(calendar: Calendar): Model = {
+  def convert(calendars: Iterable[ICalendar]): Model = {
     val model = new LinkedHashModel
-
-    for (component <- calendar.getComponents().asScala) {
-      component match {
-        case event: VEvent => convert(event, model)
-        case _ => //We ignore all other cases
-      }
+    for (calendar <- calendars) {
+      convert(calendar, model)
     }
     model
+  }
+
+  def convert(calendar: ICalendar, model: Model) {
+    for (event <- calendar.getEvents.asScala) {
+      convert(event, model)
+    }
+    //TODO: other types
   }
 
   private def convert(event: VEvent, model: Model): Resource = {
     val eventResource = resourceFromUid(event.getUid)
     model.add(eventResource, RDF.TYPE, SchemaOrg.EVENT)
 
-    //ATTENDEE
-    for (property <- event.getProperties(Property.ATTENDEE).asScala) {
-      model.add(eventResource, SchemaOrg.ATTENDEE, convert(property.asInstanceOf[Attendee], model))
-    }
-    //DESCRIPTION
-    val description = event.getDescription
-    if (description != null && description.getValue != "") {
-      model.add(eventResource, SchemaOrg.DESCRIPTION, convert(description))
-    }
-    //DEND
-    val endDate = event.getEndDate
-    if (endDate != null) {
-      model.add(eventResource, SchemaOrg.END_DATE, convert(endDate))
-    }
-    //DSTART
-    val dateStart = event.getStartDate
-    if (dateStart != null) {
-      model.add(eventResource, SchemaOrg.START_DATE, convert(dateStart))
-    }
-    //TODO: DURATION
-    //LOCATION + X-APPLE-STRUCTURED-LOCATION
-    val xAppleStructuredLocation = event.getProperty("X-APPLE-STRUCTURED-LOCATION")
-    if (xAppleStructuredLocation != null) {
-      model.add(eventResource, SchemaOrg.LOCATION, convertXAppleStructuredLocation(xAppleStructuredLocation, model))
-    } else {
-      val location = event.getLocation
-      if (location != null) {
-        model.add(eventResource, SchemaOrg.LOCATION, convert(location, model))
-      }
-    }
-    //ORGANIZER
-    val organizer = event.getOrganizer
-    if (organizer != null) {
-      model.add(eventResource, SchemaOrg.ORGANIZER, convert(organizer, model))
-    }
-    //SUMMARY
-    val summary = event.getSummary
-    if (summary != null) {
-      model.add(eventResource, SchemaOrg.NAME, convert(summary))
-    }
-    //URL
-    val url = event.getUrl
-    if (url != null) {
-      if (url.getUri.getScheme == "message") {
-        model.add(emailMessageConverter.convert(url.getUri, model), SchemaOrg.ABOUT, eventResource)
-      } else {
-        model.add(eventResource, SchemaOrg.URL, convert(url))
-        logger.info("Event URL that is not an message: URI: " + url.getUri)
+    for (entry <- event.getProperties.iterator.asScala) {
+      for (property <- entry.getValue.asScala) {
+        property match {
+          //ATTENDEE
+          case attendee: Attendee => model.add(eventResource, SchemaOrg.ATTENDEE, convert(attendee, model))
+          //DESCRIPTION
+          case description: Description =>
+            if (description.getValue != "") {
+              model.add(eventResource, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description.getValue))
+            }
+          //DEND
+          case dateEnd: DateEnd => model.add(eventResource, SchemaOrg.END_DATE, convert(dateEnd))
+          //DSTART
+          case dateStart: DateStart => model.add(eventResource, SchemaOrg.START_DATE, convert(dateStart))
+          //TODO: DURATION
+          //LOCATION
+          case location: Location =>
+            if (location.getValue != "") {
+              model.add(eventResource, SchemaOrg.LOCATION, convert(location, model))
+            }
+          //ORGANIZER
+          case organizer: Organizer => model.add(eventResource, SchemaOrg.ORGANIZER, convert(organizer, model))
+          //SUMMARY
+          case summary: Summary =>
+            if (summary.getValue != "") {
+              model.add(eventResource, SchemaOrg.NAME, valueFactory.createLiteral(summary.getValue))
+            }
+          //URL
+          case url: Url =>
+            try {
+              val uri = new URI(url.getValue)
+              if (uri.getScheme == "message") {
+                model.add(emailMessageConverter.convert(uri, model), SchemaOrg.ABOUT, eventResource)
+              } else {
+                convert(url).foreach(url => model.add(eventResource, SchemaOrg.URL, url))
+                logger.info("Event URL that is not an message: URI: " + uri)
+              }
+            } catch {
+              case e: IllegalArgumentException =>
+                logger.warn("The URL " + url.getValue + " is invalid", e)
+                None
+            }
+          case property: RawProperty =>
+            // X-APPLE-STRUCTURED-LOCATION
+            if (property.getName == "X-APPLE-STRUCTURED-LOCATION") {
+              model.add(eventResource, SchemaOrg.LOCATION, convertXAppleStructuredLocation(property, model))
+            }
+          case _ =>
+        }
       }
     }
 
@@ -108,30 +111,41 @@ class ICalConverter(valueFactory: ValueFactory) {
   private def convert(attendee: Attendee, model: Model): Resource = {
     val attendeeResource = valueFactory.createBNode()
 
-    val name = attendee.getParameter(Parameter.CN)
-    if (name != null) {
-      model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name.getValue))
-    }
-
-    val calAddress = attendee.getCalAddress
-    if (calAddress != null) {
-      if (calAddress.getScheme == "mailto") {
-        model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(calAddress, model))
-      } else {
-        model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(calAddress.toString))
-        logger.info("Attendee address that is not a mailto URI: " + calAddress)
+    Option(attendee.getCommonName).foreach(name =>
+      model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
+    )
+    Option(attendee.getEmail).foreach(email =>
+      model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(email, model))
+    )
+    Option(attendee.getUri).foreach(url =>
+      try {
+        val uri = new URI(url)
+        if (uri.getScheme == "message") {
+          model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(uri, model))
+        } else {
+          model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url))
+          logger.info("Attendee address that is not a mailto URI: " + url)
+        }
+      } catch {
+        case e: IllegalArgumentException =>
+          logger.warn("The URL " + url + " is invalid", e)
       }
-    }
+    )
 
     attendeeResource
   }
 
-  private def convert(description: Description): Literal = {
-    valueFactory.createLiteral(description.getValue)
+  private def convert(date: DateOrDateTimeProperty): Literal = {
+    convert(date.getValue)
   }
 
-  private def convert(date: DateProperty): Literal = {
-    valueFactory.createLiteral(Date.from(date.getDate.toInstant))
+  private def convert(date: ICalDate): Literal = {
+    if (date.hasTime) {
+      valueFactory.createLiteral(date)
+    }
+    else {
+      valueFactory.createLiteral(new SimpleDateFormat("yyyy-MM-dd").format(date), XMLSchema.DATE)
+    }
   }
 
   private def convert(location: Location, model: Model): Resource = {
@@ -144,36 +158,46 @@ class ICalConverter(valueFactory: ValueFactory) {
   private def convert(organizer: Organizer, model: Model): Resource = {
     val attendeeResource = valueFactory.createBNode()
 
-    val name = organizer.getParameter(Parameter.CN)
-    if (name != null) {
-      model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name.getValue))
-    }
-
-    val calAddress = organizer.getCalAddress
-    if (calAddress != null) {
-      if (calAddress.getScheme == "mailto") {
-        model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(calAddress, model))
-      } else {
-        model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(calAddress.toString))
-        logger.info("Organizer address that is not a mailto URI: " + calAddress)
+    Option(organizer.getCommonName).foreach(name =>
+      model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
+    )
+    Option(organizer.getEmail).foreach(email =>
+      model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(email, model))
+    )
+    Option(organizer.getUri).foreach(url =>
+      try {
+        val uri = new URI(url)
+        if (uri.getScheme == "message") {
+          model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(uri, model))
+        } else {
+          model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url))
+          logger.info("Organizer address that is not a mailto URI: " + url)
+        }
+      } catch {
+        case e: IllegalArgumentException =>
+          logger.warn("The URL " + url + " is invalid", e)
       }
-    }
+    )
 
     attendeeResource
   }
 
-  private def convert(summary: Summary): Literal = {
-    valueFactory.createLiteral(summary.getValue)
+  private def convert(url: Url): Option[Resource] = {
+    try {
+      Some(valueFactory.createIRI(new URL(url.getValue).toString))
+    }
+    catch {
+      case e: MalformedURLException =>
+        logger.warn("The URL " + url.getValue + " is invalid", e)
+        None
+    }
+
   }
 
-  private def convert(url: Url): Resource = {
-    valueFactory.createIRI(url.getUri.toString)
-  }
-
-  private def convertXAppleStructuredLocation(xAppleStructuredLocation: Property, model: Model): Resource = {
+  private def convertXAppleStructuredLocation(xAppleStructuredLocation: RawProperty, model: Model): Resource = {
     val placeResource = valueFactory.createBNode()
     model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE)
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(xAppleStructuredLocation.getParameter("X-TITLE").getValue))
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(xAppleStructuredLocation.getParameter("X-TITLE")))
     geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, model).foreach(
       coordinatesResource => model.add(placeResource, SchemaOrg.GEO, coordinatesResource)
     )

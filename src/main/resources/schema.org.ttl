@@ -27,6 +27,8 @@ schema:Thing a rdfs:Class .
 
 schema:about a rdf:Property .
 
+schema:additionalName a rdf:Property .
+
 schema:address a rdf:Property .
 
 schema:addressCountry a rdf:Property .

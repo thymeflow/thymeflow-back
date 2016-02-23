@@ -15,11 +15,14 @@ personal:PhoneNumber a rdfs:Class .
 
 personal:recipient a rdf:Property .
 
-personal:primaryRecipient a rdf:Property ;
+personal:blindCopyRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .
 
 personal:copyRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .
 
-personal:blindCopyRecipient a rdf:Property ;
+personal:nickname a rdf:Property ;
+    rdfs:subPropertyOf schema:alternateName .
+
+personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .

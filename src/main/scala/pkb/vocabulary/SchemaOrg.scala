@@ -21,6 +21,7 @@ object SchemaOrg {
   val THING: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Thing")
 
   val ABOUT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "about")
+  val ADDITIONAL_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "additionalName")
   val ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "address")
   val ADDRESS_COUNTRY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "addressCountry")
   val ADDRESS_LOCALITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "addressLocality")

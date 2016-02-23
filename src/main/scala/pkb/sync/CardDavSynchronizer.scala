@@ -7,7 +7,7 @@ import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.{Model, ValueFactory}
 import pkb.sync.converter.VCardConverter
-import pkb.sync.converter.dav.AddressbookQueryReport
+import pkb.sync.dav.AddressbookQueryReport
 
 import scala.collection.JavaConverters._
 
@@ -30,12 +30,12 @@ class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine) {
   }
 
   private def getAddressBooksUris(base: String): Iterable[String] = {
-    sardine.list(base.toString).asScala.map(resource => new URIBuilder(base).setPath(resource.getPath).toString)
+    sardine.list(base.toString, 0).asScala.map(resource => new URIBuilder(base).setPath(resource.getPath).toString)
   }
 
   private def getAddressBook(addressBookUri: String): Model = {
     val model = new LinkedHashModel
-    for (resource <- sardine.report(addressBookUri, -1, new AddressbookQueryReport)) {
+    for (resource <- sardine.report(addressBookUri, 1, new AddressbookQueryReport)) {
       //TODO: use the VCard URI as URI for the VCard Person?
       model.addAll(vCardConverter.convert(resource.getCustomPropsNS.get(AddressData)))
     }

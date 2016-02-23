@@ -60,9 +60,8 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
       Desktop.getDesktop.browse(uri)
 
       //retrieve the authorization code
-      val scanner = new Scanner(System.in)
       System.out.println("Input your authorization code:")
-      val code = scanner.next
+      val code = new Scanner(System.in).next
 
       //get access token
       val postMethod = new HttpPost("https://www.googleapis.com/oauth2/v4/token")

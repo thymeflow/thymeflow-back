@@ -4,10 +4,10 @@ import java.io.File
 import java.net.{MalformedURLException, URI, URL}
 import java.text.SimpleDateFormat
 
-import biweekly.{Biweekly, ICalendar}
 import biweekly.component.VEvent
 import biweekly.property._
 import biweekly.util.ICalDate
+import biweekly.{Biweekly, ICalendar}
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
@@ -32,6 +32,10 @@ class ICalConverter(valueFactory: ValueFactory) {
 
   def convert(file: File): Model = {
     convert(Biweekly.parse(file).all.asScala)
+  }
+
+  def convert(str: String): Model = {
+    convert(Biweekly.parse(str).all.asScala)
   }
 
   def convert(calendars: Iterable[ICalendar]): Model = {

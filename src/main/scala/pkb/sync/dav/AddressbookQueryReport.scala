@@ -1,4 +1,4 @@
-package pkb.sync.converter.dav
+package pkb.sync.dav
 
 import com.github.sardine.DavResource
 import com.github.sardine.model.Multistatus

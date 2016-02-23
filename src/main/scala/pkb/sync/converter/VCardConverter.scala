@@ -33,6 +33,10 @@ class VCardConverter(valueFactory: ValueFactory) {
     convert(Ezvcard.parse(file).all.asScala)
   }
 
+  def convert(str: String): Model = {
+    convert(Ezvcard.parse(str).all.asScala)
+  }
+
   private def convert(vCards: Iterable[VCard]): Model = {
     val model = new LinkedHashModel
 
@@ -199,9 +203,5 @@ class VCardConverter(valueFactory: ValueFactory) {
     } else {
       uuidConverter.convert(uid.getValue)
     }
-  }
-
-  def convert(str: String): Model = {
-    convert(Ezvcard.parse(str).all.asScala)
   }
 }

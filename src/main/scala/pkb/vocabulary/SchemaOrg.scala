@@ -48,7 +48,7 @@ object SchemaOrg {
   val LATITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "latitude")
   val LOCATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "location")
   val LONGITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "longitude")
-  val MEMBER_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "longitude")
+  val MEMBER_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "memberOf")
   val NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "name")
   val ORGANIZER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "organizer")
   val POST_OFFICE_BOX_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "postOfficeBoxNumber")

@@ -16,3 +16,4 @@ libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+
 libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+"
 libraryDependencies += "com.fasterxml.jackson.core" % "jackson-core" % "2.+"
 libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.+"
+libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+"

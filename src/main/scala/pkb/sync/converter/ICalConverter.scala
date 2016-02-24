@@ -12,7 +12,7 @@ import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
 import org.slf4j.LoggerFactory
-import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageConverter, GeoCoordinatesConverter, UUIDConverter}
+import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 import pkb.vocabulary.SchemaOrg
 
 import scala.collection.JavaConverters._
@@ -25,7 +25,7 @@ class ICalConverter(valueFactory: ValueFactory) {
 
   private val logger = LoggerFactory.getLogger(classOf[ICalConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
-  private val emailMessageConverter = new EmailMessageConverter(valueFactory)
+  private val emailMessageConverter = new EmailMessageUriConverter(valueFactory)
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 

@@ -10,7 +10,7 @@ import pkb.vocabulary.SchemaOrg
 /**
   * @author Thomas Pellissier Tanon
   */
-class EmailMessageConverter(valueFactory: ValueFactory) {
+class EmailMessageUriConverter(valueFactory: ValueFactory) {
 
   private val messageIdPattern = Pattern.compile("^(?://)?(?:%3[cC]|<)(.*)(?:%3[eE]|>)$")
 

@@ -45,6 +45,8 @@ schema:birthDate a rdf:Property .
 
 schema:birthPlace a rdf:Property .
 
+schema:datePublished a rdf:Property .
+
 schema:deathDate a rdf:Property .
 
 schema:deathPlace a rdf:Property .

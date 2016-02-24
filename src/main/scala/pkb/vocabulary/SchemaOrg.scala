@@ -30,6 +30,7 @@ object SchemaOrg {
   val AUTHOR: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "author")
   val BIRTH_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "birthDate")
   val BIRTH_PLACE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "birthPlace")
+  val DATE_PUBLISHED: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "datePublished")
   val DEATH_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "deathDate")
   val DEATH_PLACE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "deathPlace")
   val DESCRIPTION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "description")

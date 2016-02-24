@@ -18,7 +18,6 @@ object SchemaOrg {
   val PERSON: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Person")
   val PLACE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Place")
   val POSTAL_ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "PostalAddress")
-  val THING: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Thing")
 
   val ABOUT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "about")
   val ADDITIONAL_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "additionalName")
@@ -48,7 +47,7 @@ object SchemaOrg {
   val LATITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "latitude")
   val LOCATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "location")
   val LONGITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "longitude")
-  val MEMBER_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "longitude")
+  val MEMBER_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "memberOf")
   val NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "name")
   val ORGANIZER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "organizer")
   val POST_OFFICE_BOX_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "postOfficeBoxNumber")

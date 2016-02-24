@@ -6,7 +6,10 @@
 schema:Country a rdfs:Class ;
     rdfs:subClassOf schema:Place .
 
-schema:EmailMessage a rdfs:Class .
+schema:CreativeWork a rdfs:Class .
+
+schema:EmailMessage a rdfs:Class ;
+    rdfs:subClassOf schema:CreativeWork .
 
 schema:Event a rdfs:Class .
 

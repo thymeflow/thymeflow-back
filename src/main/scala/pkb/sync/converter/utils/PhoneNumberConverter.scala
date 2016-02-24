@@ -28,12 +28,20 @@ class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) {
         return None
       }
       val phoneNumberResource = valueFactory.createIRI(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.RFC3966))
-      model.add(phoneNumberResource, RDF.TYPE, Personal.PHONE_NUMBER)
+      model.add(phoneNumberResource, RDF.TYPE, classForPhoneNumberType(phoneUtil.getNumberType(number)))
       model.add(phoneNumberResource, SchemaOrg.NAME, valueFactory.createLiteral(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)))
       return Some(phoneNumberResource)
     } catch {
       case e: NumberParseException => logger.warn("The telephone number " + rawNumber + " is invalid", e)
     }
     None
+  }
+
+  private def classForPhoneNumberType(phoneNumberType: PhoneNumberUtil.PhoneNumberType): IRI = {
+    phoneNumberType match {
+      case PhoneNumberUtil.PhoneNumberType.MOBILE => Personal.CELLPHONE_NUMBER
+      case _ => Personal.PHONE_NUMBER
+      //TODO: add other types?
+    }
   }
 }

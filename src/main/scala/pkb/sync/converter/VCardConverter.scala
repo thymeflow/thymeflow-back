@@ -4,6 +4,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 
+import ezvcard.parameter.{AddressType, EmailType, TelephoneType}
 import ezvcard.property._
 import ezvcard.util.DataUri
 import ezvcard.{Ezvcard, VCard}
@@ -63,7 +64,7 @@ class VCardConverter(valueFactory: ValueFactory) {
         //DEATHDATE
         case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
         //EMAIL
-        case email: Email => model.add(cardResource, SchemaOrg.EMAIL, emailAddressConverter.convert(email.getValue, model))
+        case email: Email => model.add(cardResource, SchemaOrg.EMAIL, convert(email, model))
         //FN
         case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue))
         //N
@@ -130,7 +131,26 @@ class VCardConverter(valueFactory: ValueFactory) {
     for (postalCode <- address.getPostalCodes.asScala) {
       model.add(addressResource, SchemaOrg.POSTAL_CODE, valueFactory.createLiteral(postalCode))
     }
+    for (addressType <- address.getTypes.asScala) {
+      model.add(addressResource, RDF.TYPE, classForAddressType(addressType))
+    }
     addressResource
+  }
+
+  private def classForAddressType(addressType: AddressType): IRI = {
+    addressType match {
+      case AddressType.HOME => Personal.HOME_ADDRESS
+      case AddressType.PREF => Personal.PREFERRED_ADDRESS
+      case AddressType.WORK => Personal.WORK_ADDRESS
+      case _ => SchemaOrg.POSTAL_ADDRESS
+    }
+  }
+
+  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
+    val placeResource = valueFactory.createBNode()
+    model.add(placeResource, RDF.TYPE, rdfType)
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
   }
 
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
@@ -145,6 +165,23 @@ class VCardConverter(valueFactory: ValueFactory) {
       valueFactory.createLiteral(date)
     } else {
       valueFactory.createLiteral(new SimpleDateFormat("yyyy-MM-dd").format(date), XMLSchema.DATE)
+    }
+  }
+
+  private def convert(email: Email, model: Model): Resource = {
+    val emailResource = emailAddressConverter.convert(email.getValue, model)
+    for (emailType <- email.getTypes.asScala) {
+      model.add(emailResource, RDF.TYPE, classForEmailType(emailType))
+    }
+    emailResource
+  }
+
+  private def classForEmailType(emailType: EmailType): IRI = {
+    emailType match {
+      case EmailType.HOME => Personal.HOME_ADDRESS
+      case EmailType.PREF => Personal.PREFERRED_ADDRESS
+      case EmailType.WORK => Personal.WORK_ADDRESS
+      case _ => Personal.EMAIL_ADDRESS
     }
   }
 
@@ -170,13 +207,6 @@ class VCardConverter(valueFactory: ValueFactory) {
     convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION, model) //TODO: support hierarchy?
   }
 
-  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
-    val placeResource = valueFactory.createBNode()
-    model.add(placeResource, RDF.TYPE, rdfType)
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
-  }
-
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {
     Option(telephone.getUri).flatMap(uri => {
       phoneNumberConverter.convert(uri.toString, model)
@@ -184,7 +214,23 @@ class VCardConverter(valueFactory: ValueFactory) {
       Option(telephone.getText).flatMap(rawNumber => {
         phoneNumberConverter.convert(rawNumber, model)
       })
+    }).map(telephoneResource => {
+      for (telephoneType <- telephone.getTypes.asScala) {
+        model.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType))
+      }
+      telephoneResource
     })
+  }
+
+  private def classForTelephoneType(telephoneType: TelephoneType): IRI = {
+    telephoneType match {
+      case TelephoneType.CELL => Personal.CELLPHONE_NUMBER
+      case TelephoneType.FAX => Personal.FAX_NUMBER
+      case TelephoneType.HOME => Personal.HOME_ADDRESS
+      case TelephoneType.PREF => Personal.PREFERRED_ADDRESS
+      case TelephoneType.WORK => Personal.WORK_ADDRESS
+      case _ => Personal.PHONE_NUMBER
+    }
   }
 
   private def convert(url: UriProperty): Option[Resource] = {

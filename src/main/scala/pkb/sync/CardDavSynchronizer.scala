@@ -2,43 +2,28 @@ package pkb.sync
 
 import javax.xml.namespace.QName
 
-import com.github.sardine.Sardine
-import org.apache.http.client.utils.URIBuilder
-import org.openrdf.model.impl.LinkedHashModel
+import com.github.sardine.report.SardineReport
+import com.github.sardine.{DavResource, Sardine}
 import org.openrdf.model.{Model, ValueFactory}
 import pkb.sync.converter.VCardConverter
-import pkb.sync.dav.AddressbookQueryReport
-
-import scala.collection.JavaConverters._
+import pkb.sync.dav.{AddressbookQueryReport, BaseDavSynchronizer}
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine) {
+class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
+  extends BaseDavSynchronizer(valueFactory, sardine) {
 
   private val CardDavNamespace = "urn:ietf:params:xml:ns:carddav"
-  private val AddressData = new QName(CardDavNamespace, "address-data")
-
   private val vCardConverter = new VCardConverter(valueFactory)
 
-  def synchronize(base: String): Model = {
-    val model = new LinkedHashModel
-    for (addressBookUri <- getAddressBooksUris(base)) {
-      model.addAll(getAddressBook(addressBookUri))
-    }
-    model
+  override protected def dataNodeName = new QName(CardDavNamespace, "address-data")
+
+  override protected def buildReport: SardineReport[Iterable[DavResource]] = {
+    new AddressbookQueryReport
   }
 
-  private def getAddressBooksUris(base: String): Iterable[String] = {
-    sardine.list(base.toString, 0).asScala.map(resource => new URIBuilder(base).setPath(resource.getPath).toString)
-  }
-
-  private def getAddressBook(addressBookUri: String): Model = {
-    val model = new LinkedHashModel
-    for (resource <- sardine.report(addressBookUri, 1, new AddressbookQueryReport)) {
-      //TODO: use the VCard URI as URI for the VCard Person?
-      model.addAll(vCardConverter.convert(resource.getCustomPropsNS.get(AddressData)))
-    }
-    model
+  override protected def convert(str: String): Model = {
+    vCardConverter.convert(str)
   }
 }

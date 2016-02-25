@@ -44,6 +44,6 @@ object PKBGoogleClient {
     store.connect("imap.gmail.com", gmailAddress, accessToken)
     model.addAll(emailSynchronizer.synchronize(store, 100)) //TODO: bad to have a such hardcoded limit but nice for tests
 
-    Rio.write(model, System.out, RDFFormat.TURTLE)
+    Rio.write(model, System.out, RDFFormat.TRIG)
   }
 }

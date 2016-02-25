@@ -6,6 +6,7 @@ import org.openrdf.model.impl.SimpleValueFactory
 object Personal {
   val NAMESPACE: String = "http://thomas.pellissier-tanon.fr/personal#"
 
+  val AGENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Agent")
   val CELLPHONE_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "CellphoneNumber")
   val FAX_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "FaxNumber")
   val EMAIL_ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "EmailAddress")

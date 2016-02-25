@@ -48,7 +48,8 @@ class VCardConverter(valueFactory: ValueFactory) {
   }
 
   private def convert(vCard: VCard, model: Model): Resource = {
-    val cardResource = resourceFromUid(vCard.getUid) //TODO: Use UID if existing
+    val cardResource = resourceFromUid(vCard.getUid)
+    model.add(cardResource, RDF.TYPE, Personal.AGENT)
 
     for (property <- vCard.getProperties.asScala) {
       property match {
@@ -146,13 +147,6 @@ class VCardConverter(valueFactory: ValueFactory) {
     }
   }
 
-  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
-    val placeResource = valueFactory.createBNode()
-    model.add(placeResource, RDF.TYPE, rdfType)
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
-  }
-
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
     Option(dateTime.getDate).map(date => convert(date, dateTime.hasTime))
   }
@@ -205,6 +199,13 @@ class VCardConverter(valueFactory: ValueFactory) {
 
   private def convert(organization: Organization, model: Model): Resource = {
     convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION, model) //TODO: support hierarchy?
+  }
+
+  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
+    val placeResource = valueFactory.createBNode()
+    model.add(placeResource, RDF.TYPE, rdfType)
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
   }
 
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {

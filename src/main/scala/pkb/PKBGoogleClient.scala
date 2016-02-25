@@ -5,14 +5,23 @@ import javax.mail.Session
 
 import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
-import org.openrdf.model.impl.{LinkedHashModel, SimpleValueFactory}
+import org.openrdf.model.impl.SimpleValueFactory
+import org.openrdf.repository.sail.SailRepository
 import org.openrdf.rio.{RDFFormat, Rio}
+import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
+import org.openrdf.sail.memory.MemoryStore
 import pkb.sync.utils.OAuth2
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
 
+/**
+  * @author Thomas Pellissier Tanon
+  */
 object PKBGoogleClient {
   def main(args: Array[String]) {
-    val model = new LinkedHashModel
+    val repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()))
+    repository.initialize()
+    val repositoryConnection = repository.getConnection
+    repositoryConnection.add(getClass.getClassLoader.getResource("rdfs-ontology.ttl"), "", RDFFormat.TURTLE)
 
     val accessToken = OAuth2.Google.getAccessToken(Array(
       "https://www.googleapis.com/auth/userinfo.email",
@@ -29,11 +38,11 @@ object PKBGoogleClient {
 
     //CardDav
     val cardDavSynchronizer = new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine)
-    model.addAll(cardDavSynchronizer.synchronize("https://www.googleapis.com/.well-known/carddav"))
+    repositoryConnection.add(cardDavSynchronizer.synchronize("https://www.googleapis.com/.well-known/carddav"))
 
     //CalDav
     val calDavSynchronizer = new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine)
-    model.addAll(calDavSynchronizer.synchronize("https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/"))
+    repositoryConnection.add(calDavSynchronizer.synchronize("https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/"))
 
     //Emails
     val emailSynchronizer = new EmailSynchronizer(SimpleValueFactory.getInstance)
@@ -42,8 +51,8 @@ object PKBGoogleClient {
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
     val store = Session.getInstance(props).getStore("imap")
     store.connect("imap.gmail.com", gmailAddress, accessToken)
-    model.addAll(emailSynchronizer.synchronize(store, 100)) //TODO: bad to have a such hardcoded limit but nice for tests
+    repositoryConnection.add(emailSynchronizer.synchronize(store, 100)) //TODO: bad to have a such hardcoded limit but nice for tests
 
-    Rio.write(model, System.out, RDFFormat.TRIG)
+    Rio.write(repositoryConnection.getStatements(null, null, null).asList(), System.out, RDFFormat.TRIG)
   }
 }

@@ -1,12 +1,23 @@
 package pkb
 
-import org.openrdf.model.impl.SimpleValueFactory
+import java.io.FileOutputStream
+
+import org.openrdf.repository.sail.SailRepository
 import org.openrdf.rio.{RDFFormat, Rio}
+import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
+import org.openrdf.sail.memory.MemoryStore
 import pkb.sync.FileSynchronizer
 
 object PKB {
   def main(args: Array[String]) {
-    val syncronizer = new FileSynchronizer(SimpleValueFactory.getInstance)
-    Rio.write(syncronizer.synchronize(args), System.out, RDFFormat.TURTLE)
+    val repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()))
+    repository.initialize()
+    val repositoryConnection = repository.getConnection
+    repositoryConnection.add(getClass.getClassLoader.getResource("rdfs-ontology.ttl"), "", RDFFormat.TURTLE)
+
+    val syncronizer = new FileSynchronizer(repositoryConnection.getValueFactory)
+    repositoryConnection.add(syncronizer.synchronize(args))
+
+    Rio.write(repositoryConnection.getStatements(null, null, null).asList(), new FileOutputStream("test.ttl"), RDFFormat.TURTLE)
   }
 }

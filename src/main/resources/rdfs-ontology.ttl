@@ -1,0 +1,260 @@
+# Definition of the PKB ontology based on RDFS entailment
+# The relevant specification is https://www.w3.org/TR/rdf11-mt/
+
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix schema: <http://schema.org/> .
+@prefix personal: <http://thomas.pellissier-tanon.fr/personal#> .
+
+
+# schema.org classes
+
+schema:Country a rdfs:Class ;
+    rdfs:subClassOf schema:Place .
+
+schema:CreativeWork a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+schema:EmailMessage a rdfs:Class ;
+    rdfs:subClassOf personal:Message .
+
+schema:Event a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+schema:GeoCoordinates a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+schema:ImageObject a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+schema:Organization a rdfs:Class ;
+    rdfs:subClassOf personal:Agent .
+
+schema:Person a rdfs:Class ;
+    rdfs:subClassOf personal:Agent .
+
+schema:Place a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+schema:PostalAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+schema:Thing a rdfs:Class ;
+    rdfs:subClassOf rdfs:Resource .
+
+
+# schema.org properties
+
+schema:about a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range schema:Thing .
+
+schema:additionalName a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:address a rdf:Property ;
+    rdfs:domain schema:Place ;
+    rdfs:range schema:PostalAddress .
+
+schema:addressCountry a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range schema:Country .
+
+schema:addressLocality a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range schema:Place .
+
+schema:addressRegion a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range schema:Place .
+
+schema:alternateName a rdf:Property ;
+    rdfs:domain schema:Thing ;
+    rdfs:range rdfs:Literal .
+
+schema:attendee a rdf:Property ;
+    rdfs:domain schema:Event ;
+    rdfs:range schema:Person .
+
+schema:author a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range personal:Agent .
+
+schema:birthDate a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:birthPlace a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range schema:Place .
+
+schema:datePublished a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range rdfs:Literal .
+
+schema:deathDate a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:deathPlace a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range schema:Place .
+
+schema:description a rdf:Property ;
+    rdfs:subPropertyOf rdfs:comment ;
+    rdfs:domain schema:Thing ;
+    rdfs:range rdfs:Literal .
+
+schema:endDate a rdf:Property ;
+    rdfs:domain schema:Event ;
+    rdfs:range rdfs:Literal .
+
+schema:email a rdf:Property ;
+    rdfs:domain personal:Agent ;
+    rdfs:range personal:EmailAddress .
+
+schema:familyName a rdf:Property ;
+    rdfs:domain schema:Thing ;
+    rdfs:range rdfs:Literal .
+
+schema:geo a rdf:Property ;
+    rdfs:domain schema:Place ;
+    rdfs:range personal:GeoCoordinates .
+
+schema:givenName a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:headline a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range rdfs:Literal .
+
+schema:honorificPrefix a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:honorificSuffix a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:image a rdf:Property ;
+    rdfs:domain schema:Thing ;
+    rdfs:range schema:ImageObject .
+
+schema:inLanguage a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range xsd:language .
+
+schema:jobTitle a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+schema:latitude a rdf:Property ;
+    rdfs:domain schema:GeoCoordinates ;
+    rdfs:range xsd:float .
+
+schema:location a rdf:Property ;
+    rdfs:domain schema:Thing ;
+    rdfs:range schema:Place .
+
+schema:longitude a rdf:Property ;
+    rdfs:domain schema:GeoCoordinates ;
+    rdfs:range xsd:float .
+
+schema:name a rdf:Property ;
+    rdfs:subPropertyOf rdfs:label ;
+    rdfs:domain schema:Thing ;
+    rdfs:range rdfs:Literal .
+
+schema:memberOf a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range schema:Organization .
+
+schema:organizer a rdf:Property ;
+    rdfs:domain schema:Event ;
+    rdfs:range personal:Agent .
+
+schema:postOfficeBoxNumber a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range rdfs:Literal .
+
+schema:postalCode a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range rdfs:Literal .
+
+schema:startDate a rdf:Property ;
+    rdfs:domain schema:Event ;
+    rdfs:range rdfs:Literal .
+
+schema:streetAddress a rdf:Property ;
+    rdfs:domain schema:PostalAddress ;
+    rdfs:range rdfs:Literal .
+
+schema:telephone a rdf:Property ;
+    rdfs:domain personal:Agent ;
+    rdfs:range rdfs:Literal .
+
+schema:text a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range rdfs:Literal .
+
+schema:url a rdf:Property ;
+    rdfs:domain schema:Thing ;
+    rdfs:range rdfs:Resource .
+
+
+# personal classes
+
+personal:Address a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+personal:Agent a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
+personal:EmailAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+personal:CellphoneNumber a rdfs:Class ;
+    rdfs:subClassOf personal:PhoneNumber .
+
+personal:FaxNumber a rdfs:Class ;
+    rdfs:subClassOf personal:PhoneNumber .
+
+personal:HomeAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+personal:Message a rdfs:Class ;
+     rdfs:subClassOf schema:CreativeWork .
+
+personal:PhoneNumber a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+personal:PreferredAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+personal:WorkAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
+
+
+# personal properties
+
+personal:recipient a rdf:Property ;
+    rdfs:domain personal:Message ;
+    rdfs:range personal:Agent .
+
+personal:blindCopyRecipient a rdf:Property ;
+    rdfs:subPropertyOf personal:recipient .
+
+personal:copyRecipient a rdf:Property ;
+    rdfs:subPropertyOf personal:recipient .
+
+personal:nickname a rdf:Property ;
+    rdfs:subPropertyOf schema:alternateName ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
+personal:primaryRecipient a rdf:Property ;
+    rdfs:subPropertyOf personal:recipient .

@@ -1,4 +1,4 @@
-package pkb.vocabulary
+package pkb.rdf.model.vocabulary
 
 import org.openrdf.model.IRI
 import org.openrdf.model.impl.SimpleValueFactory

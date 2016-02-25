@@ -12,8 +12,8 @@ import org.openrdf.model._
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.slf4j.LoggerFactory
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils._
-import pkb.vocabulary.{Personal, SchemaOrg}
 
 import scala.collection.JavaConverters._
 

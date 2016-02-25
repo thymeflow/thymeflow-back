@@ -9,8 +9,8 @@ import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import org.slf4j.LoggerFactory
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
-import pkb.vocabulary.{Personal, SchemaOrg}
 
 /**
   * @author Thomas Pellissier Tanon

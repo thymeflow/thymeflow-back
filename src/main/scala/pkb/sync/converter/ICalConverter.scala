@@ -12,8 +12,8 @@ import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
 import org.slf4j.LoggerFactory
+import pkb.rdf.model.vocabulary.SchemaOrg
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
-import pkb.vocabulary.SchemaOrg
 
 import scala.collection.JavaConverters._
 

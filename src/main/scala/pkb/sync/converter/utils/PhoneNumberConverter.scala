@@ -6,7 +6,7 @@ import com.google.i18n.phonenumbers.{NumberParseException, PhoneNumberUtil, Phon
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import org.slf4j.LoggerFactory
-import pkb.vocabulary.{Personal, SchemaOrg}
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 /**
   * @author Thomas Pellissier Tanon

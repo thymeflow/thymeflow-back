@@ -4,7 +4,7 @@ import java.net.URI
 
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.vocabulary.{Personal, SchemaOrg}
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 /**
   * @author Thomas Pellissier Tanon

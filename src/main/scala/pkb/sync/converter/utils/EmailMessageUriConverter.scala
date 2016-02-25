@@ -5,7 +5,7 @@ import java.util.regex.Pattern
 
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.vocabulary.SchemaOrg
+import pkb.rdf.model.vocabulary.SchemaOrg
 
 /**
   * @author Thomas Pellissier Tanon

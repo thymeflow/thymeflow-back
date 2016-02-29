@@ -34,16 +34,11 @@ class VCardConverter(valueFactory: ValueFactory) {
     convert(Ezvcard.parse(file).all.asScala)
   }
 
-  def convert(str: String): Model = {
-    convert(Ezvcard.parse(str).all.asScala)
-  }
-
-  private def convert(vCards: Iterable[VCard]): Model = {
+  private def convert(vCards: Traversable[VCard]): Model = {
     val model = new LinkedHashModel
-
-    for (vCard <- vCards) {
+    vCards.foreach(vCard =>
       convert(vCard, model)
-    }
+    )
     model
   }
 
@@ -51,60 +46,58 @@ class VCardConverter(valueFactory: ValueFactory) {
     val cardResource = resourceFromUid(vCard.getUid)
     model.add(cardResource, RDF.TYPE, Personal.AGENT)
 
-    for (property <- vCard.getProperties.asScala) {
-      property match {
-        //ADR
-        case address: Address => model.add(cardResource, SchemaOrg.ADDRESS, convert(address, model))
-        //BDAY
-        case birthday: Birthday => convert(birthday).foreach(date => model.add(cardResource, SchemaOrg.BIRTH_DATE, date))
-        //NICKNAME
-        case nicknames: Nickname =>
-          for (nickname <- nicknames.getValues.asScala) {
-            model.add(cardResource, Personal.NICKNAME, valueFactory.createLiteral(nickname))
-          }
-        //DEATHDATE
-        case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
-        //EMAIL
-        case email: Email => model.add(cardResource, SchemaOrg.EMAIL, convert(email, model))
-        //FN
-        case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue))
-        //N
-        case structuredName: StructuredName =>
-          Option(structuredName.getFamily).foreach(familyName =>
-            model.add(cardResource, SchemaOrg.FAMILY_NAME, valueFactory.createLiteral(familyName))
-          )
-          Option(structuredName.getGiven).foreach(givenName =>
-            model.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName))
-          )
-          for (additionalName <- structuredName.getAdditional.asScala) {
-            model.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName))
-          }
-          for (prefix <- structuredName.getPrefixes.asScala) {
-            model.add(cardResource, SchemaOrg.HONORIFIC_PREFIX, valueFactory.createLiteral(prefix))
-          }
-          for (suffix <- structuredName.getPrefixes.asScala) {
-            model.add(cardResource, SchemaOrg.HONORIFIC_SUFFIX, valueFactory.createLiteral(suffix))
-          }
-        //ORG
-        case organization: Organization => model.add(cardResource, SchemaOrg.MEMBER_OF, convert(organization, model))
-        //PHOTO
-        case photo: Photo =>
-          convert(photo, model).foreach(photoResource =>
-            model.add(cardResource, SchemaOrg.IMAGE, photoResource)
-          )
-        //TEL
-        case telephone: Telephone =>
-          convert(telephone, model).foreach(telephoneResource =>
-            model.add(cardResource, SchemaOrg.TELEPHONE, telephoneResource)
-          )
-        //TITLE
-        case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue))
-        //URL
-        case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
-        //TODO: X-SOCIALPROFILE ?
-        //TODO: IMPP
-        case _ => logger.info("Unsupported parameter type:" + property)
-      }
+    vCard.getProperties.asScala.foreach {
+      //ADR
+      case address: Address => model.add(cardResource, SchemaOrg.ADDRESS, convert(address, model))
+      //BDAY
+      case birthday: Birthday => convert(birthday).foreach(date => model.add(cardResource, SchemaOrg.BIRTH_DATE, date))
+      //NICKNAME
+      case nicknames: Nickname =>
+        nicknames.getValues.asScala.foreach(nickname =>
+          model.add(cardResource, Personal.NICKNAME, valueFactory.createLiteral(nickname))
+        )
+      //DEATHDATE
+      case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
+      //EMAIL
+      case email: Email => model.add(cardResource, SchemaOrg.EMAIL, convert(email, model))
+      //FN
+      case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue))
+      //N
+      case structuredName: StructuredName =>
+        Option(structuredName.getFamily).foreach(familyName =>
+          model.add(cardResource, SchemaOrg.FAMILY_NAME, valueFactory.createLiteral(familyName))
+        )
+        Option(structuredName.getGiven).foreach(givenName =>
+          model.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName))
+        )
+        structuredName.getAdditional.asScala.foreach(additionalName =>
+          model.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName))
+        )
+        structuredName.getPrefixes.asScala.foreach(prefix =>
+          model.add(cardResource, SchemaOrg.HONORIFIC_PREFIX, valueFactory.createLiteral(prefix))
+        )
+        structuredName.getPrefixes.asScala.foreach(suffix =>
+          model.add(cardResource, SchemaOrg.HONORIFIC_SUFFIX, valueFactory.createLiteral(suffix))
+        )
+      //ORG
+      case organization: Organization => model.add(cardResource, SchemaOrg.MEMBER_OF, convert(organization, model))
+      //PHOTO
+      case photo: Photo =>
+        convert(photo, model).foreach(photoResource =>
+          model.add(cardResource, SchemaOrg.IMAGE, photoResource)
+        )
+      //TEL
+      case telephone: Telephone =>
+        convert(telephone, model).foreach(telephoneResource =>
+          model.add(cardResource, SchemaOrg.TELEPHONE, telephoneResource)
+        )
+      //TITLE
+      case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue))
+      //URL
+      case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
+      //TODO: X-SOCIALPROFILE ?
+      //TODO: IMPP
+      case property => logger.info("Unsupported parameter type:" + property)
     }
 
     cardResource
@@ -114,27 +107,27 @@ class VCardConverter(valueFactory: ValueFactory) {
     val addressResource = valueFactory.createBNode
     model.add(addressResource, RDF.TYPE, SchemaOrg.POSTAL_ADDRESS)
     //TODO: getExtendedAddresses
-    for (street <- address.getStreetAddresses.asScala) {
+    address.getStreetAddresses.asScala.foreach(street =>
       model.add(addressResource, SchemaOrg.STREET_ADDRESS, valueFactory.createLiteral(street))
-    }
-    for (locality <- address.getLocalities.asScala) {
+    )
+    address.getLocalities.asScala.foreach(locality =>
       model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, convertToResource(locality, SchemaOrg.PLACE, model))
-    }
-    for (region <- address.getRegions.asScala) {
+    )
+    address.getRegions.asScala.foreach(region =>
       model.add(addressResource, SchemaOrg.ADDRESS_REGION, convertToResource(region, SchemaOrg.PLACE, model))
-    }
-    for (country <- address.getCountries.asScala) {
+    )
+    address.getCountries.asScala.foreach(country =>
       model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, convertToResource(country, SchemaOrg.COUNTRY, model))
-    }
-    for (poBox <- address.getPoBoxes.asScala) {
+    )
+    address.getPoBoxes.asScala.foreach(poBox =>
       model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox))
-    }
-    for (postalCode <- address.getPostalCodes.asScala) {
+    )
+    address.getPostalCodes.asScala.foreach(postalCode =>
       model.add(addressResource, SchemaOrg.POSTAL_CODE, valueFactory.createLiteral(postalCode))
-    }
-    for (addressType <- address.getTypes.asScala) {
+    )
+    address.getTypes.asScala.foreach(addressType =>
       model.add(addressResource, RDF.TYPE, classForAddressType(addressType))
-    }
+    )
     addressResource
   }
 
@@ -145,6 +138,13 @@ class VCardConverter(valueFactory: ValueFactory) {
       case AddressType.WORK => Personal.WORK_ADDRESS
       case _ => SchemaOrg.POSTAL_ADDRESS
     }
+  }
+
+  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
+    val placeResource = valueFactory.createBNode()
+    model.add(placeResource, RDF.TYPE, rdfType)
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
   }
 
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
@@ -164,9 +164,9 @@ class VCardConverter(valueFactory: ValueFactory) {
 
   private def convert(email: Email, model: Model): Resource = {
     val emailResource = emailAddressConverter.convert(email.getValue, model)
-    for (emailType <- email.getTypes.asScala) {
+    email.getTypes.asScala.foreach(emailType =>
       model.add(emailResource, RDF.TYPE, classForEmailType(emailType))
-    }
+    )
     emailResource
   }
 
@@ -201,13 +201,6 @@ class VCardConverter(valueFactory: ValueFactory) {
     convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION, model) //TODO: support hierarchy?
   }
 
-  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
-    val placeResource = valueFactory.createBNode()
-    model.add(placeResource, RDF.TYPE, rdfType)
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
-  }
-
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {
     Option(telephone.getUri).flatMap(uri => {
       phoneNumberConverter.convert(uri.toString, model)
@@ -216,9 +209,9 @@ class VCardConverter(valueFactory: ValueFactory) {
         phoneNumberConverter.convert(rawNumber, model)
       })
     }).map(telephoneResource => {
-      for (telephoneType <- telephone.getTypes.asScala) {
+      telephone.getTypes.asScala.foreach(telephoneType =>
         model.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType))
-      }
+      )
       telephoneResource
     })
   }
@@ -231,7 +224,7 @@ class VCardConverter(valueFactory: ValueFactory) {
       case TelephoneType.PREF => Personal.PREFERRED_ADDRESS
       case TelephoneType.WORK => Personal.WORK_ADDRESS
       case _ => Personal.PHONE_NUMBER
-    }
+      }
   }
 
   private def convert(url: UriProperty): Option[Resource] = {
@@ -250,5 +243,9 @@ class VCardConverter(valueFactory: ValueFactory) {
     } else {
       uuidConverter.convert(uid.getValue)
     }
+  }
+
+  def convert(str: String): Model = {
+    convert(Ezvcard.parse(str).all.asScala)
   }
 }

@@ -9,7 +9,7 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class AddressbookQueryReport extends SardineReport[Iterable[DavResource]] {
+class AddressbookQueryReport extends SardineReport[Traversable[DavResource]] {
   def toJaxb: AnyRef = {
     null
   }
@@ -28,7 +28,7 @@ class AddressbookQueryReport extends SardineReport[Iterable[DavResource]] {
       "</card:addressbook-query>"
   }
 
-  def fromMultistatus(multistatus: Multistatus): Iterable[DavResource] = {
+  def fromMultistatus(multistatus: Multistatus): Traversable[DavResource] = {
     multistatus.getResponse.asScala.map(response => new DavResource(response))
   }
 }

@@ -56,7 +56,7 @@ schema:additionalName a rdf:Property ;
     rdfs:range rdfs:Literal .
 
 schema:address a rdf:Property ;
-    rdfs:domain schema:Place ;
+    rdfs:domain schema:Thing ;
     rdfs:range schema:PostalAddress .
 
 schema:addressCountry a rdf:Property ;

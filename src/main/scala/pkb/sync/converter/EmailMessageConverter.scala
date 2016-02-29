@@ -21,21 +21,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) {
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
-  def convert(messages: Iterable[Message]): Model = {
+  def convert(messages: Traversable[Message]): Model = {
     val model = new LinkedHashModel
-    for (message <- messages) {
-      convert(message, model)
-    }
-    model
-  }
-
-  def convert(file: File): Model = {
-    convert(new MimeMessage(null, new FileInputStream(file)))
-  }
-
-  def convert(message: Message): Model = {
-    val model = new LinkedHashModel
-    convert(message, model)
+    messages.foreach(message => convert(message, model))
     model
   }
 
@@ -58,9 +46,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) {
 
   private def addAddresses(addresses: Array[Address], messageResource: Resource, relation: IRI, model: Model): Unit = {
     Option(addresses).foreach(addresses =>
-      for (address <- addresses) {
+      addresses.foreach(address =>
         convert(address, model).foreach(personResource => model.add(messageResource, relation, personResource))
-      }
+      )
     )
   }
 
@@ -92,5 +80,15 @@ class EmailMessageConverter(valueFactory: ValueFactory) {
         model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
         messageResource
     }
+  }
+
+  def convert(file: File): Model = {
+    convert(new MimeMessage(null, new FileInputStream(file)))
+  }
+
+  def convert(message: Message): Model = {
+    val model = new LinkedHashModel
+    convert(message, model)
+    model
   }
 }

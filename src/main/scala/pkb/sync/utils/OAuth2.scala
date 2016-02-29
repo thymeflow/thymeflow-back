@@ -48,7 +48,7 @@ object OAuth2 {
 
 class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String) {
 
-  def getAccessToken(scopes: Iterable[String]): String = {
+  def getAccessToken(scopes: Traversable[String]): String = {
     val googleHttpClient: HttpClient = HttpClients.createDefault
     try {
       //launch authorization code request

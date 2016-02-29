@@ -19,7 +19,7 @@ class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
 
   override protected def dataNodeName = new QName(CardDavNamespace, "address-data")
 
-  override protected def buildReport: SardineReport[Iterable[DavResource]] = {
+  override protected def buildReport: SardineReport[Traversable[DavResource]] = {
     new AddressbookQueryReport
   }
 

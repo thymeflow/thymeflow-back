@@ -19,7 +19,7 @@ class CalDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
 
   override protected def dataNodeName = new QName(CalDavNamespace, "calendar-data")
 
-  override protected def buildReport: SardineReport[Iterable[DavResource]] = {
+  override protected def buildReport: SardineReport[Traversable[DavResource]] = {
     new CalendarQueryReport
   }
 

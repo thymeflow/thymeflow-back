@@ -9,7 +9,7 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class CalendarQueryReport extends SardineReport[Iterable[DavResource]] {
+class CalendarQueryReport extends SardineReport[Traversable[DavResource]] {
   def toJaxb: AnyRef = {
     null
   }
@@ -27,7 +27,7 @@ class CalendarQueryReport extends SardineReport[Iterable[DavResource]] {
       "</cal:calendar-query>"
   }
 
-  def fromMultistatus(multistatus: Multistatus): Iterable[DavResource] = {
+  def fromMultistatus(multistatus: Multistatus): Traversable[DavResource] = {
     multistatus.getResponse.asScala.map(response => new DavResource(response))
   }
 }

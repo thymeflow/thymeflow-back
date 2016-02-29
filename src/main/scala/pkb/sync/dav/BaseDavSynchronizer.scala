@@ -24,27 +24,27 @@ abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
     model
   }
 
-  private def getDirectoryUris(base: String): Iterable[String] = {
+  private def getDirectoryUris(base: String): Traversable[String] = {
     sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
+  }
+
+  private def buildUriFromBaseAndPath(base: String, path: String): String = {
+    new URIBuilder(base).setPath(path).toString
   }
 
   private def getDirectory(directoryUri: String): Model = {
     val model = new LinkedHashModel
     try {
-      for (resource <- sardine.report(directoryUri, 1, buildReport)) {
+      sardine.report(directoryUri, 1, buildReport).foreach(resource =>
         //TODO: use the entry URI as URI for the ICal Event?
         Option(resource.getCustomPropsNS.get(dataNodeName)).foreach(data =>
           addWithContext(convert(data), model, valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)))
         )
-      }
+      )
     } catch {
       case e: SardineException => e.printStackTrace()
     }
     model
-  }
-
-  private def buildUriFromBaseAndPath(base: String, path: String): String = {
-    new URIBuilder(base).setPath(path).toString
   }
 
   private def addWithContext(fromModel: Model, toModel: Model, context: IRI): Unit = {
@@ -55,7 +55,7 @@ abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
 
   protected def dataNodeName: QName
 
-  protected def buildReport: SardineReport[Iterable[DavResource]]
+  protected def buildReport: SardineReport[Traversable[DavResource]]
 
   protected def convert(str: String): Model
 }

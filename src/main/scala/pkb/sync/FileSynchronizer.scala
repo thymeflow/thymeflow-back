@@ -29,13 +29,13 @@ class FileSynchronizer(valueFactory: ValueFactory) {
   }
 
   private def synchronize(files: Array[File], model: Model): Unit = {
-    for (file <- files) {
+    files.foreach(file =>
       if (file.isDirectory) {
         synchronize(file.listFiles(), model)
       } else {
         synchronize(file, model)
       }
-    }
+    )
   }
 
   private def synchronize(file: File, model: Model): Unit = {

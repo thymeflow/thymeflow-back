@@ -28,6 +28,7 @@ class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) {
         return None
       }
       val phoneNumberResource = valueFactory.createIRI(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.RFC3966))
+      model.add(phoneNumberResource, RDF.TYPE, Personal.PHONE_NUMBER)
       model.add(phoneNumberResource, RDF.TYPE, classForPhoneNumberType(phoneUtil.getNumberType(number)))
       model.add(phoneNumberResource, SchemaOrg.NAME, valueFactory.createLiteral(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)))
       return Some(phoneNumberResource)

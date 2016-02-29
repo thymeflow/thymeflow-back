@@ -8,7 +8,6 @@ import org.apache.commons.io.IOUtils
 import org.openrdf.model.impl.SimpleValueFactory
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.rio.{RDFFormat, Rio}
-import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.memory.MemoryStore
 import pkb.sync.utils.OAuth2
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
@@ -18,7 +17,7 @@ import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
   */
 object PKBGoogleClient {
   def main(args: Array[String]) {
-    val repository = new SailRepository(new ForwardChainingRDFSInferencer(new MemoryStore()))
+    val repository = new SailRepository(new MemoryStore())
     repository.initialize()
     val repositoryConnection = repository.getConnection
     repositoryConnection.add(getClass.getClassLoader.getResource("rdfs-ontology.ttl"), "", RDFFormat.TURTLE)

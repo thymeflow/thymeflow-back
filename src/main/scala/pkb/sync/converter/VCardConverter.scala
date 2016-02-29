@@ -111,13 +111,13 @@ class VCardConverter(valueFactory: ValueFactory) {
       model.add(addressResource, SchemaOrg.STREET_ADDRESS, valueFactory.createLiteral(street))
     )
     address.getLocalities.asScala.foreach(locality =>
-      model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, convertToResource(locality, SchemaOrg.PLACE, model))
+      model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, convertToResource(locality, model, SchemaOrg.PLACE))
     )
     address.getRegions.asScala.foreach(region =>
-      model.add(addressResource, SchemaOrg.ADDRESS_REGION, convertToResource(region, SchemaOrg.PLACE, model))
+      model.add(addressResource, SchemaOrg.ADDRESS_REGION, convertToResource(region, model, SchemaOrg.PLACE))
     )
     address.getCountries.asScala.foreach(country =>
-      model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, convertToResource(country, SchemaOrg.COUNTRY, model))
+      model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, convertToResource(country, model, SchemaOrg.COUNTRY, SchemaOrg.PLACE))
     )
     address.getPoBoxes.asScala.foreach(poBox =>
       model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox))
@@ -138,13 +138,6 @@ class VCardConverter(valueFactory: ValueFactory) {
       case AddressType.WORK => Personal.WORK_ADDRESS
       case _ => SchemaOrg.POSTAL_ADDRESS
     }
-  }
-
-  private def convertToResource(str: String, rdfType: IRI, model: Model): Resource = {
-    val placeResource = valueFactory.createBNode()
-    model.add(placeResource, RDF.TYPE, rdfType)
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
   }
 
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
@@ -198,7 +191,14 @@ class VCardConverter(valueFactory: ValueFactory) {
   }
 
   private def convert(organization: Organization, model: Model): Resource = {
-    convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION, model) //TODO: support hierarchy?
+    convertToResource(organization.getValues.get(0), model, SchemaOrg.ORGANIZATION) //TODO: support hierarchy?
+  }
+
+  private def convertToResource(str: String, model: Model, rdfTypes: IRI*): Resource = {
+    val placeResource = valueFactory.createBNode()
+    rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType))
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
   }
 
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {

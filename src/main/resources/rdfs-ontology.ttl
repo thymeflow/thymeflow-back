@@ -104,7 +104,6 @@ schema:deathPlace a rdf:Property ;
     rdfs:range schema:Place .
 
 schema:description a rdf:Property ;
-    rdfs:subPropertyOf rdfs:comment ;
     rdfs:domain schema:Thing ;
     rdfs:range rdfs:Literal .
 
@@ -165,7 +164,6 @@ schema:longitude a rdf:Property ;
     rdfs:range xsd:float .
 
 schema:name a rdf:Property ;
-    rdfs:subPropertyOf rdfs:label ;
     rdfs:domain schema:Thing ;
     rdfs:range rdfs:Literal .
 

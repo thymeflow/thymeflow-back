@@ -6,9 +6,8 @@ import javax.mail.Session
 import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
 import org.openrdf.model.impl.SimpleValueFactory
-import org.openrdf.repository.sail.SailRepository
 import org.openrdf.rio.{RDFFormat, Rio}
-import org.openrdf.sail.memory.MemoryStore
+import pkb.rdf.RepositoryFactory
 import pkb.sync.utils.OAuth2
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
 
@@ -17,10 +16,7 @@ import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
   */
 object PKBGoogleClient {
   def main(args: Array[String]) {
-    val repository = new SailRepository(new MemoryStore())
-    repository.initialize()
-    val repositoryConnection = repository.getConnection
-    repositoryConnection.add(getClass.getClassLoader.getResource("rdfs-ontology.ttl"), "", RDFFormat.TURTLE)
+    val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
 
     val accessToken = OAuth2.Google.getAccessToken(Array(
       "https://www.googleapis.com/auth/userinfo.email",

@@ -8,6 +8,7 @@ import org.openrdf.model.impl.SimpleValueFactory
   */
 object SchemaOrg {
   val NAMESPACE: String = "http://schema.org/"
+  val PREFIX: String = "schema"
 
   val COUNTRY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Country")
   val EMAIL_MESSAGE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "EmailMessage")

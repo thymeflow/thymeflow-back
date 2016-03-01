@@ -13,9 +13,9 @@ object PKB {
   def main(args: Array[String]) {
     val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
 
-    val syncronizer = new FileSynchronizer(repositoryConnection.getValueFactory)
-    repositoryConnection.add(syncronizer.synchronize(args))
+    val syncronizer = new FileSynchronizer(repositoryConnection.getValueFactory, args)
+    syncronizer.synchronize().foreach(document => repositoryConnection.add(document.model))
 
-    Rio.write(repositoryConnection.getStatements(null, null, null).asList(), new FileOutputStream("test.ttl"), RDFFormat.TURTLE)
+    Rio.write(repositoryConnection.getStatements(null, null, null).asList(), new FileOutputStream("test.ttl"), RDFFormat.TRIG)
   }
 }

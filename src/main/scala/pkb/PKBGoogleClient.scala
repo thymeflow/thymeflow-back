@@ -32,21 +32,27 @@ object PKBGoogleClient {
 
 
     //CardDav
-    val cardDavSynchronizer = new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine)
-    repositoryConnection.add(cardDavSynchronizer.synchronize("https://www.googleapis.com/.well-known/carddav"))
+    val cardDavSynchronizer = new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://www.googleapis.com/.well-known/carddav")
+    cardDavSynchronizer.synchronize().foreach(document =>
+      repositoryConnection.add(document.model)
+    )
 
     //CalDav
-    val calDavSynchronizer = new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine)
-    repositoryConnection.add(calDavSynchronizer.synchronize("https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/"))
+    val calDavSynchronizer = new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
+    calDavSynchronizer.synchronize().foreach(document =>
+      repositoryConnection.add(document.model)
+    )
 
     //Emails
-    val emailSynchronizer = new EmailSynchronizer(SimpleValueFactory.getInstance)
     val props = new Properties()
     props.put("mail.imap.ssl.enable", "true")
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
     val store = Session.getInstance(props).getStore("imap")
     store.connect("imap.gmail.com", gmailAddress, accessToken)
-    repositoryConnection.add(emailSynchronizer.synchronize(store, 100)) //TODO: bad to have a such hardcoded limit but nice for tests
+    val emailSynchronizer = new EmailSynchronizer(SimpleValueFactory.getInstance, store, 100)
+    emailSynchronizer.synchronize().foreach(document =>
+      repositoryConnection.add(document.model)
+    ) //TODO: bad to have a such hardcoded limit but nice for tests
 
     Rio.write(repositoryConnection.getStatements(null, null, null).asList(), System.out, RDFFormat.TRIG)
   }

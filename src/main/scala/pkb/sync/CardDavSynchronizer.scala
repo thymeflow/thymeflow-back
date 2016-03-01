@@ -11,8 +11,8 @@ import pkb.sync.dav.{AddressbookQueryReport, BaseDavSynchronizer}
 /**
   * @author Thomas Pellissier Tanon
   */
-class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
-  extends BaseDavSynchronizer(valueFactory, sardine) {
+class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String)
+  extends BaseDavSynchronizer(valueFactory, sardine, baseUri) {
 
   private val CardDavNamespace = "urn:ietf:params:xml:ns:carddav"
   private val vCardConverter = new VCardConverter(valueFactory)

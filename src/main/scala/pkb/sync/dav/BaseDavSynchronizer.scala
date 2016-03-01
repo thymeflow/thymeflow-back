@@ -6,22 +6,19 @@ import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import org.apache.http.client.utils.URIBuilder
-import org.openrdf.model.impl.LinkedHashModel
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.openrdf.model.{Model, ValueFactory}
+import pkb.rdf.model.document.Document
+import pkb.sync.Synchronizer
 
 import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
   */
-abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine) {
+abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) extends Synchronizer {
 
-  def synchronize(base: String): Model = {
-    val model = new LinkedHashModel
-    for (directoryUri <- getDirectoryUris(base)) {
-      model.addAll(getDirectory(directoryUri))
-    }
-    model
+  def synchronize(): Traversable[Document] = {
+    getDirectoryUris(baseUri).flatMap(directoryUri => getDirectory(directoryUri))
   }
 
   private def getDirectoryUris(base: String): Traversable[String] = {
@@ -32,24 +29,18 @@ abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
     new URIBuilder(base).setPath(path).toString
   }
 
-  private def getDirectory(directoryUri: String): Model = {
-    val model = new LinkedHashModel
+  private def getDirectory(directoryUri: String): Traversable[Document] = {
     try {
-      sardine.report(directoryUri, 1, buildReport).foreach(resource =>
+      sardine.report(directoryUri, 1, buildReport).flatMap(resource =>
         //TODO: use the entry URI as URI for the ICal Event?
-        Option(resource.getCustomPropsNS.get(dataNodeName)).foreach(data =>
-          addWithContext(convert(data), model, valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)))
+        Option(resource.getCustomPropsNS.get(dataNodeName)).map(data =>
+          new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)), convert(data))
         )
       )
     } catch {
-      case e: SardineException => e.printStackTrace()
-    }
-    model
-  }
-
-  private def addWithContext(fromModel: Model, toModel: Model, context: IRI): Unit = {
-    for (statement <- fromModel.iterator().asScala) {
-      toModel.add(statement.getSubject, statement.getPredicate, statement.getObject, context)
+      case e: SardineException =>
+        e.printStackTrace()
+        None
     }
   }
 

@@ -11,8 +11,8 @@ import pkb.sync.dav.{BaseDavSynchronizer, CalendarQueryReport}
 /**
   * @author Thomas Pellissier Tanon
   */
-class CalDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine)
-  extends BaseDavSynchronizer(valueFactory, sardine) {
+class CalDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String)
+  extends BaseDavSynchronizer(valueFactory, sardine, baseUri) {
 
   private val CalDavNamespace = "urn:ietf:params:xml:ns:caldav"
   private val iCalConverter = new ICalConverter(valueFactory)

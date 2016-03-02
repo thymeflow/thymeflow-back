@@ -11,32 +11,48 @@ import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 /**
   * @author Thomas Pellissier Tanon
   */
 abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) extends Synchronizer {
 
+  private var elementsEtag = new mutable.HashMap[String, String]()
+
+  private var paths: Traversable[String] = null
+
   def synchronize(): Traversable[Document] = {
-    getDirectoryUris(baseUri).flatMap(directoryUri => getDirectory(directoryUri))
+    if (paths == null) {
+      paths = getDirectoryUris(baseUri)
+    }
+    paths.flatMap(directoryUri => getDirectory(directoryUri))
   }
 
   private def getDirectoryUris(base: String): Traversable[String] = {
     sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
   }
 
-  private def buildUriFromBaseAndPath(base: String, path: String): String = {
-    new URIBuilder(base).setPath(path).toString
+  private def getDirectory(directoryUri: String): Traversable[Document] = {
+    documentsFromDavResources(davResourcesOfUpdatedDocuments(directoryUri: String), directoryUri)
   }
 
-  private def getDirectory(directoryUri: String): Traversable[Document] = {
+  private def davResourcesOfUpdatedDocuments(directoryUri: String): Traversable[DavResource] = {
     try {
-      sardine.report(directoryUri, 1, buildReport).flatMap(resource =>
-        //TODO: use the entry URI as URI for the ICal Event?
-        Option(resource.getCustomPropsNS.get(dataNodeName)).map(data =>
-          new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)), convert(data))
-        )
-      )
+      if (elementsEtag.isEmpty) {
+        //We load everything
+        sardine.report(directoryUri, 1, buildQueryReport(true))
+      } else {
+        //We load only new documents
+        val newPaths = sardine.report(directoryUri, 1, buildQueryReport(false)).filter(davResource =>
+          !elementsEtag.get(davResource.getPath).contains(davResource.getEtag)
+        ).map(davResource => davResource.getPath)
+        if (newPaths.isEmpty) {
+          None
+        } else {
+          sardine.report(directoryUri, 1, buildMultigetReport(newPaths))
+        }
+      }
     } catch {
       case e: SardineException =>
         e.printStackTrace()
@@ -44,9 +60,24 @@ abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine,
     }
   }
 
+  private def documentsFromDavResources(davResources: Traversable[DavResource], directoryUri: String): Traversable[Document] = {
+    davResources.flatMap(resource => {
+      elementsEtag.put(resource.getPath, resource.getEtag)
+      Option(resource.getCustomPropsNS.get(dataNodeName)).map(data =>
+        new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)), convert(data))
+      )
+    })
+  }
+
+  private def buildUriFromBaseAndPath(base: String, path: String): String = {
+    new URIBuilder(base).setPath(path).toString
+  }
+
   protected def dataNodeName: QName
 
-  protected def buildReport: SardineReport[Traversable[DavResource]]
+  protected def buildQueryReport(withData: Boolean): SardineReport[Traversable[DavResource]]
+
+  protected def buildMultigetReport(paths: Traversable[String]): SardineReport[Traversable[DavResource]]
 
   protected def convert(str: String): Model
 }

@@ -6,7 +6,7 @@ import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import org.openrdf.model.{Model, ValueFactory}
 import pkb.sync.converter.VCardConverter
-import pkb.sync.dav.{AddressbookQueryReport, BaseDavSynchronizer}
+import pkb.sync.dav.{AddressbookMultigetReport, AddressbookQueryReport, BaseDavSynchronizer}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -19,8 +19,12 @@ class CardDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri:
 
   override protected def dataNodeName = new QName(CardDavNamespace, "address-data")
 
-  override protected def buildReport: SardineReport[Traversable[DavResource]] = {
-    new AddressbookQueryReport
+  override protected def buildQueryReport(withData: Boolean): SardineReport[Traversable[DavResource]] = {
+    new AddressbookQueryReport(withData)
+  }
+
+  override protected def buildMultigetReport(paths: Traversable[String]): SardineReport[Traversable[DavResource]] = {
+    new AddressbookMultigetReport(paths)
   }
 
   override protected def convert(str: String): Model = {

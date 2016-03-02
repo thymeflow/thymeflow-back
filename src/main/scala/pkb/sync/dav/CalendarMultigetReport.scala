@@ -9,26 +9,21 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class AddressbookQueryReport(withData: Boolean) extends SardineReport[Traversable[DavResource]] {
+class CalendarMultigetReport(paths: Traversable[String]) extends SardineReport[Traversable[DavResource]] {
   def toJaxb: AnyRef = {
     null
   }
 
   override def toXml: String = {
     var xml = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
-      "<card:addressbook-query xmlns:d=\"DAV:\" xmlns:card=\"urn:ietf:params:xml:ns:carddav\">" +
+      "<cal:calendar-multiget xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
       "<d:prop>" +
-      "<d:getetag />"
-    if(withData) {
-      xml += "<card:address-data />"
-    }
+      "<d:getetag />" +
+      "<cal:calendar-data />" +
+      "</d:prop>"
+    paths.foreach(path => xml += "<d:href>" + path + "</d:href>")
     xml +
-      "</d:prop>" +
-      "<card:filter>" +
-      "<card:prop-filter name=\"FN\">" +
-      "</card:prop-filter>" +
-      "</card:filter>" +
-      "</card:addressbook-query>"
+      "</cal:calendar-multiget>"
   }
 
   def fromMultistatus(multistatus: Multistatus): Traversable[DavResource] = {

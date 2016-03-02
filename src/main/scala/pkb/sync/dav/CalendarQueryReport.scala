@@ -9,17 +9,20 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class CalendarQueryReport extends SardineReport[Traversable[DavResource]] {
+class CalendarQueryReport(withData: Boolean) extends SardineReport[Traversable[DavResource]] {
   def toJaxb: AnyRef = {
     null
   }
 
   override def toXml: String = {
-    "<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
+    var xml = "<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
       "<cal:calendar-query xmlns:d=\"DAV:\" xmlns:cal=\"urn:ietf:params:xml:ns:caldav\">" +
       "<d:prop>" +
-      "<d:getetag />" +
-      "<cal:calendar-data />" +
+      "<d:getetag />"
+    if(withData) {
+      xml += "<cal:calendar-data />"
+    }
+    xml +
       "</d:prop>" +
       "<cal:filter>" +
       "<cal:comp-filter name=\"VCALENDAR\" />" +

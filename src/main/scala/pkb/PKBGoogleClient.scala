@@ -17,6 +17,7 @@ import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
 object PKBGoogleClient {
   def main(args: Array[String]) {
     val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
+    val pipeline = new Pipeline(repositoryConnection)
 
     val accessToken = OAuth2.Google.getAccessToken(Array(
       "https://www.googleapis.com/auth/userinfo.email",
@@ -30,17 +31,14 @@ object PKBGoogleClient {
     val gmailAddress = IOUtils.toString(sardine.get("https://www.googleapis.com/userinfo/email"))
       .split("&")(0).split("=")(1) //The result has the format "email=foo@gmail.com&..."
 
-
     //CardDav
-    val cardDavSynchronizer = new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://www.googleapis.com/.well-known/carddav")
-    cardDavSynchronizer.synchronize().foreach(document =>
-      repositoryConnection.add(document.model)
+    pipeline.addSynchronizer(
+      new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://www.googleapis.com/.well-known/carddav")
     )
 
     //CalDav
-    val calDavSynchronizer = new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
-    calDavSynchronizer.synchronize().foreach(document =>
-      repositoryConnection.add(document.model)
+    pipeline.addSynchronizer(
+      new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
     )
 
     //Emails
@@ -49,10 +47,9 @@ object PKBGoogleClient {
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
     val store = Session.getInstance(props).getStore("imap")
     store.connect("imap.gmail.com", gmailAddress, accessToken)
-    val emailSynchronizer = new EmailSynchronizer(SimpleValueFactory.getInstance, store, 100)
-    emailSynchronizer.synchronize().foreach(document =>
-      repositoryConnection.add(document.model)
-    ) //TODO: bad to have a such hardcoded limit but nice for tests
+    pipeline.addSynchronizer(new EmailSynchronizer(SimpleValueFactory.getInstance, store, 100))
+
+    pipeline.run(3)
 
     Rio.write(repositoryConnection.getStatements(null, null, null).asList(), System.out, RDFFormat.TRIG)
   }

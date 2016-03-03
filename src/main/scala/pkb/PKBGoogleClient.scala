@@ -7,6 +7,7 @@ import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
 import org.openrdf.model.impl.SimpleValueFactory
 import org.openrdf.rio.{RDFFormat, Rio}
+import pkb.inferencer.InverseFunctionalPropertyInferencer
 import pkb.rdf.RepositoryFactory
 import pkb.sync.utils.OAuth2
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
@@ -49,7 +50,10 @@ object PKBGoogleClient {
     store.connect("imap.gmail.com", gmailAddress, accessToken)
     pipeline.addSynchronizer(new EmailSynchronizer(SimpleValueFactory.getInstance, store, 100))
 
-    pipeline.run(3)
+    //Inferencers
+    pipeline.addInferencer(new InverseFunctionalPropertyInferencer(repositoryConnection))
+
+    pipeline.run(1)
 
     Rio.write(repositoryConnection.getStatements(null, null, null).asList(), System.out, RDFFormat.TRIG)
   }

@@ -5,6 +5,7 @@ import java.util
 import org.openrdf.model.Statement
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.repository.RepositoryConnection
+import pkb.inferencer.Inferencer
 import pkb.rdf.Converters._
 import pkb.rdf.model.ModelDiff
 import pkb.rdf.model.document.Document
@@ -19,13 +20,20 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
 
   private val synchronizers = new ArrayBuffer[Synchronizer]
 
+  private val inferencers = new ArrayBuffer[Inferencer]
+
   def addSynchronizer(synchronizer: Synchronizer): Unit = {
     synchronizers += synchronizer
+  }
+
+  def addInferencer(inferencer: Inferencer): Unit = {
+    inferencers += inferencer
   }
 
   def run(numberOfIterations: Int = -1): Unit = {
     for (_ <- 1 to numberOfIterations) {
       val diff = synchronizeRepository
+      doInference(diff)
       Thread.sleep(60000) //1 mn
     }
   }
@@ -39,7 +47,7 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
   }
 
   private def newDocuments: Traversable[Document] = {
-    synchronizers.flatMap(synchronizer => synchronizer.synchronize())
+    synchronizers.flatMap(_.synchronize())
   }
 
   private def addDocumentToRepository(document: Document, diff: ModelDiff): Unit = {
@@ -62,5 +70,9 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
     diff.added.addAll(statements)
 
     repositoryConnection.commit()
+  }
+
+  private def doInference(diff: ModelDiff): Unit = {
+    inferencers.foreach(_.infer(diff))
   }
 }

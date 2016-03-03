@@ -5,6 +5,7 @@ import java.util
 import org.openrdf.model.Statement
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.repository.RepositoryConnection
+import pkb.rdf.Converters._
 import pkb.rdf.model.ModelDiff
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer
@@ -47,17 +48,14 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
     val statements = new util.HashSet[Statement](document.model)
 
     //Removes the removed statements from the repository and the already existing statements from statements
-    val cursor = repositoryConnection.getStatements(null, null, null, document.iri)
-    while (cursor.hasNext) {
-      val existingStatement = cursor.next()
+    repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
       if (document.model.contains(existingStatement)) {
         statements.remove(existingStatement)
       } else {
         repositoryConnection.remove(existingStatement)
         diff.removed.add(existingStatement)
       }
-    }
-    cursor.close()
+    )
 
     //Add the new statements
     repositoryConnection.add(statements)

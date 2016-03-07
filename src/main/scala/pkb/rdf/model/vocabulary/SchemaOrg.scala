@@ -34,6 +34,7 @@ object SchemaOrg {
   val DEATH_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "deathDate")
   val DEATH_PLACE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "deathPlace")
   val DESCRIPTION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "description")
+  val DURATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "duration")
   val EMAIL: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "email")
   val END_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "endDate")
   val FAMILY_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "familyName")

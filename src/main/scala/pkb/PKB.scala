@@ -15,7 +15,7 @@ object PKB {
 
     val pipeline = new Pipeline(repositoryConnection)
     pipeline.addSynchronizer(new FileSynchronizer(repositoryConnection.getValueFactory, args))
-    pipeline.run(2)
+    pipeline.run(1)
 
     Rio.write(repositoryConnection.getStatements(null, null, null).asList(), new FileOutputStream("test.ttl"), RDFFormat.TRIG)
   }

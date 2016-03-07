@@ -3,10 +3,11 @@ package pkb.sync.converter
 import java.io.File
 import java.net.{MalformedURLException, URI, URL}
 import java.text.SimpleDateFormat
+import javax.xml.datatype.{DatatypeConstants, DatatypeFactory}
 
 import biweekly.component.VEvent
 import biweekly.property._
-import biweekly.util.ICalDate
+import biweekly.util.{Duration, ICalDate}
 import biweekly.{Biweekly, ICalendar}
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
@@ -32,10 +33,6 @@ class ICalConverter(valueFactory: ValueFactory) {
 
   def convert(file: File): Model = {
     convert(Biweekly.parse(file).all.asScala)
-  }
-
-  def convert(str: String): Model = {
-    convert(Biweekly.parse(str).all.asScala)
   }
 
   def convert(calendars: Traversable[ICalendar]): Model = {
@@ -70,7 +67,8 @@ class ICalConverter(valueFactory: ValueFactory) {
         case dateEnd: DateEnd => model.add(eventResource, SchemaOrg.END_DATE, convert(dateEnd))
         //DSTART
         case dateStart: DateStart => model.add(eventResource, SchemaOrg.START_DATE, convert(dateStart))
-        //TODO: DURATION
+        //DURATION
+        case duration: DurationProperty => model.add(eventResource, SchemaOrg.DURATION, convert(duration))
         //LOCATION
         case location: Location =>
           if (location.getValue != "") {
@@ -148,6 +146,27 @@ class ICalConverter(valueFactory: ValueFactory) {
     }
   }
 
+  private def convert(duration: DurationProperty): Literal = {
+    convert(duration.getValue)
+  }
+
+  private def convert(duration: Duration): Literal = {
+    val days = Option(duration.getWeeks)
+      .map[Integer](weeks => weeks * 7 + Option(duration.getDays).getOrElse[Integer](0))
+      .orElse(Option(duration.getDays))
+
+    val xmlDuration = DatatypeFactory.newInstance().newDuration(
+      !duration.isPrior,
+      DatatypeConstants.FIELD_UNDEFINED,
+      DatatypeConstants.FIELD_UNDEFINED,
+      days.getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
+      Option(duration.getHours).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
+      Option(duration.getMinutes).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
+      Option(duration.getSeconds).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED)
+    )
+    valueFactory.createLiteral(xmlDuration.toString, XMLSchema.DAYTIMEDURATION)
+  }
+
   private def convert(location: Location, model: Model): Resource = {
     val placeResource = valueFactory.createBNode()
     model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE)
@@ -209,5 +228,9 @@ class ICalConverter(valueFactory: ValueFactory) {
     } else {
       uuidConverter.convert(uid.getValue)
     }
+  }
+
+  def convert(str: String): Model = {
+    convert(Biweekly.parse(str).all.asScala)
   }
 }

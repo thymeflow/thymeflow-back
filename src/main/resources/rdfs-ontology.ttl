@@ -107,6 +107,10 @@ schema:description a rdf:Property ;
     rdfs:domain schema:Thing ;
     rdfs:range rdfs:Literal .
 
+schema:duration a rdf:Property ;
+    rdfs:domain schema:Event ;
+    rdfs:range xsd:duration .
+
 schema:endDate a rdf:Property ;
     rdfs:domain schema:Event ;
     rdfs:range rdfs:Literal .

@@ -31,10 +31,12 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
   }
 
   def run(numberOfIterations: Int = -1): Unit = {
-    for (_ <- 1 to numberOfIterations) {
+    for (i <- 1 to numberOfIterations) {
       val diff = synchronizeRepository
       doInference(diff)
-      Thread.sleep(60000) //1 mn
+      if (i < numberOfIterations) {
+        Thread.sleep(60000) //1 mn
+      }
     }
   }
 

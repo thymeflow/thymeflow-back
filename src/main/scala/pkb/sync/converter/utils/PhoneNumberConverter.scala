@@ -42,7 +42,6 @@ class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) {
     phoneNumberType match {
       case PhoneNumberUtil.PhoneNumberType.MOBILE => Personal.CELLPHONE_NUMBER
       case _ => Personal.PHONE_NUMBER
-      //TODO: add other types?
     }
   }
 }

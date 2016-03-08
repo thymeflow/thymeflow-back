@@ -95,8 +95,9 @@ class VCardConverter(valueFactory: ValueFactory) {
       case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue))
       //URL
       case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
-      //TODO: X-SOCIALPROFILE ?
-      //TODO: IMPP
+      //X-SOCIALPROFILE
+      case property: RawProperty if property.getPropertyName == "X-SOCIALPROFILE" =>
+        resourceFromUrl(property.getValue).foreach(url => model.add(cardResource, SchemaOrg.URL, url)) //TODO: better relation than schema:url
       case property => logger.info("Unsupported parameter type:" + property)
     }
 
@@ -228,13 +229,7 @@ class VCardConverter(valueFactory: ValueFactory) {
   }
 
   private def convert(url: UriProperty): Option[Resource] = {
-    try {
-      Some(valueFactory.createIRI(url.getValue))
-    } catch {
-      case e: IllegalArgumentException =>
-        logger.warn("The URL " + url.getValue + " is invalid", e)
-        None
-    }
+    resourceFromUrl(url.getValue)
   }
 
   private def resourceFromUid(uid: Uid): Resource = {
@@ -242,6 +237,16 @@ class VCardConverter(valueFactory: ValueFactory) {
       valueFactory.createBNode()
     } else {
       uuidConverter.convert(uid.getValue)
+    }
+  }
+
+  private def resourceFromUrl(url: String): Option[Resource] = {
+    try {
+      Some(valueFactory.createIRI(url))
+    } catch {
+      case e: IllegalArgumentException =>
+        logger.warn("The URL " + url + " is invalid", e)
+        None
     }
   }
 

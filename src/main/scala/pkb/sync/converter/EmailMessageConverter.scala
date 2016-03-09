@@ -1,9 +1,9 @@
 package pkb.sync.converter
 
-import java.io.{File, FileInputStream}
+import java.io.{ByteArrayInputStream, InputStream}
 import javax.mail.Message.RecipientType
 import javax.mail._
-import javax.mail.internet.{InternetAddress, MimeMessage}
+import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.RDF
@@ -15,25 +15,50 @@ import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter
 /**
   * @author Thomas Pellissier Tanon
   */
-class EmailMessageConverter(valueFactory: ValueFactory) {
+class EmailMessageConverter(valueFactory: ValueFactory) extends Converter {
 
   private val logger = LoggerFactory.getLogger(classOf[EmailMessageConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
-  def convert(messages: Traversable[Message]): Model = {
+  def convert(stream: InputStream): Model = {
+    convert(new MimeMessage(null, stream))
+  }
+
+  override def convert(str: String): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
+  }
+
+  def convert(message: Message): Model = {
     val model = new LinkedHashModel
-    messages.foreach(message => convert(message, model))
+    convert(message, model)
     model
   }
 
   private def convert(message: Message, model: Model): Resource = {
     val messageResource = resourceForMessage(message, model)
 
-    addAddresses(message.getFrom, messageResource, SchemaOrg.AUTHOR, model)
-    addAddresses(message.getRecipients(RecipientType.TO), messageResource, Personal.PRIMARY_RECIPIENT, model)
-    addAddresses(message.getRecipients(RecipientType.CC), messageResource, Personal.COPY_RECIPIENT, model)
-    addAddresses(message.getRecipients(RecipientType.BCC), messageResource, Personal.BLIND_COPY_RECIPIENT, model)
+    try {
+      addAddresses(message.getFrom, messageResource, SchemaOrg.AUTHOR, model)
+    } catch {
+      case e: AddressException => ()
+    }
+    try {
+      addAddresses(message.getRecipients(RecipientType.TO), messageResource, Personal.PRIMARY_RECIPIENT, model)
+    } catch {
+      case e: AddressException => ()
+    }
+    try {
+      addAddresses(message.getRecipients(RecipientType.CC), messageResource, Personal.COPY_RECIPIENT, model)
+    } catch {
+      case e: AddressException => ()
+    }
+    try {
+      addAddresses(message.getRecipients(RecipientType.BCC), messageResource, Personal.BLIND_COPY_RECIPIENT, model)
+    } catch {
+      case e: AddressException => ()
+    }
+
     Option(message.getSentDate).foreach(date =>
       model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date))
     )
@@ -74,21 +99,23 @@ class EmailMessageConverter(valueFactory: ValueFactory) {
 
   private def resourceForMessage(message: Message, model: Model): Resource = {
     message match {
-      case mimeMessage: MimeMessage => emailMessageUriConverter.convert(mimeMessage.getMessageID, model)
-      case _ =>
-        val messageResource = valueFactory.createBNode()
-        model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
-        messageResource
+      case mimeMessage: MimeMessage =>
+        Option(mimeMessage.getMessageID).map(messageId =>
+          emailMessageUriConverter.convert(mimeMessage.getMessageID, model)
+        ).getOrElse(blankNodeForMessage(model))
+      case _ => blankNodeForMessage(model)
     }
   }
 
-  def convert(file: File): Model = {
-    convert(new MimeMessage(null, new FileInputStream(file)))
+  private def blankNodeForMessage(model: Model): Resource = {
+    val messageResource = valueFactory.createBNode()
+    model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
+    messageResource
   }
 
-  def convert(message: Message): Model = {
+  def convert(messages: Traversable[Message]): Model = {
     val model = new LinkedHashModel
-    convert(message, model)
+    messages.foreach(message => convert(message, model))
     model
   }
 }

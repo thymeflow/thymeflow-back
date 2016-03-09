@@ -1,6 +1,6 @@
 package pkb.sync.converter
 
-import java.io.File
+import java.io.InputStream
 import java.net.{MalformedURLException, URI, URL}
 import java.text.SimpleDateFormat
 import javax.xml.datatype.{DatatypeConstants, DatatypeFactory}
@@ -22,7 +22,7 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class ICalConverter(valueFactory: ValueFactory) {
+class ICalConverter(valueFactory: ValueFactory) extends Converter {
 
   private val logger = LoggerFactory.getLogger(classOf[ICalConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
@@ -30,9 +30,8 @@ class ICalConverter(valueFactory: ValueFactory) {
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-
-  def convert(file: File): Model = {
-    convert(Biweekly.parse(file).all.asScala)
+  def convert(str: String): Model = {
+    convert(Biweekly.parse(str).all.asScala)
   }
 
   def convert(calendars: Traversable[ICalendar]): Model = {
@@ -230,7 +229,7 @@ class ICalConverter(valueFactory: ValueFactory) {
     }
   }
 
-  def convert(str: String): Model = {
-    convert(Biweekly.parse(str).all.asScala)
+  def convert(stream: InputStream): Model = {
+    convert(Biweekly.parse(stream).all.asScala)
   }
 }

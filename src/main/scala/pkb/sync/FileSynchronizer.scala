@@ -1,12 +1,15 @@
 package pkb.sync
 
-import java.io.File
+import java.io.{File, InputStream}
+import java.util.zip.ZipFile
 
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.{IRI, ValueFactory}
 import org.slf4j.LoggerFactory
 import pkb.rdf.model.document.Document
-import pkb.sync.converter.{EmailMessageConverter, ICalConverter, VCardConverter}
+import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
+
+import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -22,7 +25,7 @@ class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends
     retrieve(files.map(file => new File(file)))
   }
 
-  private def retrieve(files: Array[File]): Traversable[Document] = {
+  private def retrieve(files: Traversable[File]): Traversable[Document] = {
     files.flatMap(file =>
       if (file.isDirectory) {
         retrieve(file.listFiles())
@@ -34,16 +37,52 @@ class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends
 
   private def retrieve(file: File): Traversable[Document] = {
     FilenameUtils.getExtension(file.toString) match {
-      case "eml" => Some(new Document(iriForFile(file), emailMessageConverter.convert(file)))
-      case "ics" => Some(new Document(iriForFile(file), iCalConverter.convert(file)))
-      case "vcf" => Some(new Document(iriForFile(file), vCardConverter.convert(file)))
+      case "eml" => Some(convert(file, emailMessageConverter))
+      case "ics" => Some(convert(file, iCalConverter))
+      case "vcf" => Some(convert(file, vCardConverter))
+      case "zip" => retrieve(new ZipFile(file))
       case extension =>
         logger.info("Unsupported file extension " + extension + " for file " + file)
         None
     }
   }
 
+  private def retrieve(file: ZipFile): Traversable[Document] = {
+    file.entries().asScala.flatMap(entry =>
+      if (entry.isDirectory) {
+        None
+      } else {
+        retrieve(entry.getName, file.getInputStream(entry))
+      }
+    ).toTraversable
+  }
+
+  private def retrieve(fileName: String, stream: InputStream): Traversable[Document] = {
+    FilenameUtils.getExtension(fileName) match {
+      case "eml" => Some(convert(fileName, stream, emailMessageConverter))
+      case "ics" => Some(convert(fileName, stream, iCalConverter))
+      case "vcf" => Some(convert(fileName, stream, vCardConverter))
+      case extension =>
+        logger.info("Unsupported file extension " + extension + " for file " + fileName)
+        None
+    }
+  }
+
+  private def convert(file: File, converter: Converter): Document = {
+    new Document(iriForFile(file), converter.convert(file))
+  }
+
+  private def convert(fileName: String, stream: InputStream, converter: Converter): Document = {
+    val model = converter.convert(stream)
+    stream.close()
+    new Document(iriForFile(fileName), model)
+  }
+
   private def iriForFile(file: File): IRI = {
     valueFactory.createIRI(file.toURI.toString)
+  }
+
+  private def iriForFile(fileName: String): IRI = {
+    iriForFile(new File(fileName))
   }
 }

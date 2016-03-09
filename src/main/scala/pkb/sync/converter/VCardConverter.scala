@@ -1,6 +1,6 @@
 package pkb.sync.converter
 
-import java.io.File
+import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 
@@ -21,7 +21,7 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class VCardConverter(valueFactory: ValueFactory) {
+class VCardConverter(valueFactory: ValueFactory) extends Converter {
 
   private val logger = LoggerFactory.getLogger(classOf[VCardConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
@@ -29,9 +29,12 @@ class VCardConverter(valueFactory: ValueFactory) {
   //TODO: guess?
   private val uuidConverter = new UUIDConverter(valueFactory)
 
+  def convert(stream: InputStream): Model = {
+    convert(Ezvcard.parse(stream).all.asScala)
+  }
 
-  def convert(file: File): Model = {
-    convert(Ezvcard.parse(file).all.asScala)
+  def convert(str: String): Model = {
+    convert(Ezvcard.parse(str).all.asScala)
   }
 
   private def convert(vCards: Traversable[VCard]): Model = {
@@ -248,9 +251,5 @@ class VCardConverter(valueFactory: ValueFactory) {
         logger.warn("The URL " + url + " is invalid", e)
         None
     }
-  }
-
-  def convert(str: String): Model = {
-    convert(Ezvcard.parse(str).all.asScala)
   }
 }

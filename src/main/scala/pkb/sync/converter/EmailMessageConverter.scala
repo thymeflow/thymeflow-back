@@ -5,28 +5,23 @@ import javax.mail.Message.RecipientType
 import javax.mail._
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
-import org.slf4j.LoggerFactory
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class EmailMessageConverter(valueFactory: ValueFactory) extends Converter {
+class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
-  private val logger = LoggerFactory.getLogger(classOf[EmailMessageConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
   def convert(stream: InputStream): Model = {
     convert(new MimeMessage(null, stream))
-  }
-
-  override def convert(str: String): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
   }
 
   def convert(message: Message): Model = {
@@ -111,6 +106,10 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter {
     val messageResource = valueFactory.createBNode()
     model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
     messageResource
+  }
+
+  override def convert(str: String): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
   }
 
   def convert(messages: Traversable[Message]): Model = {

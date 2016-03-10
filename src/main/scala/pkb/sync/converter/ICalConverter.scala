@@ -9,10 +9,10 @@ import biweekly.component.VEvent
 import biweekly.property._
 import biweekly.util.{Duration, ICalDate}
 import biweekly.{Biweekly, ICalendar}
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
-import org.slf4j.LoggerFactory
 import pkb.rdf.model.vocabulary.SchemaOrg
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 
@@ -22,9 +22,8 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class ICalConverter(valueFactory: ValueFactory) extends Converter {
+class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
-  private val logger = LoggerFactory.getLogger(classOf[ICalConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageConverter = new EmailMessageUriConverter(valueFactory)
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)

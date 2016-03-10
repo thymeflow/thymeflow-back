@@ -2,17 +2,15 @@ package pkb.sync.converter.utils
 
 import java.util.regex.{Matcher, Pattern}
 
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import org.slf4j.{Logger, LoggerFactory}
 import pkb.rdf.model.vocabulary.SchemaOrg
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class GeoCoordinatesConverter(valueFactory: ValueFactory) {
-
-  private val logger: Logger = LoggerFactory.getLogger(classOf[GeoCoordinatesConverter])
+class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging {
 
   private val geoUriPattern = Pattern.compile("^geo:([+-]?\\d+(?:\\.\\d+)?),([+-]?\\d+(?:\\.\\d+)?)$")
 

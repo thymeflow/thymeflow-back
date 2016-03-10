@@ -3,9 +3,9 @@ package pkb.sync
 import java.io.{File, InputStream}
 import java.util.zip.ZipFile
 
+import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.{IRI, ValueFactory}
-import org.slf4j.LoggerFactory
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
 
@@ -14,9 +14,8 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends Synchronizer {
+class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends Synchronizer with StrictLogging {
 
-  private val logger = LoggerFactory.getLogger(classOf[FileSynchronizer])
   private val emailMessageConverter = new EmailMessageConverter(valueFactory)
   private val iCalConverter = new ICalConverter(valueFactory)
   private val vCardConverter = new VCardConverter(valueFactory)

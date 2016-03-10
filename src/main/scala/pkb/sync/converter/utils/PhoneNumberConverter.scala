@@ -3,17 +3,16 @@ package pkb.sync.converter.utils
 import java.net.URI
 
 import com.google.i18n.phonenumbers.{NumberParseException, PhoneNumberUtil, Phonenumber}
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import org.slf4j.LoggerFactory
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 /**
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) {
-  private val logger = LoggerFactory.getLogger(classOf[PhoneNumberConverter])
+class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) extends StrictLogging {
 
   def convert(telUri: URI, model: Model): Option[IRI] = {
     convert(telUri.toString, model)

@@ -4,6 +4,7 @@ import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 
+import com.typesafe.scalalogging.StrictLogging
 import ezvcard.parameter.{AddressType, EmailType, TelephoneType}
 import ezvcard.property._
 import ezvcard.util.DataUri
@@ -11,7 +12,6 @@ import ezvcard.{Ezvcard, VCard}
 import org.openrdf.model._
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.slf4j.LoggerFactory
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils._
 
@@ -21,9 +21,8 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class VCardConverter(valueFactory: ValueFactory) extends Converter {
+class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
-  private val logger = LoggerFactory.getLogger(classOf[VCardConverter])
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, "FR")
   //TODO: guess?
@@ -144,6 +143,13 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter {
     }
   }
 
+  private def convertToResource(str: String, model: Model, rdfTypes: IRI*): Resource = {
+    val placeResource = valueFactory.createBNode()
+    rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType))
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
+  }
+
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
     Option(dateTime.getDate).map(date => convert(date, dateTime.hasTime))
   }
@@ -196,13 +202,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter {
 
   private def convert(organization: Organization, model: Model): Resource = {
     convertToResource(organization.getValues.get(0), model, SchemaOrg.ORGANIZATION) //TODO: support hierarchy?
-  }
-
-  private def convertToResource(str: String, model: Model, rdfTypes: IRI*): Resource = {
-    val placeResource = valueFactory.createBNode()
-    rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType))
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
   }
 
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {

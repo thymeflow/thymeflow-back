@@ -4,7 +4,14 @@ version := "1.0"
 
 scalaVersion := "2.11.7"
 
-libraryDependencies += "org.slf4j" % "slf4j-jdk14" % "1.+"
+// Logging Traits
+// Logging tool
+val logLibraries = Seq(
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.1.0",
+  "org.slf4j" % "slf4j-jdk14" % "1.+"
+)
+
+libraryDependencies ++= logLibraries
 libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+" //If we want disk storage we should add sesame-sail-nativerdf
 libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+"

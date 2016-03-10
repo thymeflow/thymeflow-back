@@ -10,3 +10,6 @@ project/boot/
 project/plugins/project/
 .scala_dependencies
 .worksheet
+
+# IDE
+.idea

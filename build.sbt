@@ -11,7 +11,15 @@ val logLibraries = Seq(
   "org.slf4j" % "slf4j-jdk14" % "1.+"
 )
 
+// mime4j
+val mime4JLibraries = Seq(
+  // mime4j
+  "org.apache.james" % "apache-mime4j-core" % "0.7.2",
+  "org.apache.james" % "apache-mime4j-dom" % "0.7.2"
+)
+
 libraryDependencies ++= logLibraries
+libraryDependencies ++= mime4JLibraries
 libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+" //If we want disk storage we should add sesame-sail-nativerdf
 libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+"

@@ -2,8 +2,8 @@ package pkb.sync
 
 import javax.mail.{Folder, Store}
 
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.{Model, ValueFactory}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.EmailMessageConverter
 
@@ -15,7 +15,7 @@ class EmailSynchronizer(valueFactory: ValueFactory, store: Store, limit: Int) ex
   private val emailMessageConverter = new EmailMessageConverter(valueFactory)
 
   def synchronize(): Traversable[Document] = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     addFolderToModel(store.getFolder("INBOX"), limit, model) //TODO: discover other folders
     Array(new Document(null, model))
   }

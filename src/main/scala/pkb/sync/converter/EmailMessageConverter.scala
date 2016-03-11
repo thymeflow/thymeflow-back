@@ -2,13 +2,11 @@ package pkb.sync.converter
 
 import java.io.{ByteArrayInputStream, InputStream}
 import java.time._
-import java.time.format.DateTimeFormatter
 import java.time.temporal.Temporal
 import java.util.Locale
 import javax.mail.Message.RecipientType
 import javax.mail.{Address, Message}
 import javax.mail.internet.{InternetAddress, AddressException, MimeMessage}
-import org.apache.james.mime4j.field.address.AddressBuilder
 
 import scala.collection.JavaConverters._
 import com.typesafe.scalalogging.StrictLogging
@@ -16,9 +14,9 @@ import org.apache.james.mime4j.codec.{DecodeMonitor, DecoderUtil}
 import org.apache.james.mime4j.dom.address.{Group, Mailbox}
 import org.apache.james.mime4j.field.AddressListFieldImpl
 import org.apache.james.mime4j.stream._
-import org.openrdf.model.impl.LinkedHashModel
-import org.openrdf.model.vocabulary.RDF
+import org.openrdf.model.vocabulary.{XMLSchema, RDF}
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
 import pkb.utilities.mail.LenientDateParser
@@ -27,10 +25,7 @@ import pkb.utilities.mail.LenientDateParser
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-
-case class EmailAddress(name: Option[String],
-                        localPart: String,
-                        domain: String)
+case class EmailAddress(name: Option[String], resource: IRI)
 
 case class EmailMessage(messageId: Option[String],
                         subject: Option[String],
@@ -59,8 +54,14 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
   }
 
   def convert(mimeTokenStream: MimeTokenStream): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     convert(mimeTokenStream, model)
+    model
+  }
+
+  def convert(message: Message): Model = {
+    val model = new SimpleHashModel(valueFactory)
+    convert(message, model)
     model
   }
 
@@ -95,13 +96,13 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
                 dateOption = parseDate(field)
               case "to" | "from" | "cc" | "bcc" =>
                 def emailAddress(mailbox: Mailbox) = {
-                  Option(mailbox.getLocalPart).map {
+                  Option(mailbox.getLocalPart).flatMap {
                     case localPart =>
                       val domain = Option(mailbox.getDomain).getOrElse("")
                       val name = Option(mailbox.getName)
-                      EmailAddress(name = name,
-                        localPart = localPart,
-                        domain = domain)
+                      emailAddressConverter.convert(localPart, domain, model).map{
+                        resource => EmailAddress(name, resource)
+                      }
                   }
                 }
                 val addressList = AddressListFieldImpl.PARSER.parse(field, DecodeMonitor.SILENT).getAddressList
@@ -131,7 +132,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       }
       state = mimeTokenStream.next
     }
-    val adjustedDateOption = adjustDeliveryDate(deliveryDateOption, dateOption)
+    val adjustedDateOption = adjustDateUsingDeliveryDate(deliveryDateOption, dateOption)
     convert(EmailMessage(messageId = messageId, subject = subjectOption, date = adjustedDateOption, from = from, to = to, bcc = bcc, cc = cc), model)
   }
 
@@ -144,7 +145,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     addAddresses(message.bcc, messageResource, Personal.BLIND_COPY_RECIPIENT, model)
 
     message.date.foreach(date =>
-      model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date.toString))
+      model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date.toString, XMLSchema.DATETIME))
     )
     message.subject.foreach(subject =>
       model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject))
@@ -165,7 +166,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     address.name.foreach(name =>
       model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
     )
-    model.add(personResource, SchemaOrg.EMAIL, emailAddressConverter.convert(localPart = address.localPart, domain = address.domain, model))
+    model.add(personResource, SchemaOrg.EMAIL, address.resource)
     personResource
   }
 
@@ -181,7 +182,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     messageResource
   }
 
-  def adjustDeliveryDate(deliveryDateOption: Option[Temporal], dateOption: Option[Temporal]) = {
+  def adjustDateUsingDeliveryDate(deliveryDateOption: Option[Temporal], dateOption: Option[Temporal]) = {
     deliveryDateOption match {
       case Some(deliveryDate: OffsetDateTime) =>
         dateOption match {
@@ -192,6 +193,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
               duration.getSeconds.toDouble + duration.getNano.toDouble / 1000000000.0d
             }
             val d = durationToSecondsDouble(Duration.between(deliveryDateUTCLocalDateTime, localDateTime))
+            // TODO: Guess half-hour offsets
             val offsetHours = Math.round(d / 3600.00).toInt
             Some(OffsetDateTime.of(localDateTime, ZoneOffset.ofHours(offsetHours)))
           case _ => dateOption
@@ -209,13 +211,14 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
   def parseDate(field: Field) = {
     val date = LenientDateParser.parse(field.getBody)
     if (date.isEmpty) {
+      // Should rarely happen
       logger.warn(s"Cannot parse date ${field.getBody}")
     }
     date
   }
 
   def convert(messages: Traversable[Message]): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     messages.foreach(message => convert(message, model))
     model
   }
@@ -231,14 +234,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       address match {
         case internetAddress: InternetAddress =>
           Option(internetAddress.getAddress).flatMap {
-            case email =>
-              val mailbox = AddressBuilder.DEFAULT.parseMailbox(email)
-              Option(mailbox.getLocalPart).map {
-                case localPart =>
-                  val domain = Option(mailbox.getDomain).getOrElse("")
-                  EmailAddress(name = Option(internetAddress.getPersonal),
-                    localPart = localPart,
-                    domain = domain)
+            case emailAddress =>
+              emailAddressConverter.convert(emailAddress, model).map{
+                resource => EmailAddress(name = Option(internetAddress.getPersonal), resource = resource)
               }
           }
         case _ =>

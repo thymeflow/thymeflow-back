@@ -10,8 +10,8 @@ import ezvcard.property._
 import ezvcard.util.DataUri
 import ezvcard.{Ezvcard, VCard}
 import org.openrdf.model._
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils._
 
@@ -37,7 +37,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   }
 
   private def convert(vCards: Traversable[VCard]): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     vCards.foreach(vCard =>
       convert(vCard, model)
     )
@@ -61,7 +61,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       //DEATHDATE
       case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
       //EMAIL
-      case email: Email => model.add(cardResource, SchemaOrg.EMAIL, convert(email, model))
+      case email: Email =>
+        convert(email, model).foreach{
+          resource => model.add(cardResource, SchemaOrg.EMAIL, resource)
+        }
       //FN
       case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue))
       //N
@@ -143,13 +146,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
   }
 
-  private def convertToResource(str: String, model: Model, rdfTypes: IRI*): Resource = {
-    val placeResource = valueFactory.createBNode()
-    rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType))
-    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
-    placeResource
-  }
-
   private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
     Option(dateTime.getDate).map(date => convert(date, dateTime.hasTime))
   }
@@ -165,12 +161,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
   }
 
-  private def convert(email: Email, model: Model): Resource = {
-    val emailResource = emailAddressConverter.convert(email.getValue, model)
-    email.getTypes.asScala.foreach(emailType =>
-      model.add(emailResource, RDF.TYPE, classForEmailType(emailType))
-    )
-    emailResource
+  private def convert(email: Email, model: Model): Option[Resource] = {
+    emailAddressConverter.convert(email.getValue, model).map{
+      resource =>
+        email.getTypes.asScala.foreach(emailType =>
+          model.add(resource, RDF.TYPE, classForEmailType(emailType))
+        )
+        resource
+    }
   }
 
   private def classForEmailType(emailType: EmailType): IRI = {
@@ -202,6 +200,13 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
 
   private def convert(organization: Organization, model: Model): Resource = {
     convertToResource(organization.getValues.get(0), model, SchemaOrg.ORGANIZATION) //TODO: support hierarchy?
+  }
+
+  private def convertToResource(str: String, model: Model, rdfTypes: IRI*): Resource = {
+    val placeResource = valueFactory.createBNode()
+    rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType))
+    model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str))
+    placeResource
   }
 
   private def convert(telephone: Telephone, model: Model): Option[Resource] = {

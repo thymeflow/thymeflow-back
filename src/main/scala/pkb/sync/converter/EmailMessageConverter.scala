@@ -6,9 +6,9 @@ import javax.mail._
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
 
@@ -24,8 +24,12 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream))
   }
 
+  override def convert(str: String): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
+  }
+
   def convert(message: Message): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     convert(message, model)
     model
   }
@@ -108,12 +112,8 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     messageResource
   }
 
-  override def convert(str: String): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
-  }
-
   def convert(messages: Traversable[Message]): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     messages.foreach(message => convert(message, model))
     model
   }

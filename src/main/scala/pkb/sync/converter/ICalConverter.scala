@@ -10,9 +10,9 @@ import biweekly.property._
 import biweekly.util.{Duration, ICalDate}
 import biweekly.{Biweekly, ICalendar}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Literal, Model, Resource, ValueFactory}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.SchemaOrg
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 
@@ -34,7 +34,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
   }
 
   def convert(calendars: Traversable[ICalendar]): Model = {
-    val model = new LinkedHashModel
+    val model = new SimpleHashModel(valueFactory)
     for (calendar <- calendars) {
       convert(calendar, model)
     }

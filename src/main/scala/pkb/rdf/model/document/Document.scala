@@ -1,7 +1,7 @@
 package pkb.rdf.model.document
 
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.model.{IRI, Model}
+import pkb.rdf.model.SimpleHashModel
 
 import scala.collection.JavaConverters._
 
@@ -10,10 +10,10 @@ import scala.collection.JavaConverters._
   */
 class Document(val iri: IRI, val triples: Model) {
   val model = {
-    val editableModel = new LinkedHashModel()
+    val editableModel = new SimpleHashModel()
     triples.iterator.asScala.foreach(triple =>
       editableModel.add(triple.getSubject, triple.getPredicate, triple.getObject, iri)
     )
-    editableModel.unmodifiable()
+    editableModel //TODO: make the model readonly
   }
 }

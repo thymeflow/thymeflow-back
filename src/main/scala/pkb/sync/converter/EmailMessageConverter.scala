@@ -5,21 +5,22 @@ import java.time._
 import java.time.temporal.Temporal
 import java.util.Locale
 import javax.mail.Message.RecipientType
+import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message}
-import javax.mail.internet.{InternetAddress, AddressException, MimeMessage}
 
-import scala.collection.JavaConverters._
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.james.mime4j.codec.{DecodeMonitor, DecoderUtil}
 import org.apache.james.mime4j.dom.address.{Group, Mailbox}
 import org.apache.james.mime4j.field.AddressListFieldImpl
 import org.apache.james.mime4j.stream._
-import org.openrdf.model.vocabulary.{XMLSchema, RDF}
+import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
 import pkb.utilities.mail.LenientDateParser
+
+import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -59,12 +60,6 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     model
   }
 
-  def convert(message: Message): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    convert(message, model)
-    model
-  }
-
   private def convert(mimeTokenStream: MimeTokenStream, model: Model): Resource = {
     var state = mimeTokenStream.getState
     var deliveryDateOption: Option[Temporal] = None
@@ -100,7 +95,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
                     case localPart =>
                       val domain = Option(mailbox.getDomain).getOrElse("")
                       val name = Option(mailbox.getName)
-                      emailAddressConverter.convert(localPart, domain, model).map{
+                      emailAddressConverter.convert(localPart, domain, model).map {
                         resource => EmailAddress(name, resource)
                       }
                   }
@@ -217,6 +212,12 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     date
   }
 
+  def convert(message: Message): Model = {
+    val model = new SimpleHashModel(valueFactory)
+    convert(message, model)
+    model
+  }
+
   def convert(messages: Traversable[Message]): Model = {
     val model = new SimpleHashModel(valueFactory)
     messages.foreach(message => convert(message, model))
@@ -235,7 +236,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         case internetAddress: InternetAddress =>
           Option(internetAddress.getAddress).flatMap {
             case emailAddress =>
-              emailAddressConverter.convert(emailAddress, model).map{
+              emailAddressConverter.convert(emailAddress, model).map {
                 resource => EmailAddress(name = Option(internetAddress.getPersonal), resource = resource)
               }
           }
@@ -247,7 +248,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     def addAddresses(addresses: () => Array[Address]): Vector[EmailAddress] = {
       try {
-        addresses().flatMap(emailAddress)(scala.collection.breakOut)
+        Option(addresses()).getOrElse {
+          Array()
+        }.flatMap(emailAddress)(scala.collection.breakOut)
       } catch {
         case e: AddressException => Vector()
       }

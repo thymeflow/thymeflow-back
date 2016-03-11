@@ -33,6 +33,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     convert(Biweekly.parse(str).all.asScala)
   }
 
+  def convert(stream: InputStream): Model = {
+    convert(Biweekly.parse(stream).all.asScala)
+  }
+
   def convert(calendars: Traversable[ICalendar]): Model = {
     val model = new SimpleHashModel(valueFactory)
     for (calendar <- calendars) {
@@ -110,7 +114,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
     )
     Option(attendee.getEmail).foreach(email =>
-      emailAddressConverter.convert(email, model).foreach{
+      emailAddressConverter.convert(email, model).foreach {
         resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
       }
     )
@@ -118,7 +122,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       try {
         val uri = new URI(url)
         if (uri.getScheme == "message") {
-          emailAddressConverter.convert(uri, model).foreach{
+          emailAddressConverter.convert(uri, model).foreach {
             resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
           }
         } else {
@@ -182,7 +186,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
     )
     Option(organizer.getEmail).foreach(email =>
-      emailAddressConverter.convert(email, model).foreach{
+      emailAddressConverter.convert(email, model).foreach {
         resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
       }
     )
@@ -190,7 +194,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       try {
         val uri = new URI(url)
         if (uri.getScheme == "message") {
-          emailAddressConverter.convert(uri, model).foreach{
+          emailAddressConverter.convert(uri, model).foreach {
             resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
           }
         } else {
@@ -233,9 +237,5 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     } else {
       uuidConverter.convert(uid.getValue)
     }
-  }
-
-  def convert(stream: InputStream): Model = {
-    convert(Biweekly.parse(stream).all.asScala)
   }
 }

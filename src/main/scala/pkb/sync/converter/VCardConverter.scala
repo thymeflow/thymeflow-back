@@ -62,7 +62,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
       //EMAIL
       case email: Email =>
-        convert(email, model).foreach{
+        convert(email, model).foreach {
           resource => model.add(cardResource, SchemaOrg.EMAIL, resource)
         }
       //FN
@@ -162,7 +162,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   }
 
   private def convert(email: Email, model: Model): Option[Resource] = {
-    emailAddressConverter.convert(email.getValue, model).map{
+    emailAddressConverter.convert(email.getValue, model).map {
       resource =>
         email.getTypes.asScala.foreach(emailType =>
           model.add(resource, RDF.TYPE, classForEmailType(emailType))
@@ -239,14 +239,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     resourceFromUrl(url.getValue)
   }
 
-  private def resourceFromUid(uid: Uid): Resource = {
-    if (uid == null) {
-      valueFactory.createBNode()
-    } else {
-      uuidConverter.convert(uid.getValue)
-    }
-  }
-
   private def resourceFromUrl(url: String): Option[Resource] = {
     try {
       Some(valueFactory.createIRI(url))
@@ -254,6 +246,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       case e: IllegalArgumentException =>
         logger.warn("The URL " + url + " is invalid", e)
         None
+    }
+  }
+
+  private def resourceFromUid(uid: Uid): Resource = {
+    if (uid == null) {
+      valueFactory.createBNode()
+    } else {
+      uuidConverter.convert(uid.getValue)
     }
   }
 }

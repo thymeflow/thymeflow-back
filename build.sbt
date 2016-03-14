@@ -8,7 +8,8 @@ scalaVersion := "2.11.7"
 // Logging tool
 val logLibraries = Seq(
   "com.typesafe.scala-logging" %% "scala-logging" % "3.1.0",
-  "org.slf4j" % "slf4j-jdk14" % "1.+"
+  "ch.qos.logback" % "logback-classic" % "1.1.3",
+  "org.slf4j" % "slf4j-api" % "1.7.12"
 )
 
 libraryDependencies ++= logLibraries

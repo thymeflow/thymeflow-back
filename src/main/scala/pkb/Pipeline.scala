@@ -2,6 +2,7 @@ package pkb
 
 import java.util
 
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.Statement
 import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.repository.RepositoryConnection
@@ -16,7 +17,7 @@ import scala.collection.mutable.ArrayBuffer
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection) {
+class Pipeline(repositoryConnection: RepositoryConnection) extends StrictLogging {
 
   private val synchronizers = new ArrayBuffer[Synchronizer]
 
@@ -32,8 +33,12 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
 
   def run(numberOfIterations: Int = -1): Unit = {
     for (i <- 1 to numberOfIterations) {
+      logger.info(s"Executing pipeline iteration {iteration=$i}")
+      logger.info(s"Synchronizing repository {iteration=$i}")
       val diff = synchronizeRepository
+      logger.info(s"Performing inference {iteration=$i}")
       doInference(diff)
+      logger.info(s"Pipeline iteration done {iteration=$i}")
       if (i < numberOfIterations) {
         Thread.sleep(60000) //1 mn
       }
@@ -42,35 +47,39 @@ class Pipeline(repositoryConnection: RepositoryConnection) {
 
   private def synchronizeRepository: ModelDiff = {
     val diff = new ModelDiff(new LinkedHashModel(), new LinkedHashModel())
+
     newDocuments.foreach(document => {
       addDocumentToRepository(document, diff)
     })
+
     diff
   }
 
   private def newDocuments: Traversable[Document] = {
-    synchronizers.flatMap(_.synchronize())
+    logger.info("Getting new documents...")
+    val result = synchronizers.flatMap(_.synchronize())
+    logger.info("Done getting new documents.")
+    result
   }
 
   private def addDocumentToRepository(document: Document, diff: ModelDiff): Unit = {
     repositoryConnection.begin()
-
-    val statements = new util.HashSet[Statement](document.model)
-
     //Removes the removed statements from the repository and the already existing statements from statements
+    val statements = new util.HashSet[Statement](document.model)
+    val statementsToRemove = new util.HashSet[Statement]()
+
     repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
       if (document.model.contains(existingStatement)) {
         statements.remove(existingStatement)
       } else {
-        repositoryConnection.remove(existingStatement)
-        diff.removed.add(existingStatement)
+        statementsToRemove.add(existingStatement)
       }
     )
 
-    //Add the new statements
-    repositoryConnection.add(statements)
+    diff.removed.addAll(statementsToRemove)
     diff.added.addAll(statements)
-
+    repositoryConnection.remove(statementsToRemove)
+    repositoryConnection.add(statements)
     repositoryConnection.commit()
   }
 

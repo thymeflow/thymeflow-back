@@ -1,26 +1,30 @@
 name := "pkb"
 
-version := "1.0"
+version := "0.1"
 
-scalaVersion := "2.11.7"
+scalaVersion := "2.11.8"
 
-// Logging Traits
-// Logging tool
-val logLibraries = Seq(
-  "com.typesafe.scala-logging" %% "scala-logging" % "3.1.0",
-  "ch.qos.logback" % "logback-classic" % "1.1.3",
-  "org.slf4j" % "slf4j-api" % "1.7.12"
-)
-
-libraryDependencies ++= logLibraries
+libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+"
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.3"
 libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+" //If we want disk storage we should add sesame-sail-nativerdf
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-ntriples" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-nquads" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-n3" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfjson" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trig" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trix" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqljson" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqlxml" % "4.+"
+libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-text" % "4.+"
 libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+"
 libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+"
 libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+"
 libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+"
-libraryDependencies += "com.fasterxml.jackson.core" % "jackson-core" % "2.+"
-libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.+"
+libraryDependencies += "com.fasterxml.jackson.core" % "jackson-core" % "2.6.+" //Lf2SpacesIndenter is no more available on Jackson 2.7
+libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.+"
 libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+"
-libraryDependencies += "org.eclipse.jetty" % "jetty-webapp" % "9.+"
+libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+"
+libraryDependencies += "io.spray" %% "spray-can" % "1.+"
+libraryDependencies += "io.spray" %% "spray-routing" % "1.+"

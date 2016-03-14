@@ -9,8 +9,8 @@ import org.openrdf.model.impl.SimpleValueFactory
 /**
   * @author Thomas Pellissier Tanon
   */
-class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance())
-  extends util.HashSet[Statement] with Model {
+class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance(), statements: util.HashSet[Statement] = SimpleHashModel.emptySet)
+  extends util.HashSet[Statement](statements) with Model {
 
   override def add(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {
     toStatements(subj, pred, obj, contexts).map(add).reduce(_ || _)
@@ -77,4 +77,8 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
   override def getValueFactory: ValueFactory = {
     valueFactory
   }
+}
+
+object SimpleHashModel {
+  private val emptySet = new util.HashSet[Statement]()
 }

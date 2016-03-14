@@ -1,91 +1,114 @@
 package pkb.sync
 
-import java.io.{File, InputStream}
+import java.io.{File, FileInputStream, InputStream}
 import java.util.zip.ZipFile
 
+import akka.actor.Props
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.ActorPublisherMessage.Request
+import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.FilenameUtils
-import org.openrdf.model.{IRI, ValueFactory}
+import org.openrdf.model.ValueFactory
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
 
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends Synchronizer with StrictLogging {
+object FileSynchronizer {
 
-  private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-  private val iCalConverter = new ICalConverter(valueFactory)
-  private val vCardConverter = new VCardConverter(valueFactory)
+  def source(valueFactory: ValueFactory) =
+    Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
-  def synchronize(): Traversable[Document] = {
-    retrieve(files.map(file => new File(file)))
+  case class Config(files: Traversable[String]) {
   }
 
-  private def retrieve(files: Traversable[File]): Traversable[Document] = {
-    files.flatMap(file =>
-      if (file.isDirectory) {
-        retrieve(file.listFiles())
-      } else {
-        retrieve(file)
+  private class Publisher(valueFactory: ValueFactory) extends ActorPublisher[Document] with StrictLogging {
+
+    private val emailMessageConverter = new EmailMessageConverter(valueFactory)
+    private val iCalConverter = new ICalConverter(valueFactory)
+    private val vCardConverter = new VCardConverter(valueFactory)
+    private val queue = new mutable.Queue[ConvertibleFile]
+
+    override def receive: Receive = {
+      case Request =>
+        deliverWaitingMessages()
+      case config: Config =>
+        retrieveFiles(config.files.map(new File(_)))
+    }
+
+    private def retrieveFiles(files: Traversable[File]): Unit = {
+      files.foreach(file =>
+        if (file.isDirectory) {
+          retrieveFiles(file.listFiles())
+        } else {
+          retrieveFile(file)
+        }
+      )
+    }
+
+    private def retrieveFile(file: File): Unit = {
+      FilenameUtils.getExtension(file.toString) match {
+        case "eml" => addFile(ConvertibleFile(file, emailMessageConverter))
+        case "ics" => addFile(ConvertibleFile(file, iCalConverter))
+        case "vcf" => addFile(ConvertibleFile(file, vCardConverter))
+        case "zip" => retrieveFile(new ZipFile(file))
+        case extension =>
+          logger.info("Unsupported file extension " + extension + " for file " + file)
       }
-    )
-  }
-
-  private def retrieve(file: File): Traversable[Document] = {
-    FilenameUtils.getExtension(file.toString) match {
-      case "eml" => Some(convert(file, emailMessageConverter))
-      case "ics" => Some(convert(file, iCalConverter))
-      case "vcf" => Some(convert(file, vCardConverter))
-      case "zip" => retrieve(new ZipFile(file))
-      case extension =>
-        logger.info("Unsupported file extension " + extension + " for file " + file)
-        None
     }
-  }
 
-  private def retrieve(file: ZipFile): Traversable[Document] = {
-    val documents = file.entries().asScala.map(entry =>
-      if (entry.isDirectory) {
-        Vector()
-      } else {
-        retrieve(entry.getName, file.getInputStream(entry))
+    private def retrieveFile(file: ZipFile): Unit = {
+      file.entries().asScala.foreach(entry =>
+        if (!entry.isDirectory) {
+          retrieveFile(entry.getName, file.getInputStream(entry))
+        }
+      )
+    }
+
+    private def retrieveFile(fileName: String, stream: InputStream): Unit = {
+      FilenameUtils.getExtension(fileName) match {
+        case "eml" => addFile(ConvertibleFile(new File(fileName), emailMessageConverter, Some(stream)))
+        case "ics" => addFile(ConvertibleFile(new File(fileName), iCalConverter, Some(stream)))
+        case "vcf" => addFile(ConvertibleFile(new File(fileName), vCardConverter, Some(stream)))
+        case extension =>
+          logger.info("Unsupported file extension " + extension + " for file " + fileName)
       }
-    ) ++ {
-      file.close()
-      None
     }
-    documents.flatten.toTraversable
-  }
 
-  private def retrieve(fileName: String, stream: InputStream): Traversable[Document] = {
-    FilenameUtils.getExtension(fileName) match {
-      case "eml" => Some(convert(fileName, stream, emailMessageConverter))
-      case "ics" => Some(convert(fileName, stream, iCalConverter))
-      case "vcf" => Some(convert(fileName, stream, vCardConverter))
-      case extension =>
-        logger.info("Unsupported file extension " + extension + " for file " + fileName)
-        None
+    private def addFile(file: ConvertibleFile): Unit = {
+      if (waitingForData) {
+        onNext(file)
+      } else {
+        queue.enqueue(file)
+      }
     }
-  }
 
-  private def convert(file: File, converter: Converter): Document = {
-    new Document(iriForFile(file), converter.convert(file))
-  }
+    private def onNext(file: ConvertibleFile): Unit = {
+      onNext(file.read())
+    }
 
-  private def convert(fileName: String, stream: InputStream, converter: Converter): Document = {
-    val model = converter.convert(stream)
-    stream.close()
-    new Document(iriForFile(fileName), model)
-  }
+    private def deliverWaitingMessages(): Unit = {
+      while (waitingForData && queue.nonEmpty) {
+        onNext(queue.dequeue())
+      }
+    }
 
-  private def iriForFile(file: File): IRI = {
-    valueFactory.createIRI(file.toURI.toString)
-  }
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
+    }
 
-  private def iriForFile(fileName: String): IRI = {
-    iriForFile(new File(fileName))
+    private case class ConvertibleFile(path: File, converter: Converter, inputStream: Option[InputStream] = None) {
+      def read(): Document = {
+        val stream = inputStream.getOrElse(new FileInputStream(path))
+        val model = converter.convert(stream)
+        stream.close()
+        new Document(valueFactory.createIRI(path.toURI.toString), model)
+      }
+    }
   }
 }

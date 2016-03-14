@@ -1,72 +1,65 @@
 package pkb
 
-import java.util
-
+import akka.NotUsed
+import akka.actor.ActorRef
+import akka.stream.SourceShape
+import akka.stream.scaladsl._
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.Statement
-import org.openrdf.model.impl.LinkedHashModel
 import org.openrdf.repository.RepositoryConnection
+import pkb.actors._
 import pkb.inferencer.Inferencer
 import pkb.rdf.Converters._
-import pkb.rdf.model.ModelDiff
 import pkb.rdf.model.document.Document
-import pkb.sync.Synchronizer
-
-import scala.collection.mutable.ArrayBuffer
+import pkb.rdf.model.{ModelDiff, SimpleHashModel}
+import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection) extends StrictLogging {
+class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable[Inferencer])
+  extends StrictLogging {
 
-  private val synchronizers = new ArrayBuffer[Synchronizer]
+  private val actorRefs = buildSource()
+    .via(buildRepositoryInsertion())
+    .via(buildInferenceSystem())
+    .to(Sink.ignore)
+    .run()
 
-  private val inferencers = new ArrayBuffer[Inferencer]
-
-  def addSynchronizer(synchronizer: Synchronizer): Unit = {
-    synchronizers += synchronizer
+  def addSource[T](sourceConfig: T): Unit = {
+    actorRefs.foreach(_ ! sourceConfig)
   }
 
-  def addInferencer(inferencer: Inferencer): Unit = {
-    inferencers += inferencer
-  }
+  private def buildSource(): Source[Document, List[ActorRef]] = {
+    //TODO: find a way to not hardcode synchronizers
+    val valueFactory = repositoryConnection.getValueFactory
 
-  def run(numberOfIterations: Int = -1): Unit = {
-    for (i <- 1 to numberOfIterations) {
-      logger.info(s"Executing pipeline iteration {iteration=$i}")
-      logger.info(s"Synchronizing repository {iteration=$i}")
-      val diff = synchronizeRepository
-      logger.info(s"Performing inference {iteration=$i}")
-      doInference(diff)
-      logger.info(s"Pipeline iteration done {iteration=$i}")
-      if (i < numberOfIterations) {
-        Thread.sleep(60000) //1 mn
-      }
-    }
-  }
+    val files = FileSynchronizer.source(valueFactory)
+    val calDav = CalDavSynchronizer.source(valueFactory)
+    val cardDav = CardDavSynchronizer.source(valueFactory)
+    val emails = EmailSynchronizer.source(valueFactory)
+    Source.fromGraph[Document, List[ActorRef]](GraphDSL.create(files, calDav, cardDav, emails)(List(_, _, _, _)) { implicit builder =>
+      (files, calDav, cardDav, emails) =>
+        import GraphDSL.Implicits._
 
-  private def synchronizeRepository: ModelDiff = {
-    val diff = new ModelDiff(new LinkedHashModel(), new LinkedHashModel())
+        val merge = builder.add(Merge[Document](4))
+        files ~> merge
+        calDav ~> merge
+        cardDav ~> merge
+        emails ~> merge
 
-    newDocuments.foreach(document => {
-      addDocumentToRepository(document, diff)
+        SourceShape(merge.out)
     })
-
-    diff
   }
 
-  private def newDocuments: Traversable[Document] = {
-    logger.info("Getting new documents...")
-    val result = synchronizers.flatMap(_.synchronize())
-    logger.info("Done getting new documents.")
-    result
+  private def buildRepositoryInsertion(): Flow[Document, ModelDiff, NotUsed] = {
+    Flow[Document].map(addDocumentToRepository)
   }
 
-  private def addDocumentToRepository(document: Document, diff: ModelDiff): Unit = {
+  private def addDocumentToRepository(document: Document): ModelDiff = {
     repositoryConnection.begin()
     //Removes the removed statements from the repository and the already existing statements from statements
-    val statements = new util.HashSet[Statement](document.model)
-    val statementsToRemove = new util.HashSet[Statement]()
+    val statements = new SimpleHashModel(document.model.getValueFactory, document.model)
+    val statementsToRemove = new SimpleHashModel(document.model.getValueFactory)
 
     repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
       if (document.model.contains(existingStatement)) {
@@ -76,14 +69,21 @@ class Pipeline(repositoryConnection: RepositoryConnection) extends StrictLogging
       }
     )
 
-    diff.removed.addAll(statementsToRemove)
-    diff.added.addAll(statements)
     repositoryConnection.remove(statementsToRemove)
     repositoryConnection.add(statements)
     repositoryConnection.commit()
+
+    new ModelDiff(statements, statementsToRemove)
   }
 
-  private def doInference(diff: ModelDiff): Unit = {
-    inferencers.foreach(_.infer(diff))
+  private def buildInferenceSystem(): Flow[ModelDiff, ModelDiff, NotUsed] = {
+    var flow = Flow[ModelDiff]
+    inferencers.foreach(inferencer =>
+      flow = flow.map(diff => {
+        inferencer.infer(diff)
+        diff
+      })
+    )
+    flow
   }
 }

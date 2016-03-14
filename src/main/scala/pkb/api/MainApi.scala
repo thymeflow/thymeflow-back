@@ -2,12 +2,12 @@ package pkb.api
 
 import java.io.ByteArrayOutputStream
 
-import akka.actor.ActorSystem
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
 import org.openrdf.query._
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
 import org.openrdf.rio.RDFWriterRegistry
+import pkb.actors._
 import pkb.rdf.RepositoryFactory
 import spray.http.HttpHeaders.{Accept, `Content-Type`}
 import spray.http._
@@ -20,7 +20,6 @@ import scala.compat.java8.OptionConverters._
   */
 object MainApi extends App with SimpleRoutingApp {
 
-  implicit val system = ActorSystem("pkb")
   val `application/sparql-query` = MediaTypes.register(MediaType.custom("application", "sparql-query", compressible = true))
   private val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
 

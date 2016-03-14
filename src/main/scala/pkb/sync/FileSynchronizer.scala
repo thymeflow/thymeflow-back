@@ -47,13 +47,15 @@ class FileSynchronizer(valueFactory: ValueFactory, files: Array[String]) extends
   }
 
   private def retrieve(file: ZipFile): Traversable[Document] = {
-    file.entries().asScala.flatMap(entry =>
+    val documents = file.entries().asScala.flatMap(entry =>
       if (entry.isDirectory) {
         None
       } else {
         retrieve(entry.getName, file.getInputStream(entry))
       }
     ).toTraversable
+    file.close()
+    documents
   }
 
   private def retrieve(fileName: String, stream: InputStream): Traversable[Document] = {

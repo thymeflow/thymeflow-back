@@ -1,8 +1,19 @@
 name := "pkb"
 
-version := "0.1"
+val testLibraries = Seq("org.scalatest" %% "scalatest" % "2.2.4")
 
-scalaVersion := "2.11.8"
+lazy val rootSettings = Seq(
+  version := "0.1",
+  scalaVersion := "2.11.8",
+  libraryDependencies ++= testLibraries
+)
+
+lazy val commonSettings = rootSettings ++ Seq(
+  scalaSource in Compile := baseDirectory.value / "src/main",
+  scalaSource in Test := baseDirectory.value / "src/test",
+  javaSource in Compile := baseDirectory.value / "src/main",
+  javaSource in Test := baseDirectory.value / "src/test"
+)
 
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.3"
@@ -12,6 +23,7 @@ val mime4JLibraries = Seq(
   "org.apache.james" % "apache-mime4j-core" % "0.7.2",
   "org.apache.james" % "apache-mime4j-dom" % "0.7.2"
 )
+
 libraryDependencies ++= mime4JLibraries
 libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+" //If we want disk storage we should add sesame-sail-nativerdf
@@ -35,3 +47,13 @@ libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+"
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+"
 libraryDependencies += "io.spray" %% "spray-can" % "1.+"
 libraryDependencies += "io.spray" %% "spray-routing" % "1.+"
+
+lazy val pkb = (project in file(".")).settings(rootSettings)
+
+lazy val thymeflowProject = Project (
+  id="thymeflow",
+  base=file("thymeflow")
+).settings(commonSettings:_*).settings(
+  libraryDependencies += "org.elasticsearch" % "elasticsearch" % "2.2.0",
+  libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.3.+"
+).dependsOn(pkb)

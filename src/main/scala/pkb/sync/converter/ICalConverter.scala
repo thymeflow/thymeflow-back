@@ -33,6 +33,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     convert(Biweekly.parse(str).all.asScala)
   }
 
+  def convert(stream: InputStream): Model = {
+    convert(Biweekly.parse(stream).all.asScala)
+  }
+
   def convert(calendars: Traversable[ICalendar]): Model = {
     val model = new SimpleHashModel(valueFactory)
     for (calendar <- calendars) {
@@ -87,7 +91,6 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
               model.add(emailMessageConverter.convert(uri, model), SchemaOrg.ABOUT, eventResource)
             } else {
               convert(url).foreach(url => model.add(eventResource, SchemaOrg.URL, url))
-              logger.info("Event URL that is not an message: URI: " + uri)
             }
           } catch {
             case e: IllegalArgumentException =>
@@ -111,13 +114,17 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
     )
     Option(attendee.getEmail).foreach(email =>
-      model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(email, model))
+      emailAddressConverter.convert(email, model).foreach {
+        resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
+      }
     )
     Option(attendee.getUri).foreach(url =>
       try {
         val uri = new URI(url)
         if (uri.getScheme == "message") {
-          model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(uri, model))
+          emailAddressConverter.convert(uri, model).foreach {
+            resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
+          }
         } else {
           model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url))
           logger.info("Attendee address that is not a mailto URI: " + url)
@@ -179,13 +186,17 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
     )
     Option(organizer.getEmail).foreach(email =>
-      model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(email, model))
+      emailAddressConverter.convert(email, model).foreach {
+        resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
+      }
     )
     Option(organizer.getUri).foreach(url =>
       try {
         val uri = new URI(url)
         if (uri.getScheme == "message") {
-          model.add(attendeeResource, SchemaOrg.EMAIL, emailAddressConverter.convert(uri, model))
+          emailAddressConverter.convert(uri, model).foreach {
+            resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource)
+          }
         } else {
           model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url))
           logger.info("Organizer address that is not a mailto URI: " + url)
@@ -226,9 +237,5 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     } else {
       uuidConverter.convert(uid.getValue)
     }
-  }
-
-  def convert(stream: InputStream): Model = {
-    convert(Biweekly.parse(stream).all.asScala)
   }
 }

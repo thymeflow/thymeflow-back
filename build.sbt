@@ -6,6 +6,13 @@ scalaVersion := "2.11.8"
 
 libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+"
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.3"
+
+// mime4j
+val mime4JLibraries = Seq(
+  "org.apache.james" % "apache-mime4j-core" % "0.7.2",
+  "org.apache.james" % "apache-mime4j-dom" % "0.7.2"
+)
+libraryDependencies ++= mime4JLibraries
 libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+"
 libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+" //If we want disk storage we should add sesame-sail-nativerdf
 libraryDependencies += "org.openrdf.sesame" % "sesame-rio-ntriples" % "4.+"

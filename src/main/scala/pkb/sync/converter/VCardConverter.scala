@@ -61,7 +61,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       //DEATHDATE
       case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date))
       //EMAIL
-      case email: Email => model.add(cardResource, SchemaOrg.EMAIL, convert(email, model))
+      case email: Email =>
+        convert(email, model).foreach {
+          resource => model.add(cardResource, SchemaOrg.EMAIL, resource)
+        }
       //FN
       case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue))
       //N
@@ -158,12 +161,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
   }
 
-  private def convert(email: Email, model: Model): Resource = {
-    val emailResource = emailAddressConverter.convert(email.getValue, model)
-    email.getTypes.asScala.foreach(emailType =>
-      model.add(emailResource, RDF.TYPE, classForEmailType(emailType))
-    )
-    emailResource
+  private def convert(email: Email, model: Model): Option[Resource] = {
+    emailAddressConverter.convert(email.getValue, model).map {
+      resource =>
+        email.getTypes.asScala.foreach(emailType =>
+          model.add(resource, RDF.TYPE, classForEmailType(emailType))
+        )
+        resource
+    }
   }
 
   private def classForEmailType(emailType: EmailType): IRI = {
@@ -234,14 +239,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     resourceFromUrl(url.getValue)
   }
 
-  private def resourceFromUid(uid: Uid): Resource = {
-    if (uid == null) {
-      valueFactory.createBNode()
-    } else {
-      uuidConverter.convert(uid.getValue)
-    }
-  }
-
   private def resourceFromUrl(url: String): Option[Resource] = {
     try {
       Some(valueFactory.createIRI(url))
@@ -249,6 +246,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       case e: IllegalArgumentException =>
         logger.warn("The URL " + url + " is invalid", e)
         None
+    }
+  }
+
+  private def resourceFromUid(uid: Uid): Resource = {
+    if (uid == null) {
+      valueFactory.createBNode()
+    } else {
+      uuidConverter.convert(uid.getValue)
     }
   }
 }

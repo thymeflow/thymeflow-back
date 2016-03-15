@@ -260,3 +260,11 @@ personal:nickname a rdf:Property ;
 
 personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .
+
+personal:localPart a rdf:Property ;
+    rdfs:domain personal:EmailAddress ;
+    rdfs:range rdfs:Literal .
+
+personal:domain a rdf:Property ;
+    rdfs:domain personal:EmailAddress ;
+    rdfs:range rdfs:Literal .

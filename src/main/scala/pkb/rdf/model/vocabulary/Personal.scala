@@ -20,4 +20,7 @@ object Personal {
   val COPY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "copyRecipient")
   val PRIMARY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "primaryRecipient")
   val NICKNAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "nickname")
+
+  val LOCAL_PART: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "localPart")
+  val DOMAIN: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "domain")
 }

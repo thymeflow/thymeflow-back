@@ -60,6 +60,8 @@ class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
         s"$localPartLowerCase@$domainLowerCase"
       }
     val addressResource = valueFactory.createIRI("mailto:" + address)
+    model.add(addressResource, Personal.LOCAL_PART, valueFactory.createLiteral(localPartLowerCase))
+    model.add(addressResource, Personal.DOMAIN, valueFactory.createLiteral(domain))
     model.add(addressResource, RDF.TYPE, Personal.EMAIL_ADDRESS)
     model.add(addressResource, SchemaOrg.NAME, valueFactory.createLiteral(address))
     Some(addressResource)

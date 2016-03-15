@@ -4,7 +4,7 @@ import javax.mail.{Folder, Message, Store}
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisher
-import akka.stream.actor.ActorPublisherMessage.Request
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import org.openrdf.model.ValueFactory
 import pkb.rdf.model.document.Document
@@ -29,10 +29,11 @@ object EmailSynchronizer {
     private val queue = new mutable.Queue[Message]
 
     override def receive: Receive = {
-      case Request =>
+      case Request(_) =>
         deliverWaitingMessages()
       case config: Config =>
         retrieveMessages(config.store)
+      case Cancel => context.stop(self)
     }
 
     private def retrieveMessages(store: Store): Unit = {
@@ -51,18 +52,18 @@ object EmailSynchronizer {
       folder.close(false)
     }
 
+    private def deliverWaitingMessages(): Unit = {
+      while (waitingForData && queue.nonEmpty) {
+        onNext(queue.dequeue())
+      }
+    }
+
     private def onNext(message: Message): Unit = {
       onNext(new Document(null, emailMessageConverter.convert(message)))
     }
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
-    }
-
-    private def deliverWaitingMessages(): Unit = {
-      while (waitingForData && queue.nonEmpty) {
-        onNext(queue.dequeue())
-      }
     }
   }
 }

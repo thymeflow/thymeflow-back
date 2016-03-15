@@ -5,7 +5,7 @@ import java.util.zip.ZipFile
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisher
-import akka.stream.actor.ActorPublisherMessage.Request
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.FilenameUtils
@@ -35,10 +35,11 @@ object FileSynchronizer {
     private val queue = new mutable.Queue[ConvertibleFile]
 
     override def receive: Receive = {
-      case Request =>
+      case Request(_) =>
         deliverWaitingMessages()
       case config: Config =>
         retrieveFiles(config.files.map(new File(_)))
+      case Cancel => context.stop(self)
     }
 
     private def retrieveFiles(files: Traversable[File]): Unit = {

@@ -3,7 +3,7 @@ package pkb.sync
 import javax.xml.namespace.QName
 
 import akka.actor.Props
-import akka.stream.actor.ActorPublisherMessage.Request
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
@@ -27,11 +27,12 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
     override def receive: Receive = {
-      case Request =>
+      case Request(_) =>
         deliverDocuments()
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
         deliverDocuments()
+      case Cancel => context.stop(self)
     }
   }
 

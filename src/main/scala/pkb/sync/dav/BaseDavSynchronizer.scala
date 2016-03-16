@@ -5,10 +5,12 @@ import javax.xml.namespace.QName
 import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
+import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.{Model, ValueFactory}
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer
+import pkb.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -16,7 +18,8 @@ import scala.collection.mutable
 /**
   * @author Thomas Pellissier Tanon
   */
-abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) extends Synchronizer {
+abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) extends Synchronizer
+with StrictLogging {
 
   private var elementsEtag = new mutable.HashMap[String, String]()
 
@@ -55,7 +58,7 @@ abstract class BaseDavSynchronizer(valueFactory: ValueFactory, sardine: Sardine,
       }
     } catch {
       case e: SardineException =>
-        e.printStackTrace()
+        logger.error(ExceptionUtils.getUnrolledStackTrace(e))
         None
     }
   }

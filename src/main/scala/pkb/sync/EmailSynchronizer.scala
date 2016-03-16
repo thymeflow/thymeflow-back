@@ -1,6 +1,6 @@
 package pkb.sync
 
-import javax.mail.{Folder, Message, Store}
+import javax.mail.{Folder, Store}
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisher
@@ -26,14 +26,15 @@ object EmailSynchronizer {
   private class Publisher(valueFactory: ValueFactory) extends ActorPublisher[Document] {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val queue = new mutable.Queue[Message]
+    private val queue = new mutable.Queue[Document]
 
     override def receive: Receive = {
       case Request(_) =>
         deliverWaitingMessages()
       case config: Config =>
         retrieveMessages(config.store)
-      case Cancel => context.stop(self)
+      case Cancel =>
+        context.stop(self)
     }
 
     private def retrieveMessages(store: Store): Unit = {
@@ -42,13 +43,14 @@ object EmailSynchronizer {
 
     private def retrieveMessages(folder: Folder): Unit = {
       folder.open(Folder.READ_ONLY)
-      folder.getMessages.foreach(message =>
+      folder.getMessages.foreach(message => {
+        val document = new Document(null, emailMessageConverter.convert(message))
         if (waitingForData) {
-          onNext(message)
+          onNext(document)
         } else {
-          queue.enqueue(message)
+          queue.enqueue(document)
         }
-      ) //TODO: don't load all light messages at the same time but do batches
+      }) //TODO: don't load all light messages at the same time but do batches
       folder.close(false)
     }
 
@@ -56,10 +58,6 @@ object EmailSynchronizer {
       while (waitingForData && queue.nonEmpty) {
         onNext(queue.dequeue())
       }
-    }
-
-    private def onNext(message: Message): Unit = {
-      onNext(new Document(null, emailMessageConverter.convert(message)))
     }
 
     private def waitingForData: Boolean = {

@@ -6,9 +6,11 @@ import akka.stream.actor.ActorPublisher
 import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
+import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.{Model, ValueFactory}
 import pkb.rdf.model.document.Document
+import pkb.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -17,7 +19,8 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-trait BaseDavSynchronizer {
+
+trait BaseDavSynchronizer extends StrictLogging {
 
   protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory)
     extends ActorPublisher[Document] {
@@ -92,7 +95,7 @@ trait BaseDavSynchronizer {
         }
       } catch {
         case e: SardineException =>
-          e.printStackTrace()
+          logger.error(ExceptionUtils.getUnrolledStackTrace(e))
           None
       }
     }

@@ -45,10 +45,6 @@ trait BaseDavSynchronizer extends StrictLogging {
       }
     }
 
-    private def fetchDocuments(): Unit = {
-      fetchers.foreach(retrieveDocuments)
-    }
-
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
@@ -61,6 +57,10 @@ trait BaseDavSynchronizer extends StrictLogging {
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
+    }
+
+    private def fetchDocuments(): Unit = {
+      fetchers.foreach(retrieveDocuments)
     }
   }
 
@@ -119,6 +119,10 @@ trait BaseDavSynchronizer extends StrictLogging {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
     }
 
+    private def buildUriFromBaseAndPath(base: String, path: String): String = {
+      new URIBuilder(base).setPath(path).toString
+    }
+
     private def documentsFromDavResources(davResources: Traversable[DavResource], directoryUri: String): Traversable[Document] = {
       davResources.flatMap(resource => {
         elementsEtag.put(resource.getPath, resource.getEtag)
@@ -126,10 +130,6 @@ trait BaseDavSynchronizer extends StrictLogging {
           new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)), convert(data))
         )
       })
-    }
-
-    private def buildUriFromBaseAndPath(base: String, path: String): String = {
-      new URIBuilder(base).setPath(path).toString
     }
   }
 }

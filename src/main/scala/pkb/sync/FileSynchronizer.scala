@@ -39,7 +39,8 @@ object FileSynchronizer {
         deliverWaitingMessages()
       case config: Config =>
         retrieveFiles(config.files.map(new File(_)))
-      case Cancel => context.stop(self)
+      case Cancel =>
+        context.stop(self)
     }
 
     private def retrieveFiles(files: Traversable[File]): Unit = {

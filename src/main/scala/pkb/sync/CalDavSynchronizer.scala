@@ -32,7 +32,8 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
         deliverDocuments()
-      case Cancel => context.stop(self)
+      case Cancel =>
+        context.stop(self)
     }
   }
 

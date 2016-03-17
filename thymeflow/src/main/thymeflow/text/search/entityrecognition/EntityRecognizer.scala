@@ -1,4 +1,4 @@
-package thymeflow.textsearch.entityrecognition
+package thymeflow.text.search.entityrecognition
 
 import scala.concurrent.Future
 
@@ -10,17 +10,15 @@ trait ContentPosition{
   def index: Int
   def count: Int
 
-  def slice(content: Seq[String]) = {
-    content.slice(index, index + count)
-  }
-
   def mkString(content: Seq[String], separator: String = " ") = {
     slice(content).mkString(separator)
   }
 
-  override def hashCode(): Int = (index, count).hashCode()
+  def slice(content: Seq[String]) = {
+    content.slice(index, index + count)
+  }
 
-  def canEqual(other: Any): Boolean = other.isInstanceOf[ContentPosition]
+  override def hashCode(): Int = (index, count).hashCode()
 
   override def equals(other: Any): Boolean = other match {
     case that: ContentPosition =>
@@ -29,6 +27,8 @@ trait ContentPosition{
         (count == that.count)
     case _ => false
   }
+
+  def canEqual(other: Any): Boolean = other.isInstanceOf[ContentPosition]
 }
 
 trait EntityRecognizer[ENTITY] {

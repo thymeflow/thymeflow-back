@@ -1,4 +1,4 @@
-package thymeflow.textsearch.elasticsearch
+package thymeflow.text.search.elasticsearch
 
 import org.elasticsearch.action.{ActionListener, ListenableActionFuture}
 
@@ -10,6 +10,9 @@ import scala.util.{Failure, Success}
  * @author  David Montoya
  */
 object ListenableActionFutureExtensions {
+
+  implicit def listenableActionFutureAsScalaFuture[T](listenableActionFuture: ListenableActionFuture[T]): ListenableActionFutureAsScalaFuture[T]
+  = new ListenableActionFutureAsScalaFuture(listenableActionFuture)
 
   class ListenableActionFutureAsScalaFuture[T](listenableActionFuture: ListenableActionFuture[T]){
     def future = {
@@ -26,7 +29,4 @@ object ListenableActionFutureExtensions {
       promise.future
     }
   }
-
-  implicit def listenableActionFutureAsScalaFuture[T](listenableActionFuture: ListenableActionFuture[T]): ListenableActionFutureAsScalaFuture[T]
-    = new ListenableActionFutureAsScalaFuture(listenableActionFuture)
 }

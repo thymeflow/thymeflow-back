@@ -1,0 +1,59 @@
+{
+  "number_of_shards": 1,
+  "analysis": {
+    "analyzer": {
+      "index_ngram": {
+        "char_filter": [
+          "punctuation_greedy"
+        ],
+        "filter": [
+          "lowercase",
+          "asciifolding"
+        ],
+        "tokenizer": "simple_ngram_tokenizer"
+      },
+      "index_ngram2": {
+        "type": "custom",
+        "filter": [
+          "word_delimiter",
+          "lowercase",
+          "asciifolding",
+          "simple_ngram"
+        ],
+        "tokenizer": "standard"
+      }
+    },
+    "char_filter": {
+      "punctuation_greedy": {
+        "type": "pattern_replace",
+        "pattern": "[\\.,]"
+      }
+    },
+    "tokenizer": {
+      "simple_ngram_tokenizer": {
+        "type": "ngram",
+        "min_gram": "2",
+        "max_gram": "3",
+        "token_chars": [
+          "letter",
+          "digit"
+        ]
+      }
+    },
+    "filter": {
+      "french_stop": {
+        "type": "stop",
+        "stopwords": "_french_"
+      },
+      "english_stop": {
+        "type": "stop",
+        "stopwords": "_english_"
+      },
+      "simple_ngram": {
+        "min_gram": "3",
+        "type": "ngram",
+        "max_gram": "3"
+      }
+    }
+  }
+}

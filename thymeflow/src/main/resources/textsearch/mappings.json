@@ -1,0 +1,14 @@
+{
+  "literal": {
+    "dynamic": "false",
+    "_all": {
+      "enabled": false
+    },
+    "properties": {
+      "value": {
+        "type": "string",
+        "analyzer": "index_ngram"
+      }
+    }
+  }
+}

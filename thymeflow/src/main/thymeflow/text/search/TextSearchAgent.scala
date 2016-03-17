@@ -1,4 +1,4 @@
-package thymeflow.textsearch
+package thymeflow.text.search
 
 import scala.concurrent.Future
 

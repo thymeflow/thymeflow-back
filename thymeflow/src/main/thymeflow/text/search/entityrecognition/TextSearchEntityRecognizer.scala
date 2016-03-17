@@ -1,8 +1,9 @@
-package thymeflow.textsearch.entityrecognition
+package thymeflow.text.search.entityrecognition
 
 import com.typesafe.scalalogging.StrictLogging
-import thymeflow.textsearch.TextSearch
+import thymeflow.text.search.TextSearch
 import thymeflow.utilities.Memoize
+
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
@@ -10,21 +11,14 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with StrictLogging{
 
-  def textSearch: TextSearch[ENTITY]
-  implicit def executionContext: ExecutionContext
-
-
   private val defaultSearchDepth = 3
   private val matchPercent = 80
   private val cacheSize = 1000
   private val memoizedSearch = Memoize.concurrentFifoCache(cacheSize, (x:String) => textSearch.search(x, matchPercent))
 
-  private def search(content: Seq[String])(position: ContentPosition) = {
-    val query = position.mkString(content)
-    memoizedSearch(query).map {
-      case result => (position, result)
-    }
-  }
+  def textSearch: TextSearch[ENTITY]
+
+  implicit def executionContext: ExecutionContext
 
   override def recognizeEntities(tokens: Seq[String], searchDepth: Int = defaultSearchDepth, clearDuplicateNestedResults: Boolean = false): Future[Seq[(ContentPosition, Seq[(ENTITY, Float)])]] = {
     val tokensLength = tokens.length
@@ -80,6 +74,13 @@ trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with S
     }
 
     searchRecursive(tokens.indices.map(ContentPosition(_, 1)))
+  }
+
+  private def search(content: Seq[String])(position: ContentPosition) = {
+    val query = position.mkString(content)
+    memoizedSearch(query).map {
+      case result => (position, result)
+    }
   }
 }
 

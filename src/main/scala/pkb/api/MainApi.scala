@@ -16,7 +16,7 @@ import org.openrdf.rio.RDFWriterRegistry
 import pkb.Pipeline
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
-import spray.http.HttpHeaders.{Accept, `Content-Type`}
+import spray.http.HttpHeaders._
 import spray.http._
 import spray.routing._
 
@@ -36,22 +36,32 @@ object MainApi extends App with SimpleRoutingApp {
 
   startServer(interface = "localhost", port = 8080) {
     path("sparql") {
-      optionalHeaderValueByType[Accept]() { accept =>
-        get {
-          parameter('query) { query =>
-            execute(query, accept)
-          }
-        } ~
-          post {
-            formField('query) { query =>
+      respondWithHeaders(
+        `Access-Control-Allow-Origin`(AllOrigins),
+        `Access-Control-Allow-Methods`(HttpMethods.GET, HttpMethods.POST, HttpMethods.OPTIONS)
+      ) {
+        optionalHeaderValueByType[Accept]() { accept =>
+          get {
+            parameter('query) { query =>
               execute(query, accept)
-            } ~
-              withContentType(`application/sparql-query`) {
-                entity(as[String]) { query =>
-                  execute(query, accept)
+            }
+          } ~
+            post {
+              formField('query) { query =>
+                execute(query, accept)
+              } ~
+                withContentType(`application/sparql-query`) {
+                  entity(as[String]) { query =>
+                    execute(query, accept)
+                  }
                 }
+            } ~
+            options {
+              complete {
+                StatusCodes.NoContent
               }
-          }
+            }
+        }
       }
     } ~
       pathPrefix("oauth") {

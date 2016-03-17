@@ -1,6 +1,6 @@
 package pkb.sync.converter
 
-import java.io.{File, FileInputStream, InputStream}
+import java.io.InputStream
 
 import org.openrdf.model.Model
 
@@ -8,13 +8,6 @@ import org.openrdf.model.Model
   * @author Thomas Pellissier Tanon
   */
 trait Converter {
-
-  def convert(file: File): Model = {
-    val stream = new FileInputStream(file)
-    val model = convert(stream)
-    stream.close()
-    model
-  }
 
   def convert(str: String): Model
 

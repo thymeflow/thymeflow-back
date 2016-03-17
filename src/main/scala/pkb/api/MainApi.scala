@@ -3,11 +3,11 @@ package pkb.api
 import java.util.Properties
 import javax.mail.Session
 
-import akka.actor.ActorSystem
 import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
-import org.openrdf.model.impl.SimpleValueFactory
 import pkb.Pipeline
+import pkb.actors._
+import pkb.inferencer.InverseFunctionalPropertyInferencer
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
 import spray.http._
@@ -21,9 +21,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 object MainApi extends App with SimpleRoutingApp with SparqlService {
 
   override protected val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
-  implicit val system = ActorSystem("pkb")
-  private val pipeline = new Pipeline(repositoryConnection)
   private val redirectionTarget = Uri("http://localhost:4200") //TODO: should be in configuration
+  private val pipeline = new Pipeline(repositoryConnection, List(new InverseFunctionalPropertyInferencer(repositoryConnection)))
 
   startServer(interface = "localhost", port = 8080) {
     path("sparql") {
@@ -57,13 +56,13 @@ object MainApi extends App with SimpleRoutingApp with SparqlService {
       .split("&")(0).split("=")(1) //The result has the format "email=foo@gmail.com&..."
 
     //CardDav
-    pipeline.addSynchronizer(
-      new CardDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://www.googleapis.com/.well-known/carddav")
+    pipeline.addSource(
+      CardDavSynchronizer.Config(sardine, "https://www.googleapis.com/.well-known/carddav")
     )
 
     //CalDav
-    pipeline.addSynchronizer(
-      new CalDavSynchronizer(SimpleValueFactory.getInstance, sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
+    pipeline.addSource(
+      CalDavSynchronizer.Config(sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
     )
 
     //Emails
@@ -72,8 +71,6 @@ object MainApi extends App with SimpleRoutingApp with SparqlService {
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
     val store = Session.getInstance(props).getStore("imap")
     store.connect("imap.gmail.com", gmailAddress, token)
-    pipeline.addSynchronizer(new EmailSynchronizer(SimpleValueFactory.getInstance, store, 100))
-
-    pipeline.run(2) //TODO: bad hack
+    pipeline.addSource(EmailSynchronizer.Config(store))
   }
 }

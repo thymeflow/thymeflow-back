@@ -33,6 +33,7 @@ object MainApi extends App with SimpleRoutingApp {
 
   private val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
   private val pipeline = new Pipeline(repositoryConnection)
+  private val redirectionTarget = Uri("http://http://localhost:4200") //TODO: should be in configuration
 
   startServer(interface = "localhost", port = 8080) {
     path("sparql") {
@@ -77,9 +78,7 @@ object MainApi extends App with SimpleRoutingApp {
             path("token") {
               parameter('code) { code =>
                 OAuth2.Google.getAccessToken(code, "http://localhost:8080/oauth/google/token").foreach(onGoogleToken)
-                complete {
-                  StatusCodes.OK
-                }
+                redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
             }
         }

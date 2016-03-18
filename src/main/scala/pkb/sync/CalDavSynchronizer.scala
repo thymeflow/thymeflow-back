@@ -7,7 +7,7 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
-import org.openrdf.model.{Model, ValueFactory}
+import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.ICalConverter
 import pkb.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
@@ -53,8 +53,8 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
       new CalendarMultigetReport(paths)
     }
 
-    override protected def convert(str: String): Model = {
-      iCalConverter.convert(str)
+    override protected def convert(str: String, context: IRI): Model = {
+      iCalConverter.convert(str, context)
     }
   }
 }

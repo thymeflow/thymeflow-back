@@ -8,7 +8,7 @@ import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
-import org.openrdf.model.{Model, ValueFactory}
+import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.document.Document
 import pkb.utilities.ExceptionUtils
 
@@ -19,7 +19,6 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-
 trait BaseDavSynchronizer extends StrictLogging {
 
   protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory)
@@ -45,6 +44,10 @@ trait BaseDavSynchronizer extends StrictLogging {
       }
     }
 
+    private def fetchDocuments(): Unit = {
+      fetchers.foreach(retrieveDocuments)
+    }
+
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
@@ -57,10 +60,6 @@ trait BaseDavSynchronizer extends StrictLogging {
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
-    }
-
-    private def fetchDocuments(): Unit = {
-      fetchers.foreach(retrieveDocuments)
     }
   }
 
@@ -102,9 +101,10 @@ trait BaseDavSynchronizer extends StrictLogging {
 
     private def documentFromDavResource(davResource: DavResource, directoryUri: String): Option[Document] = {
       elementsEtag.put(davResource.getPath, davResource.getEtag)
-      Option(davResource.getCustomPropsNS.get(dataNodeName)).map(data =>
-        new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath)), convert(data))
-      )
+      Option(davResource.getCustomPropsNS.get(dataNodeName)).map(data => {
+        val documentIri = valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath))
+        Document(documentIri, convert(data, documentIri))
+      })
     }
 
     protected def dataNodeName: QName
@@ -113,7 +113,7 @@ trait BaseDavSynchronizer extends StrictLogging {
 
     protected def buildMultigetReport(paths: Traversable[String]): SardineReport[Traversable[DavResource]]
 
-    protected def convert(str: String): Model
+    protected def convert(str: String, context: IRI): Model
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
@@ -121,15 +121,6 @@ trait BaseDavSynchronizer extends StrictLogging {
 
     private def buildUriFromBaseAndPath(base: String, path: String): String = {
       new URIBuilder(base).setPath(path).toString
-    }
-
-    private def documentsFromDavResources(davResources: Traversable[DavResource], directoryUri: String): Traversable[Document] = {
-      davResources.flatMap(resource => {
-        elementsEtag.put(resource.getPath, resource.getEtag)
-        Option(resource.getCustomPropsNS.get(dataNodeName)).map(data =>
-          new Document(valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, resource.getPath)), convert(data))
-        )
-      })
     }
   }
 }

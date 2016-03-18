@@ -57,8 +57,8 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
   private def addDocumentToRepository(document: Document): ModelDiff = {
     repositoryConnection.begin()
     //Removes the removed statements from the repository and the already existing statements from statements
-    val statements = new SimpleHashModel(document.model.getValueFactory, document.model)
-    val statementsToRemove = new SimpleHashModel(document.model.getValueFactory)
+    val statements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
+    val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
 
     repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
       if (document.model.contains(existingStatement)) {

@@ -3,9 +3,7 @@ package pkb.sync.converter.utils
 import java.net.URI
 import java.util.regex.Pattern
 
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.rdf.model.vocabulary.SchemaOrg
+import org.openrdf.model.{IRI, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -17,21 +15,20 @@ class EmailMessageUriConverter(valueFactory: ValueFactory) {
   /**
     * Creates a EmailMessage resource from a message: URI like "message:<fffffff@gmail.com>"
     */
-  def convert(messageUri: URI, model: Model): IRI = {
-    convert(messageUri.getSchemeSpecificPart, model)
+  def convert(messageUri: URI): IRI = {
+    convert(messageUri.getSchemeSpecificPart)
   }
 
   /**
     * Creates a EmailMessage resource from a message id like "<fffffff@gmail.com>"
     */
-  def convert(messageId: String, model: Model): IRI = {
+  def convert(messageId: String): IRI = {
     var cleanMessageId = messageId
     val matcher = messageIdPattern.matcher(cleanMessageId)
     if (matcher.find) {
       cleanMessageId = matcher.group(1)
     }
     val messageResource = valueFactory.createIRI("message:%c3" + cleanMessageId + "%3e")
-    model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
     messageResource
   }
 }

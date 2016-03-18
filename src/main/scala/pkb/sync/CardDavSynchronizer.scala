@@ -7,7 +7,7 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
-import org.openrdf.model.{Model, ValueFactory}
+import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.VCardConverter
 import pkb.sync.dav._
@@ -53,8 +53,8 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
       new AddressbookMultigetReport(paths)
     }
 
-    override protected def convert(str: String): Model = {
-      vCardConverter.convert(str)
+    override protected def convert(str: String, context: IRI): Model = {
+      vCardConverter.convert(str, context)
     }
   }
 }

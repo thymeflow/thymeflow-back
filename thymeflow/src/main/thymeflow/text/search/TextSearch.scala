@@ -7,6 +7,6 @@ import scala.concurrent.Future
  */
 trait TextSearch[T] {
 
-  def search(query: String, matchPercent: Int = 100): Future[Seq[(T,Float)]]
+  def search(query: String, matchPercent: Int = 100): Future[Seq[(T, Float)]]
 
 }

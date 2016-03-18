@@ -22,7 +22,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * @author  David Montoya
  */
-class TextSearchServer[T] private(indexName: String, idToEntity: String => T, searchSize: Int = 100)(implicit executionContext: ExecutionContext)
+class TextSearchServer[T] private(indexName: String, entityMap: (String, String) => T, searchSize: Int = 100)(implicit executionContext: ExecutionContext)
   extends StrictLogging with TextSearchAgent[T]{
 
   private val esClient = TextSearchServer.esClient
@@ -33,14 +33,6 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
 
   override def close(): Future[Unit] = {
     deleteIndex()
-  }
-
-  private def deleteIndex() = {
-    esClient.admin.indices.prepareDelete(indexName).execute.future.map{
-      case _ => ()
-    }.recover{
-      case e: IndexMissingException => ()
-    }
   }
 
   def add(entities: Traversable[(String, String)]): Future[Unit] = {
@@ -64,19 +56,19 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
     }
   }
 
-  private def literalJsonBuilder(literal: String) = {
-    XContentFactory.jsonBuilder().startObject().field("value", literal).endObject()
-  }
-
   def analyze(literal: String) = {
     val query = esClient.prepareTermVector().setType("literal").setIndex(indexName).setDoc(literalJsonBuilder(literal))
-    query.execute().future.map{
+    query.execute().future.map {
       case response =>
         response.getFields.iterator().asScala.mkString("\n")
     }
   }
 
-  override def search(query: String, matchPercent: Int = 100): Future[Seq[(T,Float)]] = {
+  private def literalJsonBuilder(literal: String) = {
+    XContentFactory.jsonBuilder().startObject().field("value", literal).endObject()
+  }
+
+  override def search(query: String, matchPercent: Int = 100): Future[Seq[(T, Float)]] = {
     val queryBuilder = org.elasticsearch.index.query.QueryBuilders
       .matchQuery("value", query)
       .minimumShouldMatch(matchPercent.toString + "%")
@@ -86,7 +78,7 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
         handleShardFailures(searchResponse.getShardFailures)
         searchResponse.getHits.hits.toVector.map{
           case hit =>
-            (idToEntity(hit.id()), hit.score())
+            (entityMap(hit.id(), hit.field("literal").value[String]()), hit.score())
         }
     }
   }
@@ -116,6 +108,14 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
     }
   }
 
+  private def deleteIndex() = {
+    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
+      case _ => ()
+    }.recover {
+      case e: IndexMissingException => ()
+    }
+  }
+
 }
 
 object TextSearchServer extends StrictLogging {
@@ -134,10 +134,10 @@ object TextSearchServer extends StrictLogging {
   }
   private lazy val esDirectory: File = setupDirectories(dataDirectory)
 
-  def apply[T](idToEntity: String => T)(implicit executionContext: ExecutionContext) = {
+  def apply[T](entityMap: (String, String) => T)(implicit executionContext: ExecutionContext) = {
     // randomized index name
     val indexName = UUID.randomUUID().toString
-    val server = new TextSearchServer[T](indexName, idToEntity)
+    val server = new TextSearchServer[T](indexName, entityMap)
     server.recreateIndex().map{
       case _ => server
     }

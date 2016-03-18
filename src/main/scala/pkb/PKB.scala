@@ -1,5 +1,7 @@
 package pkb
 
+import java.io.File
+
 import com.typesafe.scalalogging.StrictLogging
 import pkb.rdf.RepositoryFactory
 import pkb.sync.FileSynchronizer
@@ -12,6 +14,6 @@ object PKB extends StrictLogging {
     val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
 
     val pipeline = new Pipeline(repositoryConnection, List())
-    pipeline.addSource(FileSynchronizer.Config(args))
+    args.foreach(fileName => pipeline.addSource(FileSynchronizer.Config(new File(fileName))))
   }
 }

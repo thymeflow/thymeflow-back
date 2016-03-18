@@ -12,7 +12,7 @@ import pkb.Pipeline
 import pkb.actors._
 import pkb.inferencer.InverseFunctionalPropertyInferencer
 import pkb.rdf.RepositoryFactory
-import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
+import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -47,10 +47,18 @@ object MainApi extends App with SparqlService {
               }
             }
         }
+      } ~
+      path("upload") {
+        uploadedFile("file") {
+          case (fileInfo, file) =>
+            pipeline.addSource(
+              FileSynchronizer.Config(file, Some(fileInfo.contentType.mediaType.value))
+            )
+            redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+      }
       }
   }
   Http().bindAndHandle(route, "localhost", 8080)
-
   //TODO: make it configurable
 
   private def onGoogleToken(token: String): Unit = {

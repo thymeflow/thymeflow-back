@@ -25,14 +25,34 @@ import scala.concurrent.{ExecutionContext, Future}
 class TextSearchServer[T] private(indexName: String, entityMap: (String, String) => T, searchSize: Int = 100)(implicit executionContext: ExecutionContext)
   extends StrictLogging with TextSearchAgent[T]{
 
+  private val valueFieldName = "value"
   private val esClient = TextSearchServer.esClient
 
   def refreshIndex() = {
     esClient.admin().indices().prepareRefresh(indexName).execute().future.map(x => handleShardFailures(x.getShardFailures))
   }
 
+  def handleShardFailures(shardOperationFailures: Seq[ShardOperationFailedException]) = {
+    val shardFailures = shardOperationFailures.map {
+      failure =>
+        new ElasticSearchShardFailure(Option(failure.index()), Option(failure.shardId()), Option(failure.reason()))
+    }
+    if (shardFailures.nonEmpty) {
+      val exception = new ElasticSearchAggregateException("Shard failures:", shardFailures)
+      throw exception
+    }
+  }
+
   override def close(): Future[Unit] = {
     deleteIndex()
+  }
+
+  private def deleteIndex() = {
+    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
+      case _ => ()
+    }.recover {
+      case e: IndexMissingException => ()
+    }
   }
 
   def add(entities: Traversable[(String, String)]): Future[Unit] = {
@@ -56,6 +76,10 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
     }
   }
 
+  private def literalJsonBuilder(literal: String) = {
+    XContentFactory.jsonBuilder().startObject().field(valueFieldName, literal).endObject()
+  }
+
   def analyze(literal: String) = {
     val query = esClient.prepareTermVector().setType("literal").setIndex(indexName).setDoc(literalJsonBuilder(literal))
     query.execute().future.map {
@@ -64,33 +88,18 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
     }
   }
 
-  private def literalJsonBuilder(literal: String) = {
-    XContentFactory.jsonBuilder().startObject().field("value", literal).endObject()
-  }
-
   override def search(query: String, matchPercent: Int = 100): Future[Seq[(T, Float)]] = {
     val queryBuilder = org.elasticsearch.index.query.QueryBuilders
-      .matchQuery("value", query)
+      .matchQuery(valueFieldName, query)
       .minimumShouldMatch(matchPercent.toString + "%")
     val search = esClient.prepareSearch(indexName).setQuery(queryBuilder).setTypes("literal").setSize(searchSize)
-    search.execute.future.map{
+    search.execute.future.map {
       case searchResponse =>
         handleShardFailures(searchResponse.getShardFailures)
-        searchResponse.getHits.hits.toVector.map{
+        searchResponse.getHits.hits.toVector.map {
           case hit =>
-            (entityMap(hit.id(), hit.field("literal").value[String]()), hit.score())
+            (entityMap(hit.id(), hit.sourceAsMap().get(valueFieldName).asInstanceOf[String]), hit.score())
         }
-    }
-  }
-
-  def handleShardFailures(shardOperationFailures: Seq[ShardOperationFailedException]) = {
-    val shardFailures = shardOperationFailures.map {
-      failure =>
-        new ElasticSearchShardFailure(Option(failure.index()), Option(failure.shardId()), Option(failure.reason()))
-    }
-    if (shardFailures.nonEmpty) {
-      val exception = new ElasticSearchAggregateException("Shard failures:", shardFailures)
-      throw exception
     }
   }
 
@@ -105,14 +114,6 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
         }
     }.map {
       case _ => ()
-    }
-  }
-
-  private def deleteIndex() = {
-    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
-      case _ => ()
-    }.recover {
-      case e: IndexMissingException => ()
     }
   }
 

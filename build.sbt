@@ -54,6 +54,7 @@ libraryDependencies += "com.fasterxml.jackson.core" % "jackson-core" % "2.6.+" /
 libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.+"
 libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+"
 libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+"
+libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+"
 libraryDependencies += "io.spray" %% "spray-can" % "1.+"
 libraryDependencies += "io.spray" %% "spray-routing" % "1.+"
 val testLibraries = Seq("org.scalatest" %% "scalatest" % "2.2.4")
@@ -62,3 +63,5 @@ val mime4JLibraries = Seq(
   "org.apache.james" % "apache-mime4j-core" % "0.7.2",
   "org.apache.james" % "apache-mime4j-dom" % "0.7.2"
 )
+libraryDependencies += "io.spray" %% "spray-client" % "1.+"
+libraryDependencies += "io.spray" %% "spray-json" % "1.+"

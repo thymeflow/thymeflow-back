@@ -25,7 +25,7 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
   val TokenFormat = jsonFormat5(Token)
 
   def getAuthUri(scopes: Traversable[String], redirectUri: String): Uri = {
-    Uri("https://accounts.google.com/o/oauth2/v2/auth").withQuery(
+    Uri(authorizeUri).withQuery(
       ("scope", scopes.mkString(" ")),
       ("redirect_uri", redirectUri),
       ("response_type", "code"),
@@ -36,7 +36,7 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
   def getAccessToken(code: String, redirectUri: String): Future[String] = {
     val pipeline = sendReceive ~> unmarshal[Token]
 
-    pipeline(Post("https://www.googleapis.com/oauth2/v4/token", FormData(Seq(
+    pipeline(Post(tokenUri, FormData(Seq(
       ("code", code),
       ("client_id", clientId),
       ("client_secret", clientSecret),
@@ -47,4 +47,3 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
 
   case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: String, id_token: String)
 }
-

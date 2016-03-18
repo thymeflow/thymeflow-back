@@ -60,7 +60,7 @@ trait SparqlService extends HttpService {
         case query: TupleQuery => execute(query, accept)
       }
     } catch {
-      case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformated query: " + e.getMessage)
+      case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
       case e: QueryInterruptedException => complete(StatusCodes.InternalServerError, "Query times out: " + e.getMessage)
       case e: QueryEvaluationException => complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
     }

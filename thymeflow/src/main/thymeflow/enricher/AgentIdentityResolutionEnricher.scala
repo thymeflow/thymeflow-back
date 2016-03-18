@@ -26,16 +26,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   val tokenSeparator =
     """[\p{Punct}\s\u2022]+""".r
 
-  def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
-  def normalizeTerm(term: String) = {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
-  }
-
   def entityMatchingScore(combine: (Seq[String], Seq[String], Seq[(Seq[String], Seq[String], Double)]) => Double,
-                          entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String],Seq[String], Double)])(text1: Seq[String], text2: Seq[String]) = {
+                          entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)])(text1: Seq[String], text2: Seq[String]) = {
     val weight = entityMatchingWeight(text1, text2)
     if (weight.nonEmpty) {
       val weightScore = combine(text1, text2, weight)
@@ -45,11 +37,11 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
-  def entityMatching[T,X](matching: Traversable[(X, X, Seq[String], Seq[String], Seq[String])],
-                          textMatch: (Seq[String], Seq[String]) => Option[(T, Double)]) = {
-    matching.flatMap{
+  def entityMatching[T, X](matching: Traversable[(X, X, Seq[String], Seq[String], Seq[String])],
+                           textMatch: (Seq[String], Seq[String]) => Option[(T, Double)]) = {
+    matching.flatMap {
       case (s1, s2, text1, text2, matchText1) =>
-        textMatch(text1, text2).map{
+        textMatch(text1, text2).map {
           case t => (s1, s2, matchText1, t)
         }
     }
@@ -67,7 +59,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          |WHERE {
          |  ?agent <${SchemaOrg.NAME}> ?name ;
          |         <${SchemaOrg.EMAIL}> ?x .
-         |  ?x <${SchemaOrg.EMAIL}> ?emailAddress .
+         |  ?x <${SchemaOrg.NAME}> ?emailAddress .
          | }
       """.stripMargin
 
@@ -79,37 +71,37 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         val (agent, name, emailAddress) = (bindingSet.getValue("agent").stringValue(), bindingSet.getValue("name").stringValue(), bindingSet.getValue("emailAddress").stringValue())
         val (agents, nameCounts) = emailNameSet.getOrElseUpdate(emailAddress, (new scala.collection.mutable.HashSet[String], new scala.collection.mutable.HashMap[String, Int]))
         i += 1
-        if(i % 1000 == 0){
+        if (i % 1000 == 0) {
           logger.info(s"Iterated through $i rows.")
         }
         agents += agent
         nameCounts += name -> (nameCounts.getOrElse(name, 0) + 1)
     }
     logger.info(s"Iterated through $i rows.")
-    val emailAndNames = emailNameSet.toTraversable.flatMap{
+    val emailAndNames = emailNameSet.toTraversable.flatMap {
       case (email, (_, names)) =>
-        names.keys.map{
+        names.keys.map {
           case name => (email, name)
         }
-    }(scala.collection.breakOut):Vector[(String, String)]
+    }(scala.collection.breakOut): Vector[(String, String)]
 
     TextSearchServer {
       case (id) => emailAndNames(Integer.parseInt(id))
-    }.flatMap{
+    }.flatMap {
       case textSearchServer =>
-        val literalsToIndex = emailAndNames.zipWithIndex.map{
+        val literalsToIndex = emailAndNames.zipWithIndex.map {
           case ((_, name), index) => (index.toString, name)
         }
-        textSearchServer.add(literalsToIndex).flatMap{
+        textSearchServer.add(literalsToIndex).flatMap {
           case _ =>
             textSearchServer.refreshIndex()
-        }.map{
+        }.map {
           case _ =>
             textSearchServer
         }
-    }.map{
+    }.map {
       case textSearchServer =>
-        Future.sequence(emailAndNames.map{
+        Future.sequence(emailAndNames.map {
           case (email1, name1) =>
             textSearchServer.search(name1, matchPercent).map {
               case matching =>
@@ -121,6 +113,14 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }).map(_.flatten)
     }
+  }
+
+  def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
+  def normalizeTerm(term: String) = {
+    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
   }
 
 }

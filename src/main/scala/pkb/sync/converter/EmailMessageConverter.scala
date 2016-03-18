@@ -10,7 +10,7 @@ import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressNameConverter, EmailAddressConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter}
 
 /**
   * @author Thomas Pellissier Tanon

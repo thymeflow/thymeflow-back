@@ -14,7 +14,7 @@ import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressNameConverter, EmailAddressConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter}
 import pkb.utilities.mail.LenientDateParser
 
 import scala.collection.JavaConverters._
@@ -155,7 +155,7 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
           )
           model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, context)
           personResource
-        }
+      }
     }
 
     private def resourceForMessage(message: EmailMessage): Resource = {

@@ -66,7 +66,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          |SELECT ?agent ?name ?emailAddress
          |WHERE {
          |  ?agent <${SchemaOrg.NAME}> ?name ;
-         |         <${SchemaOrg.EMAIL}> ?emailAddress .
+         |         <${SchemaOrg.EMAIL}> ?x .
+         |  ?x <${SchemaOrg.EMAIL}> ?emailAddress .
          | }
       """.stripMargin
 
@@ -75,8 +76,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     var i = 0
     result.foreach {
       bindingSet =>
-        val (agent, name, emailAddressValue) = (bindingSet.getValue("agent").stringValue(), bindingSet.getValue("name").stringValue(), bindingSet.getValue("emailAddress"))
-        val emailAddress = emailAddressValue.stringValue().drop(7)
+        val (agent, name, emailAddress) = (bindingSet.getValue("agent").stringValue(), bindingSet.getValue("name").stringValue(), bindingSet.getValue("emailAddress").stringValue())
         val (agents, nameCounts) = emailNameSet.getOrElseUpdate(emailAddress, (new scala.collection.mutable.HashSet[String], new scala.collection.mutable.HashMap[String, Int]))
         i += 1
         if(i % 1000 == 0){

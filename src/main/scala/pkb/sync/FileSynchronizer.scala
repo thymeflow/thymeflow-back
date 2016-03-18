@@ -107,9 +107,10 @@ object FileSynchronizer {
     private case class ConvertibleFile(path: File, converter: Converter, inputStream: Option[InputStream] = None) {
       def read(): Document = {
         val stream = inputStream.getOrElse(new FileInputStream(path))
-        val model = converter.convert(stream)
+        val documentIri = valueFactory.createIRI(path.toURI.toString)
+        val model = converter.convert(stream, documentIri)
         stream.close()
-        new Document(valueFactory.createIRI(path.toURI.toString), model)
+        Document(documentIri, model)
       }
     }
   }

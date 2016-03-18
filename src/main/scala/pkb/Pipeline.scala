@@ -3,6 +3,7 @@ package pkb
 import akka.NotUsed
 import akka.actor.ActorRef
 import akka.stream.SourceShape
+import akka.stream.scaladsl.GraphDSL.Implicits._
 import akka.stream.scaladsl._
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.RepositoryConnection
@@ -39,8 +40,6 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
     val emails = EmailSynchronizer.source(valueFactory)
     Source.fromGraph[Document, List[ActorRef]](GraphDSL.create(files, calDav, cardDav, emails)(List(_, _, _, _)) { implicit builder =>
       (files, calDav, cardDav, emails) =>
-        import GraphDSL.Implicits._
-
         val merge = builder.add(Merge[Document](4))
         files ~> merge
         calDav ~> merge
@@ -58,8 +57,8 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
   private def addDocumentToRepository(document: Document): ModelDiff = {
     repositoryConnection.begin()
     //Removes the removed statements from the repository and the already existing statements from statements
-    val statements = new SimpleHashModel(document.model.getValueFactory, document.model)
-    val statementsToRemove = new SimpleHashModel(document.model.getValueFactory)
+    val statements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
+    val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
 
     repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
       if (document.model.contains(existingStatement)) {

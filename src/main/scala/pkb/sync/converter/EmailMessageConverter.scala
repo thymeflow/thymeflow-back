@@ -6,8 +6,8 @@ import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message}
 
 import com.typesafe.scalalogging.StrictLogging
+import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressNameConverter, EmailAddressConverter, EmailMessageUriConverter}
@@ -23,105 +23,102 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
   private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
-  def convert(stream: InputStream): Model = {
-    convert(new MimeMessage(null, stream))
+  override def convert(stream: InputStream, context: IRI): Model = {
+    convert(new MimeMessage(null, stream), context)
   }
 
-  def convert(message: Message): Model = {
+  def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
-    convert(message, model)
+    val converter = new ToModelConverter(model, context)
+    converter.convert(message)
     model
   }
 
-  private def convert(message: Message, model: Model): Resource = {
-    val messageResource = resourceForMessage(message, model)
-
-    // use sent date as published date. If sent date is invalid, use received date.
-    (Option(message.getSentDate) match {
-      case date@Some(_) => date
-      case None => Option(message.getReceivedDate)
-    }).foreach(date =>
-      model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date))
-    )
-    Option(message.getSubject).foreach(subject =>
-      model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject))
-    )
-
-    addAddresses({
-      message.getFrom
-    }, messageResource, SchemaOrg.AUTHOR, model)
-    addAddresses({
-      message.getRecipients(RecipientType.TO)
-    }, messageResource, Personal.PRIMARY_RECIPIENT, model)
-    addAddresses({
-      message.getRecipients(RecipientType.CC)
-    }, messageResource, Personal.COPY_RECIPIENT, model)
-    addAddresses({
-      message.getRecipients(RecipientType.BCC)
-    }, messageResource, Personal.BLIND_COPY_RECIPIENT, model)
-
-    messageResource
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
-  private def addAddresses(addresses: => Array[Address], messageResource: Resource, relation: IRI, model: Model): Unit = {
-    try {
-      // addresses() can return null
-      Option(addresses).foreach(addresses =>
-        addresses.foreach(address =>
-          convert(address, model).foreach(personResource => model.add(messageResource, relation, personResource))
-        )
+  private class ToModelConverter(model: Model, context: IRI) {
+    def convert(message: Message): Resource = {
+      val messageResource = resourceForMessage(message)
+      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+
+      // use sent date as published date. If sent date is invalid, use received date.
+      (Option(message.getSentDate) match {
+        case date@Some(_) => date
+        case None => Option(message.getReceivedDate)
+      }).foreach(date =>
+        model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date), context)
       )
-    } catch {
-      case e: AddressException => None
-    }
-  }
+      Option(message.getSubject).foreach(subject =>
+        model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
+      )
 
-  private def convert(address: Address, model: Model): Option[Resource] = {
-    address match {
-      case internetAddress: InternetAddress => convert(internetAddress, model)
-      case _ =>
-        logger.warn("Unknown address type: " + address.getType)
-        None
-    }
-  }
+      addAddresses({
+        message.getFrom
+      }, messageResource, SchemaOrg.AUTHOR)
+      addAddresses({
+        message.getRecipients(RecipientType.TO)
+      }, messageResource, Personal.PRIMARY_RECIPIENT)
+      addAddresses({
+        message.getRecipients(RecipientType.CC)
+      }, messageResource, Personal.COPY_RECIPIENT)
+      addAddresses({
+        message.getRecipients(RecipientType.BCC)
+      }, messageResource, Personal.BLIND_COPY_RECIPIENT)
 
-  private def convert(address: InternetAddress, model: Model): Option[Resource] = {
-    emailAddressConverter.convert(address.getAddress, model).map {
-      emailAddressResource =>
+      messageResource
+    }
+
+    private def addAddresses(addresses: => Array[Address], messageResource: Resource, relation: IRI): Unit = {
+      try {
+        // addresses() can return null
+        Option(addresses).foreach(addresses =>
+          addresses.foreach(address =>
+            convert(address).foreach(personResource => model.add(messageResource, relation, personResource, context))
+          )
+        )
+      } catch {
+        case e: AddressException => None
+      }
+    }
+
+    private def convert(address: Address): Option[Resource] = {
+      address match {
+        case internetAddress: InternetAddress => convert(internetAddress)
+        case _ =>
+          logger.warn("Unknown address type: " + address.getType)
+          None
+      }
+    }
+
+    private def convert(address: InternetAddress): Option[Resource] = {
+      emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
         val personResource = valueFactory.createBNode
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(address.getPersonal, address.getAddress).foreach{
-            case name => model.add(personResource, SchemaOrg.NAME, name)
+            case name => model.add(personResource, SchemaOrg.NAME, name, context)
           }
         )
-        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
+        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, context)
         personResource
+      })
     }
-  }
 
-  private def resourceForMessage(message: Message, model: Model): Resource = {
-    message match {
-      case mimeMessage: MimeMessage =>
-        Option(mimeMessage.getMessageID).map(messageId =>
-          emailMessageUriConverter.convert(mimeMessage.getMessageID, model)
-        ).getOrElse(blankNodeForMessage(model))
-      case _ => blankNodeForMessage(model)
+    private def resourceForMessage(message: Message): Resource = {
+      message match {
+        case mimeMessage: MimeMessage =>
+          Option(mimeMessage.getMessageID).map(messageId =>
+            emailMessageUriConverter.convert(mimeMessage.getMessageID)
+          ).getOrElse(blankNodeForMessage())
+        case _ => blankNodeForMessage()
+      }
     }
-  }
 
-  private def blankNodeForMessage(model: Model): Resource = {
-    val messageResource = valueFactory.createBNode()
-    model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
-    messageResource
-  }
-
-  override def convert(str: String): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)))
-  }
-
-  def convert(messages: Traversable[Message]): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    messages.foreach(message => convert(message, model))
-    model
+    private def blankNodeForMessage(): Resource = {
+      val messageResource = valueFactory.createBNode()
+      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+      messageResource
+    }
   }
 }

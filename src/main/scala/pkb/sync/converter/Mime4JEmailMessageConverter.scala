@@ -28,43 +28,44 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
   private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
-  override def convert(str: String): Model = {
-    convert(new ByteArrayInputStream(str.getBytes))
+  override def convert(str: String, context: IRI): Model = {
+    convert(new ByteArrayInputStream(str.getBytes), context)
   }
 
-  def convert(inputStream: InputStream): Model = {
+  override def convert(inputStream: InputStream, context: IRI): Model = {
     val config = new MimeConfig()
     config.setMaxLineLen(-1)
     config.setMaxHeaderLen(-1)
     val mimeTokenStream = new MimeTokenStream(config)
     mimeTokenStream.parse(inputStream)
-    convert(mimeTokenStream)
+    convert(mimeTokenStream, context)
   }
 
-  def convert(mimeTokenStream: MimeTokenStream): Model = {
+  private def convert(mimeTokenStream: MimeTokenStream, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
-    convert(mimeTokenStream, model)
+    val converter = new ToModelConverter(model, context)
+    converter.convert(mimeTokenStream)
     model
   }
 
-  private def convert(mimeTokenStream: MimeTokenStream, model: Model): Resource = {
-    var state = mimeTokenStream.getState
-    var deliveryDateOption: Option[Temporal] = None
-    var dateOption: Option[Temporal] = None
+  private class ToModelConverter(model: Model, context: IRI) {
+    def convert(mimeTokenStream: MimeTokenStream): Resource = {
+      var state = mimeTokenStream.getState
+      var deliveryDateOption: Option[Temporal] = None
+      var dateOption: Option[Temporal] = None
 
-    var messageId: Option[String] = None
-    var to: Seq[EmailAddress] = Vector()
-    var from: Seq[EmailAddress] = Vector()
-    var bcc: Seq[EmailAddress] = Vector()
-    var cc: Seq[EmailAddress] = Vector()
-    var subjectOption: Option[String] = None
+      var messageId: Option[String] = None
+      var to: Seq[EmailAddress] = Vector()
+      var from: Seq[EmailAddress] = Vector()
+      var bcc: Seq[EmailAddress] = Vector()
+      var cc: Seq[EmailAddress] = Vector()
+      var subjectOption: Option[String] = None
 
-    def decode(body: String) = {
-      DecoderUtil.decodeEncodedWords(body, DecodeMonitor.SILENT)
-    }
+      def decode(body: String) = {
+        DecoderUtil.decodeEncodedWords(body, DecodeMonitor.SILENT)
+      }
 
-    while (state ne EntityState.T_END_OF_STREAM) {
-      {
+      while (state ne EntityState.T_END_OF_STREAM) {
         state match {
           case EntityState.T_FIELD =>
             val field = mimeTokenStream.getField
@@ -109,109 +110,110 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
             }
           case _ =>
         }
+        state = mimeTokenStream.next
       }
-      state = mimeTokenStream.next
+      val adjustedDateOption = adjustDateUsingDeliveryDate(deliveryDateOption, dateOption)
+      convert(EmailMessage(messageId = messageId, subject = subjectOption, date = adjustedDateOption, from = from, to = to, bcc = bcc, cc = cc))
     }
-    val adjustedDateOption = adjustDateUsingDeliveryDate(deliveryDateOption, dateOption)
-    convert(EmailMessage(messageId = messageId, subject = subjectOption, date = adjustedDateOption, from = from, to = to, bcc = bcc, cc = cc), model)
-  }
 
-  private def convert(message: EmailMessage, model: Model): Resource = {
-    val messageResource = resourceForMessage(message, model)
+    private def convert(message: EmailMessage): Resource = {
+      val messageResource = resourceForMessage(message)
 
-    message.date.foreach(date =>
-      model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date.toString, XMLSchema.DATETIME))
-    )
-    message.subject.foreach(subject =>
-      model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject))
-    )
+      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+      message.date.foreach(date =>
+        model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date.toString, XMLSchema.DATETIME), context)
+      )
+      message.subject.foreach(subject =>
+        model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
+      )
 
-    addAddresses(message.from, messageResource, SchemaOrg.AUTHOR, model)
-    addAddresses(message.to, messageResource, Personal.PRIMARY_RECIPIENT, model)
-    addAddresses(message.cc, messageResource, Personal.COPY_RECIPIENT, model)
-    addAddresses(message.bcc, messageResource, Personal.BLIND_COPY_RECIPIENT, model)
+      addAddresses(message.from, messageResource, SchemaOrg.AUTHOR)
+      addAddresses(message.to, messageResource, Personal.PRIMARY_RECIPIENT)
+      addAddresses(message.cc, messageResource, Personal.COPY_RECIPIENT)
+      addAddresses(message.bcc, messageResource, Personal.BLIND_COPY_RECIPIENT)
 
-    messageResource
-  }
-
-  private def addAddresses(addresses: Traversable[EmailAddress], messageResource: Resource, relation: IRI, model: Model): Unit = {
-    addresses.foreach(address => {
-      convert(address, model).foreach {
-        personResource =>
-          model.add(messageResource, relation, personResource)
-      }
-    })
-  }
-
-  private def convert(address: EmailAddress, model: Model): Option[Resource] = {
-    emailAddressConverter.convert(address.localPart, address.domain, model).map {
-      emailAddressResource =>
-        val personResource = valueFactory.createBNode
-        address.name.foreach(name =>
-          emailAddressNameConverter.convert(name, address.localPart, address.domain).foreach{
-            case x => model.add(personResource, SchemaOrg.NAME, x)
-          }
-        )
-        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
-        personResource
+      messageResource
     }
-  }
 
-  private def resourceForMessage(message: EmailMessage, model: Model): Resource = {
-    message.messageId.map(messageId =>
-      emailMessageUriConverter.convert(messageId, model)
-    ).getOrElse(blankNodeForMessage(model))
-  }
+    private def addAddresses(addresses: Traversable[EmailAddress], messageResource: Resource, relation: IRI): Unit = {
+      addresses.foreach(address => {
+        convert(address).foreach {
+          personResource =>
+            model.add(messageResource, relation, personResource, context)
+        }
+      })
+    }
 
-  private def blankNodeForMessage(model: Model): Resource = {
-    val messageResource = valueFactory.createBNode()
-    model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE)
-    messageResource
-  }
-
-  def adjustDateUsingDeliveryDate(deliveryDateOption: Option[Temporal], dateOption: Option[Temporal]) = {
-    deliveryDateOption match {
-      case Some(deliveryDate: OffsetDateTime) =>
-        dateOption match {
-          case Some(localDateTime: LocalDateTime) =>
-            // Use the delivery date to guess the time offset of our date.
-            val deliveryDateUTCLocalDateTime = deliveryDate.atZoneSameInstant(ZoneId.of("UTC")).toLocalDateTime
-            def durationToSecondsDouble(duration: Duration) = {
-              duration.getSeconds.toDouble + duration.getNano.toDouble / 1000000000.0d
+    private def convert(address: EmailAddress): Option[Resource] = {
+      emailAddressConverter.convert(address.localPart, address.domain, model).map {
+        emailAddressResource =>
+          val personResource = valueFactory.createBNode
+          address.name.foreach(name =>
+            emailAddressNameConverter.convert(name, address.localPart, address.domain).foreach {
+              case x => model.add(personResource, SchemaOrg.NAME, x, context)
             }
-            val d = durationToSecondsDouble(Duration.between(deliveryDateUTCLocalDateTime, localDateTime))
-            // TODO: Guess half-hour offsets
-            val offsetHours = Math.round(d / 3600.00).toInt
-            Some(OffsetDateTime.of(localDateTime, ZoneOffset.ofHours(offsetHours)))
-          case _ => dateOption
-        }
-      case _ =>
-        dateOption match {
-          case Some(localDateTime: LocalDateTime) =>
-            // Assume the time is UTC
-            Some(OffsetDateTime.of(localDateTime, ZoneOffset.ofHours(0)))
-          case _ => dateOption
+          )
+          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, context)
+          personResource
         }
     }
-  }
 
-  def parseDate(field: Field) = {
-    val date = LenientDateParser.parse(field.getBody)
-    if (date.isEmpty) {
-      // Should rarely happen
-      logger.warn(s"Cannot parse date ${field.getBody}")
+    private def resourceForMessage(message: EmailMessage): Resource = {
+      message.messageId.map(messageId =>
+        emailMessageUriConverter.convert(messageId)
+      ).getOrElse(blankNodeForMessage(model))
     }
-    date
+
+    private def blankNodeForMessage(model: Model): Resource = {
+      val messageResource = valueFactory.createBNode()
+      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+      messageResource
+    }
+
+    private def adjustDateUsingDeliveryDate(deliveryDateOption: Option[Temporal], dateOption: Option[Temporal]) = {
+      deliveryDateOption match {
+        case Some(deliveryDate: OffsetDateTime) =>
+          dateOption match {
+            case Some(localDateTime: LocalDateTime) =>
+              // Use the delivery date to guess the time offset of our date.
+              val deliveryDateUTCLocalDateTime = deliveryDate.atZoneSameInstant(ZoneId.of("UTC")).toLocalDateTime
+              def durationToSecondsDouble(duration: Duration) = {
+                duration.getSeconds.toDouble + duration.getNano.toDouble / 1000000000.0d
+              }
+              val d = durationToSecondsDouble(Duration.between(deliveryDateUTCLocalDateTime, localDateTime))
+              // TODO: Guess half-hour offsets
+              val offsetHours = Math.round(d / 3600.00).toInt
+              Some(OffsetDateTime.of(localDateTime, ZoneOffset.ofHours(offsetHours)))
+            case _ => dateOption
+          }
+        case _ =>
+          dateOption match {
+            case Some(localDateTime: LocalDateTime) =>
+              // Assume the time is UTC
+              Some(OffsetDateTime.of(localDateTime, ZoneOffset.ofHours(0)))
+            case _ => dateOption
+          }
+      }
+    }
+
+    private def parseDate(field: Field) = {
+      val date = LenientDateParser.parse(field.getBody)
+      if (date.isEmpty) {
+        // Should rarely happen
+        logger.warn(s"Cannot parse date ${field.getBody}")
+      }
+      date
+    }
+
+    private case class EmailAddress(name: Option[String], localPart: String, domain: String)
+
+    private case class EmailMessage(messageId: Option[String],
+                                    subject: Option[String],
+                                    date: Option[Temporal],
+                                    from: Seq[EmailAddress],
+                                    to: Seq[EmailAddress],
+                                    cc: Seq[EmailAddress],
+                                    bcc: Seq[EmailAddress])
+
   }
-
-  case class EmailAddress(name: Option[String], localPart: String, domain: String)
-
-  case class EmailMessage(messageId: Option[String],
-                          subject: Option[String],
-                          date: Option[Temporal],
-                          from: Seq[EmailAddress],
-                          to: Seq[EmailAddress],
-                          cc: Seq[EmailAddress],
-                          bcc: Seq[EmailAddress])
-
 }

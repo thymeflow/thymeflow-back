@@ -44,7 +44,7 @@ object EmailSynchronizer {
     private def retrieveMessages(folder: Folder): Unit = {
       folder.open(Folder.READ_ONLY)
       folder.getMessages.foreach(message => {
-        val document = new Document(null, emailMessageConverter.convert(message))
+        val document = Document(null, emailMessageConverter.convert(message, null))
         if (waitingForData) {
           onNext(document)
         } else {
@@ -54,14 +54,14 @@ object EmailSynchronizer {
       folder.close(false)
     }
 
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
+    }
+
     private def deliverWaitingMessages(): Unit = {
       while (waitingForData && queue.nonEmpty) {
         onNext(queue.dequeue())
       }
-    }
-
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
     }
   }
 }

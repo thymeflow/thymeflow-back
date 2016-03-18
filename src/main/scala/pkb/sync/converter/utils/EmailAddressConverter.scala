@@ -13,11 +13,22 @@ import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
-
+object EmailAddressConverter{
   // RFC2822 matching non aText
-  private val nonATextPattern =
-    """[^A-Za-z0-9!#\$%&'*+\-/=?\^_`{|}~.]""".r
+  val nonATextPattern = """[^A-Za-z0-9!#\$%&'*+\-/=?\^_`{|}~.]""".r
+
+  def concatenateLocalPartAndDomain(localPart: String, domain: String) = {
+    // TODO: Check if this is the relevant method
+    // We must check that localPart is not already escaped ...
+    if (EmailAddressConverter.nonATextPattern.findFirstMatchIn(localPart).nonEmpty) {
+      s""""$localPart"@$domain"""
+    } else {
+      s"$localPart@$domain"
+    }
+  }
+}
+
+class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
 
   /**
     * Create a EmailAddress resource from a mailto: URI
@@ -53,12 +64,7 @@ class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
     val domainLowerCase = domain.toLowerCase(Locale.ROOT)
     // Note: Non RFC compliant, but most servers consider localPart to be case insensitive
     val localPartLowerCase = localPart.toLowerCase(Locale.ROOT)
-    val address =
-      if (nonATextPattern.findFirstMatchIn(localPart).nonEmpty) {
-        s""""$localPartLowerCase"@$domainLowerCase"""
-      } else {
-        s"$localPartLowerCase@$domainLowerCase"
-      }
+    val address = EmailAddressConverter.concatenateLocalPartAndDomain(localPartLowerCase, domainLowerCase)
     val addressResource = valueFactory.createIRI("mailto:" + address)
     model.add(addressResource, Personal.LOCAL_PART, valueFactory.createLiteral(localPartLowerCase))
     model.add(addressResource, Personal.DOMAIN, valueFactory.createLiteral(domain))

@@ -13,3 +13,5 @@ project/plugins/project/
 
 # IDE
 .idea
+
+/data

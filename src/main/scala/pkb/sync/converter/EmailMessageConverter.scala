@@ -10,7 +10,7 @@ import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressNameConverter, EmailAddressConverter, EmailMessageUriConverter}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -20,6 +20,7 @@ import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter
 class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
+  private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
   def convert(stream: InputStream): Model = {
@@ -89,11 +90,11 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       emailAddressResource =>
         val personResource = valueFactory.createBNode
         Option(address.getPersonal).foreach(name =>
-          model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(address.getPersonal))
+          emailAddressNameConverter.convert(address.getPersonal, address.getAddress).foreach{
+            case name => model.add(personResource, SchemaOrg.NAME, name)
+          }
         )
-        Option(address.getAddress).foreach(email =>
-          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
-        )
+        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
         personResource
     }
   }

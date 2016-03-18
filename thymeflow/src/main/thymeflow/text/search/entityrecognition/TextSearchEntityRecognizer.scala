@@ -85,7 +85,7 @@ trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with S
 }
 
 object TextSearchEntityRecognizer{
-  def apply[ENTITY](textSearch: TextSearch[ENTITY])(implicit executionContext: ExecutionContext) = {
+  def apply[ENTITY](textSearch: TextSearch[ENTITY])(implicit executionContext: ExecutionContext): TextSearchEntityRecognizer[ENTITY] = {
     val _textSearch = textSearch
     val _executionContext = executionContext
     new TextSearchEntityRecognizer[ENTITY]{

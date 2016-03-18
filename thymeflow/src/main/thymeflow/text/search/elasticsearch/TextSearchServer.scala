@@ -7,9 +7,9 @@ import com.typesafe.scalalogging.StrictLogging
 import org.elasticsearch.action.ShardOperationFailedException
 import org.elasticsearch.action.bulk.BulkResponse
 import org.elasticsearch.action.index.IndexRequest
-import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.settings.{ImmutableSettings, Settings}
 import org.elasticsearch.common.xcontent.XContentFactory
-import org.elasticsearch.index.IndexNotFoundException
+import org.elasticsearch.indices.IndexMissingException
 import org.elasticsearch.node.NodeBuilder._
 import thymeflow.text.search.TextSearchAgent
 import thymeflow.text.search.elasticsearch.ListenableActionFutureExtensions._
@@ -39,7 +39,7 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
     esClient.admin.indices.prepareDelete(indexName).execute.future.map{
       case _ => ()
     }.recover{
-      case e: IndexNotFoundException => ()
+      case e: IndexMissingException => ()
     }
   }
 
@@ -69,7 +69,7 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
   }
 
   def analyze(literal: String) = {
-    val query = esClient.prepareTermVectors().setType("literal").setIndex(indexName).setDoc(literalJsonBuilder(literal))
+    val query = esClient.prepareTermVector().setType("literal").setIndex(indexName).setDoc(literalJsonBuilder(literal))
     query.execute().future.map{
       case response =>
         response.getFields.iterator().asScala.mkString("\n")
@@ -94,7 +94,7 @@ class TextSearchServer[T] private(indexName: String, idToEntity: String => T, se
   def handleShardFailures(shardOperationFailures: Seq[ShardOperationFailedException]) = {
     val shardFailures = shardOperationFailures.map {
       failure =>
-        new ElasticSearchShardFailure(Option(failure.index()), Option(failure.shardId()), Option(failure.reason()), Option(failure.getCause))
+        new ElasticSearchShardFailure(Option(failure.index()), Option(failure.shardId()), Option(failure.reason()))
     }
     if (shardFailures.nonEmpty) {
       val exception = new ElasticSearchAggregateException("Shard failures:", shardFailures)
@@ -123,12 +123,12 @@ object TextSearchServer extends StrictLogging {
   final val dataDirectory = "data"
   final val clusterName = "thymeflow"
   lazy val (esNode, esClient) = {
-    val sBuilder = Settings.builder()
+    val sBuilder = ImmutableSettings.builder()
     sBuilder.put("path.home", this.esDirectory.toString)
     sBuilder.put("network.host", "127.0.0.1")
-    sBuilder.put("threadpool.search.queue_size", "10000")
+    sBuilder.put("threadpool.search.queue_size", "1000000")
     val settings: Settings = sBuilder.build
-    val esNode = nodeBuilder.clusterName(clusterName).settings(settings).node
+    val esNode = nodeBuilder.clusterName(clusterName).loadConfigSettings(true).settings(settings).node
     logger.info("[elastic-search] Started search node.")
     (esNode, esNode.client())
   }
@@ -138,7 +138,9 @@ object TextSearchServer extends StrictLogging {
     // randomized index name
     val indexName = UUID.randomUUID().toString
     val server = new TextSearchServer[T](indexName, idToEntity)
-    server.recreateIndex()
+    server.recreateIndex().map{
+      case _ => server
+    }
   }
 
   def shutdown(): Future[Unit] = {

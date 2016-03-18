@@ -15,6 +15,9 @@
         </encoder>
     </appender>
 
+
+    <logger name="org.elasticsearch" level="WARN"/>
+
     <root level="debug">
 
         <!--

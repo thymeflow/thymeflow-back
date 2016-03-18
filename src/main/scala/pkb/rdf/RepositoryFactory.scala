@@ -1,10 +1,9 @@
 package pkb.rdf
 
-import org.openrdf.IsolationLevels
 import org.openrdf.model.vocabulary.{RDF, RDFS}
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
-import org.openrdf.sail.memory.MemoryStore
+import org.openrdf.sail.memory.CustomMemoryStore
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 /**
@@ -13,8 +12,7 @@ import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 object RepositoryFactory {
 
   def initializedMemoryRepository: Repository = {
-    val store = new MemoryStore()
-    store.setDefaultIsolationLevel(IsolationLevels.NONE)
+    val store = new CustomMemoryStore()
     val repository = new SailRepository(store)
     repository.initialize()
     addNamespacesToRepository(repository.getConnection)

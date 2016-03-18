@@ -14,7 +14,7 @@ import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressNameConverter, EmailAddressConverter, EmailMessageUriConverter}
 import pkb.utilities.mail.LenientDateParser
 
 import scala.collection.JavaConverters._
@@ -25,6 +25,7 @@ import scala.collection.JavaConverters._
 class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
+  private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
 
   override def convert(str: String): Model = {
@@ -147,7 +148,9 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
       emailAddressResource =>
         val personResource = valueFactory.createBNode
         address.name.foreach(name =>
-          model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
+          emailAddressNameConverter.convert(name, address.localPart, address.domain).foreach{
+            case x => model.add(personResource, SchemaOrg.NAME, x)
+          }
         )
         model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
         personResource

@@ -3,6 +3,9 @@ package pkb.api
 import java.util.Properties
 import javax.mail.Session
 
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.{StatusCodes, Uri}
+import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
 import pkb.Pipeline
@@ -10,21 +13,20 @@ import pkb.actors._
 import pkb.inferencer.InverseFunctionalPropertyInferencer
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer}
-import spray.http._
-import spray.routing._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
 /**
   * @author Thomas Pellissier Tanon
   */
-object MainApi extends App with SimpleRoutingApp with SparqlService {
+object MainApi extends App with SparqlService {
 
   override protected val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
-  private val redirectionTarget = Uri("http://localhost:4200") //TODO: should be in configuration
+  private val redirectionTarget = Uri("http://localhost:4200")
+  //TODO: should be in configuration
   private val pipeline = new Pipeline(repositoryConnection, List(new InverseFunctionalPropertyInferencer(repositoryConnection)))
 
-  startServer(interface = "localhost", port = 8080) {
+  private val route = {
     path("sparql") {
       sparqlRoute
     } ~
@@ -45,8 +47,11 @@ object MainApi extends App with SimpleRoutingApp with SparqlService {
               }
             }
         }
-    }
+      }
   }
+  Http().bindAndHandle(route, "localhost", 8080)
+
+  //TODO: make it configurable
 
   private def onGoogleToken(token: String): Unit = {
     val sardine = new SardineImpl(token)

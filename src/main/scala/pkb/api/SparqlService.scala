@@ -7,6 +7,7 @@ import akka.http.scaladsl.model.headers.{Accept, `Access-Control-Allow-Methods`,
 import akka.http.scaladsl.model.{ContentType, _}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{Directive0, Route}
+import com.typesafe.scalalogging.StrictLogging
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
 import org.openrdf.query._
@@ -20,7 +21,7 @@ import scala.compat.java8.OptionConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-trait SparqlService {
+trait SparqlService extends StrictLogging {
   val `application/sparql-query` = applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
 
   protected val repositoryConnection: RepositoryConnection
@@ -65,7 +66,9 @@ trait SparqlService {
     } catch {
       case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
       case e: QueryInterruptedException => complete(StatusCodes.InternalServerError, "Query times out: " + e.getMessage)
-      case e: QueryEvaluationException => complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
+      case e: QueryEvaluationException =>
+        logger.error("Query evaluation error: " + e.getMessage, e)
+        complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
     }
   }
 

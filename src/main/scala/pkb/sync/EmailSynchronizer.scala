@@ -67,9 +67,15 @@ object EmailSynchronizer {
     }
 
     private def onNext(documentFuture: Future[Option[Document]]): Unit = {
-      documentFuture.foreach {
-        case Some(document) => onNext(document)
-        case None =>
+      documentFuture.onSuccess {
+        case Some(document) => //We have to chek one more time if documents are still requested in order to avoid race conditions
+          if (waitingForData) {
+            onNext(document)
+          } else {
+            queue.enqueue(Future {
+              Some(document)
+            })
+          }
       }
     }
 

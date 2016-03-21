@@ -94,6 +94,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
         val personResource = valueFactory.createBNode
+        model.add(personResource, RDF.TYPE, Personal.AGENT, context)
         Option(address.getPersonal).foreach(name =>
           model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(address.getPersonal), context)
         )
@@ -116,7 +117,6 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     private def blankNodeForMessage(): Resource = {
       val messageResource = valueFactory.createBNode()
-      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
       messageResource
     }
   }

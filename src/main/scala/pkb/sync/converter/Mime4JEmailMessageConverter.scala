@@ -147,6 +147,7 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
       emailAddressConverter.convert(address.localPart, address.domain, model).map {
         emailAddressResource =>
           val personResource = valueFactory.createBNode
+          model.add(personResource, RDF.TYPE, Personal.AGENT, context)
           address.name.foreach(name =>
             model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
           )
@@ -163,7 +164,6 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
 
     private def blankNodeForMessage(model: Model): Resource = {
       val messageResource = valueFactory.createBNode()
-      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
       messageResource
     }
 

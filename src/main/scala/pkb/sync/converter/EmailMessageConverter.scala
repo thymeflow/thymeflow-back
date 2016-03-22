@@ -28,15 +28,15 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream), context)
   }
 
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
-  }
-
   def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(message)
     model
+  }
+
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {

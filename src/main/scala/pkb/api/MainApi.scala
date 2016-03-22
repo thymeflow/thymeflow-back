@@ -21,10 +21,13 @@ import scala.concurrent.ExecutionContext.Implicits.global
   */
 object MainApi extends App with SparqlService {
 
-  override protected val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
+  override protected val repository = RepositoryFactory.initializedMemoryRepository
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration
-  private val pipeline = new Pipeline(repositoryConnection, List(new InverseFunctionalPropertyInferencer(repositoryConnection)))
+  private val pipeline = new Pipeline(
+    repository.getConnection,
+    List(new InverseFunctionalPropertyInferencer(repository.getConnection))
+  )
 
   private val route = {
     path("sparql") {

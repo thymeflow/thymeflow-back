@@ -23,8 +23,7 @@ object OAuth2 {
 class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String)
   extends SprayJsonSupport with DefaultJsonProtocol {
 
-  implicit
-  val TokenFormat = jsonFormat5(Token)
+  implicit lazy val TokenFormat = jsonFormat5(Token)
 
   def getAuthUri(scopes: Traversable[String], redirectUri: String): Uri = {
     Uri(authorizeUri).withQuery(Query(

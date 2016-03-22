@@ -9,20 +9,21 @@ import pkb.rdf.model.document.Document
 import pkb.sync.converter.EmailMessageConverter
 import pkb.sync.publisher.ScrollDocumentPublisher
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 /**
   * @author Thomas Pellissier Tanon
   */
-object EmailSynchronizer {
+object EmailSynchronizer extends Synchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
+  def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(store: Store)
 
-  private class Publisher(valueFactory: ValueFactory)(implicit val executionContext: ExecutionContext)
-    extends ScrollDocumentPublisher[Document, (Vector[Config], Option[(Folder, Int, Int)]), Traversable[Document]] {
+  private class Publisher(valueFactory: ValueFactory)
+    extends ScrollDocumentPublisher[Document, (Vector[Config], Option[(Folder, Int, Int)])] with BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
 

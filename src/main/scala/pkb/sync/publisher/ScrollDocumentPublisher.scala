@@ -5,12 +5,13 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import com.typesafe.scalalogging.StrictLogging
 
 import scala.annotation.tailrec
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 /**
   * @author David Montoya
   */
-trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMENT]] extends ActorPublisher[DOCUMENT] with StrictLogging {
+trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT] with StrictLogging {
   protected var currentScrollOption: Option[SCROLL] = None
   protected var noMoreResults = false
   protected var processing = false
@@ -47,8 +48,6 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
   }
 
   protected def queryBuilder: (SCROLL, Long) => Future[Result]
-
-  implicit protected def executionContext: ExecutionContext
 
   protected def nextResults(requestCount: Long): Unit = {
     try {
@@ -91,7 +90,7 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
       }
     }
 
-  protected case class Result(scroll: Option[SCROLL], hits: DOCUMENTS)
+  protected case class Result(scroll: Option[SCROLL], hits: Traversable[DOCUMENT])
 
   protected case class Failure(throwable: Throwable)
 

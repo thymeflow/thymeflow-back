@@ -9,6 +9,7 @@ import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.document.Document
+import pkb.sync.Synchronizer.Sync
 import pkb.sync.converter.VCardConverter
 import pkb.sync.dav._
 
@@ -27,7 +28,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
     override def receive: Receive = {
-      case Request(_) =>
+      case Request(_) | Sync =>
         deliverDocuments()
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))

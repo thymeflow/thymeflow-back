@@ -13,6 +13,7 @@ import pkb.utilities.text.Normalization
 import thymeflow.graph.ConnectedComponents
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.TextSearchServer
+import thymeflow.text.search.entityrecognition.TextSearchEntityRecognizer
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{ExecutionContext, Future}
@@ -30,12 +31,13 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
   def run() = {
     val metric = new LevensteinDistance()
+    val sameAsThreshold = 0.7d
     val distance = new BipartiteMatchingDistance(
       (s1, s2) => 1.0d - metric.getDistance(normalizeTerm(s1), normalizeTerm(s2)), 0.3
     )
     val entityMatchingWeight = distance.getDistance _
     val entityMatchIndices = distance.matchIndices _
-    val matchPercent = 80
+
 
     val agentEmailAddressesQuery =
       s"""
@@ -123,20 +125,57 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
     }.map {
       case textSearchServer =>
+        val entityRecognizer = TextSearchEntityRecognizer(textSearchServer)
         Future.sequence(agentFacetAndNames.map {
           case (agent1, name1) =>
-            textSearchServer.search(name1, matchPercent).map {
-              case matching =>
-                val name1Split = entitySplit(name1)
-                matching.collect {
-                  case ((agent2, name2), score) if agent1 != agent2 =>
-                    (agent1, agent2, name1Split, entitySplit(name2), name1Split)
-                }
+            recognizeEntities(entityRecognizer)(Int.MaxValue, clearDuplicateNestedResults = true, _._2)(name1).map {
+              _.collect({
+                case ((agent2, name2), name1Split, name2Split, nameMatch) if agent1 != agent2 => ((agent1, name2), (agent2, name2), name1Split, name2Split, nameMatch)
+              })
             }
         }).map(_.flatten).map {
           case matchingCandidates =>
             val result = entityMatching(matchingCandidates, entityMatchingScore(entityMatchingWeightCombine(termIDFs), entityMatchingWeight))
-            result
+            val equalities = equalityBuild(result.view.map { case x => (x._1._1, x._2._1, x._4._2) })
+
+            val sameAs = equalities.collect {
+              case ((i1, i2), (w1, w2)) if w1 >= sameAsThreshold && w2 >= sameAsThreshold => (i1, i2)
+            }
+
+            val equalityWeights = sameAs.map {
+              case (instance1, instance2) =>
+                def nameStatements(instance: String) = {
+                  agentFacetRepresentativeToNames.get(instance).map(_.toIterable).getOrElse(Iterable.empty)
+                }
+                var weight = 0d
+                var normalization = 0d
+                val nameStatements2 = nameStatements(instance2)
+                nameStatements(instance1).foreach {
+                  case (name1, count1) =>
+                    nameStatements2.foreach {
+                      case (name2, count2) =>
+                        val split1 = entitySplit(name1)
+                        val split2 = entitySplit(name2)
+                        if (split1.nonEmpty && split2.nonEmpty) {
+
+                          val weight1 = entityMatchingWeight(split1, split2)
+                          val weight2 = weight1.map {
+                            case (s1, s2, w) => (s2, s1, w)
+                          }
+                          val maxWeight = scala.math.max(entityMatchingWeightCombine(termIDFs)(split1, split2, weight1), entityMatchingWeightCombine(termIDFs)(split2, split1, weight2))
+                          weight += (count1 * count2).toDouble * maxWeight
+                          normalization += (count1 * count2).toDouble
+                        }
+                    }
+                }
+                val equalityMatchingWeight = if (normalization != 0.0) {
+                  weight / normalization
+                } else {
+                  0.0
+                }
+                (instance1, instance2, equalityMatchingWeight)
+            }
+            equalityWeights
         }
     }
   }
@@ -150,6 +189,25 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     } else {
       None
     }
+  }
+
+  def equalityBuild[T](matching: Traversable[(T, T, Double)])(implicit ordered: T => Ordered[T]) = {
+    val equalityMapBuilder = new scala.collection.mutable.HashMap[(T, T), (Double, Double)]
+    def addEquality(instance1: T, instance2: T, weight: Double) {
+      val (key, (new1, new2)) = if (instance1 > instance2) {
+        ((instance2, instance1), (0.0, weight))
+      } else {
+        ((instance1, instance2), (weight, 0.0))
+      }
+      val (w1, w2) = equalityMapBuilder.getOrElseUpdate(key, (0.0, 0.0))
+      val value = (Math.max(w1, new1), Math.max(w2, new2))
+      equalityMapBuilder += ((key, value))
+    }
+    matching.foreach {
+      case (instance1, instance2, weight) =>
+        addEquality(instance1, instance2, weight)
+    }
+    equalityMapBuilder.result()
   }
 
   def entityMatching[T, X](matching: Traversable[(X, X, Seq[String], Seq[String], Seq[String])],
@@ -171,15 +229,15 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     idfs
   }
 
+  def normalizeTerm(term: String) = {
+    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
+  }
+
   def entityMatchingWeightCombine(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], weight: Seq[(Seq[String], Seq[String], Double)]) => {
     weight.map {
       case (terms1, terms2, distance) =>
         terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
-  }
-
-  def normalizeTerm(term: String) = {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
   }
 
   def reconciliateAgentNames(agentNames: Traversable[(String, Map[String, Int])],
@@ -217,10 +275,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }.sortBy(_._2).reverse
         (weight, Vector(best, reconciliatedNames))
     }.toVector.sortBy(_._1)
-  }
-
-  def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   def reconciliateNames(names: Seq[(Seq[String], Int)], comparator: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
@@ -298,6 +352,28 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
         equivalentNames.sortBy(_._2).reverse
     }.toVector
+  }
+
+  def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
+  private def recognizeEntities[T](entityRecognizer: TextSearchEntityRecognizer[T])
+                                  (searchDepth: Int = 3,
+                                   clearDuplicateNestedResults: Boolean = false,
+                                   matchToLiteral: T => String)(literal1: String) = {
+    val literal1Split = entitySplit(literal1)
+    entityRecognizer.recognizeEntities(literal1Split, searchDepth, clearDuplicateNestedResults = clearDuplicateNestedResults).map {
+      case (positions) =>
+        positions.flatMap {
+          case (position, matchedEntities) =>
+            val literal1Slice = position.slice(literal1Split)
+            matchedEntities.map {
+              case (matchedLiteral2, _) =>
+                (matchedLiteral2, literal1Split, entitySplit(matchToLiteral(matchedLiteral2)), literal1Slice)
+            }
+        }
+    }
   }
 
 }

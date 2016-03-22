@@ -24,25 +24,21 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
       } else {
         currentScrollOption = scrollOption
       }
-      if (buf.isEmpty && isActive && totalDemand > 0)
-        hits foreach onNext
-      else {
-        buf ++= hits
-        deliverBuf()
-      }
+      buf ++= hits
+      deliverBuf()
       if (!(buf.isEmpty && noMoreResults)) {
         if (isActive && totalDemand > 0) {
-          nextResults()
+          nextResults(totalDemand)
         }
       }
     case Failure(failure) =>
       onError(failure)
       processing = false
-    case Request(cnt) =>
+    case Request(requestCount) =>
       deliverBuf()
       if (isActive) {
         if (!noMoreResults && totalDemand > 0) {
-          nextResults()
+          nextResults(requestCount)
         }
       }
     case Cancel =>
@@ -50,17 +46,17 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
     case _ =>
   }
 
-  protected def queryBuilder: (SCROLL) => Future[Result]
+  protected def queryBuilder: (SCROLL, Long) => Future[Result]
 
   implicit protected def executionContext: ExecutionContext
 
-  protected def nextResults(): Unit = {
+  protected def nextResults(requestCount: Long): Unit = {
     try {
       if (!processing) {
         currentScrollOption match {
           case Some(currentScroll) =>
             processing = true
-            val future = queryBuilder(currentScroll)
+            val future = queryBuilder(currentScroll, requestCount)
             future.foreach {
               case result => this.self ! result
             }

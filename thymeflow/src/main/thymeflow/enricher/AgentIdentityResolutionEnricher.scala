@@ -7,6 +7,7 @@ import org.apache.lucene.search.spell.LevensteinDistance
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
+import pkb.actors._
 import pkb.rdf.Converters._
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.utilities.text.Normalization
@@ -15,15 +16,14 @@ import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.TextSearchServer
 import thymeflow.text.search.entityrecognition.TextSearchEntityRecognizer
 
+import scala.concurrent.Future
 import scala.concurrent.duration.Duration
-import scala.concurrent.{ExecutionContext, Future}
-
 
 /**
   * @author David Montoya
   */
 class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
-                                     (implicit val executionContext: ExecutionContext) extends DelayedEnricher with StrictLogging{
+  extends DelayedEnricher with StrictLogging {
 
   // \u2022 is the bullet character
   val tokenSeparator =
@@ -85,7 +85,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          |SELECT ?agent ?name
          |WHERE {
          |  ?agent <${SchemaOrg.NAME}> ?name .
-         |  ?agent <${RDF.TYPE}> <${Personal.AGENT}>
+         |  ?agent <${RDF.TYPE}> <${Personal.AGENT}> .
          | }
       """.stripMargin
 

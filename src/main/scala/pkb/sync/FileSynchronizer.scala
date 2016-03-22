@@ -51,7 +51,11 @@ object FileSynchronizer extends Synchronizer {
       case (queuedStates, demand) =>
         Future.successful {
           val (newStates, hits) = handleStates(queuedStates, demand * 4)
-          Result(scroll = Some(newStates), hits = hits)
+          if (newStates.isEmpty) {
+            Result(scroll = None, hits = hits)
+          } else {
+            Result(scroll = Some(newStates), hits = hits)
+          }
         }
     }
 

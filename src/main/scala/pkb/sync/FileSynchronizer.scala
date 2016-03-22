@@ -13,21 +13,22 @@ import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCar
 import pkb.sync.publisher.ScrollDocumentPublisher
 
 import scala.collection.JavaConverters._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 /**
   * @author Thomas Pellissier Tanon
   */
-object FileSynchronizer {
+object FileSynchronizer extends Synchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
+  def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(file: File, mimeType: Option[String] = None) {
   }
 
-  private class Publisher(valueFactory: ValueFactory)(implicit val executionContext: ExecutionContext)
-    extends ScrollDocumentPublisher[Document, (Vector[Any]), Traversable[Document]] {
+  private class Publisher(valueFactory: ValueFactory)
+    extends ScrollDocumentPublisher[Document, (Vector[Any])] with BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val iCalConverter = new ICalConverter(valueFactory)
@@ -126,7 +127,7 @@ object FileSynchronizer {
         case "message/rfc822" => Some(ConvertibleFile(path, emailMessageConverter, stream))
         case "text/calendar" => Some(ConvertibleFile(path, iCalConverter, stream))
         case "text/vcard" => Some(ConvertibleFile(path, vCardConverter, stream))
-        case mimeType =>
+        case _ =>
           logger.info("Unsupported MIME type " + mimeType + " for file " + path)
           None
       }

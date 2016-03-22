@@ -37,7 +37,6 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
   }
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
-    import scala.concurrent.ExecutionContext.Implicits.global
     //TODO: find a way to not hardcode synchronizers
     val valueFactory = repositoryConnection.getValueFactory
 

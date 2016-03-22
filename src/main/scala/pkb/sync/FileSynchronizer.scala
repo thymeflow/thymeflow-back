@@ -14,7 +14,6 @@ import pkb.sync.publisher.ScrollDocumentPublisher
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
 /**

@@ -10,7 +10,7 @@ import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, UUIDConverter}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -21,6 +21,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
+  private val uuidConverter = new UUIDConverter(valueFactory)
 
   override def convert(stream: InputStream, context: IRI): Model = {
     convert(new MimeMessage(null, stream), context)
@@ -93,7 +94,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = valueFactory.createBNode
+        val personResource = uuidConverter.create(address.toString)
         model.add(personResource, RDF.TYPE, Personal.AGENT, context)
         Option(address.getPersonal).foreach(name =>
           model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(address.getPersonal), context)
@@ -110,14 +111,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         case mimeMessage: MimeMessage =>
           Option(mimeMessage.getMessageID).map(messageId =>
             emailMessageUriConverter.convert(mimeMessage.getMessageID)
-          ).getOrElse(blankNodeForMessage())
-        case _ => blankNodeForMessage()
+          ).getOrElse(valueFactory.createBNode())
+        case _ => valueFactory.createBNode()
       }
-    }
-
-    private def blankNodeForMessage(): Resource = {
-      val messageResource = valueFactory.createBNode()
-      messageResource
     }
   }
 }

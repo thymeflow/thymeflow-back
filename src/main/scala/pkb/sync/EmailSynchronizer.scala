@@ -17,7 +17,7 @@ import scala.concurrent.Future
   */
 object EmailSynchronizer extends Synchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
+  def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(store: Store)

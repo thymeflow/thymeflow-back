@@ -14,8 +14,6 @@ import pkb.inferencer.InverseFunctionalPropertyInferencer
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
-import scala.concurrent.ExecutionContext.Implicits.global
-
 /**
   * @author Thomas Pellissier Tanon
   */

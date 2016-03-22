@@ -12,7 +12,7 @@ import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
 import org.openrdf.query._
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.openrdf.repository.RepositoryConnection
+import org.openrdf.repository.Repository
 import org.openrdf.rio.RDFWriterRegistry
 import pkb.actors._
 
@@ -24,7 +24,7 @@ import scala.compat.java8.OptionConverters._
 trait SparqlService extends StrictLogging {
   val `application/sparql-query` = applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
 
-  protected val repositoryConnection: RepositoryConnection
+  protected val repository: Repository
 
   protected val sparqlRoute = {
     respondWithHeaders(
@@ -57,6 +57,7 @@ trait SparqlService extends StrictLogging {
   }
 
   private def execute(queryStr: String, accept: Option[Accept]): Route = {
+    val repositoryConnection = repository.getConnection
     try {
       repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr) match {
         case query: BooleanQuery => execute(query, accept)
@@ -69,6 +70,8 @@ trait SparqlService extends StrictLogging {
       case e: QueryEvaluationException =>
         logger.error("Query evaluation error: " + e.getMessage, e)
         complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
+    } finally {
+      repositoryConnection.close()
     }
   }
 

@@ -31,6 +31,7 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
   }
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
+    import scala.concurrent.ExecutionContext.Implicits.global
     //TODO: find a way to not hardcode synchronizers
     val valueFactory = repositoryConnection.getValueFactory
 
@@ -60,13 +61,15 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
     val statements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
     val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
 
-    repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
-      if (document.model.contains(existingStatement)) {
-        statements.remove(existingStatement)
-      } else {
-        statementsToRemove.add(existingStatement)
-      }
-    )
+    if (document.iri != null) {
+      repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
+        if (document.model.contains(existingStatement)) {
+          statements.remove(existingStatement)
+        } else {
+          statementsToRemove.add(existingStatement)
+        }
+      )
+    }
 
     repositoryConnection.remove(statementsToRemove)
     repositoryConnection.add(statements)

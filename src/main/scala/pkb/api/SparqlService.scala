@@ -2,29 +2,33 @@ package pkb.api
 
 import java.io.ByteArrayOutputStream
 
+import akka.http.scaladsl.model.MediaType._
+import akka.http.scaladsl.model.headers.{Accept, `Access-Control-Allow-Methods`, `Access-Control-Allow-Origin`, `Content-Type`}
+import akka.http.scaladsl.model.{ContentType, _}
+import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.{Directive0, Route}
+import com.typesafe.scalalogging.StrictLogging
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
 import org.openrdf.query._
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.openrdf.repository.RepositoryConnection
+import org.openrdf.repository.Repository
 import org.openrdf.rio.RDFWriterRegistry
-import spray.http.HttpHeaders.{Accept, `Access-Control-Allow-Methods`, `Access-Control-Allow-Origin`, `Content-Type`}
-import spray.http._
-import spray.routing._
+import pkb.actors._
 
 import scala.compat.java8.OptionConverters._
 
 /**
   * @author Thomas Pellissier Tanon
   */
-trait SparqlService extends HttpService {
-  val `application/sparql-query` = MediaTypes.register(MediaType.custom("application", "sparql-query", compressible = true))
+trait SparqlService extends StrictLogging {
+  val `application/sparql-query` = applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
 
-  protected val repositoryConnection: RepositoryConnection
+  protected val repository: Repository
 
   protected val sparqlRoute = {
     respondWithHeaders(
-      `Access-Control-Allow-Origin`(AllOrigins),
+      `Access-Control-Allow-Origin`.*,
       `Access-Control-Allow-Methods`(HttpMethods.GET, HttpMethods.POST, HttpMethods.OPTIONS)
     ) {
       optionalHeaderValueByType[Accept]() { accept =>
@@ -53,6 +57,7 @@ trait SparqlService extends HttpService {
   }
 
   private def execute(queryStr: String, accept: Option[Accept]): Route = {
+    val repositoryConnection = repository.getConnection
     try {
       repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr) match {
         case query: BooleanQuery => execute(query, accept)
@@ -62,7 +67,11 @@ trait SparqlService extends HttpService {
     } catch {
       case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
       case e: QueryInterruptedException => complete(StatusCodes.InternalServerError, "Query times out: " + e.getMessage)
-      case e: QueryEvaluationException => complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
+      case e: QueryEvaluationException =>
+        logger.error("Query evaluation error: " + e.getMessage, e)
+        complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
+    } finally {
+      repositoryConnection.close()
     }
   }
 
@@ -122,9 +131,9 @@ trait SparqlService extends HttpService {
   }
 
   private def contentTypeForFormat(format: FileFormat): ContentType = {
-    val mediaType = MediaType.custom(format.getDefaultMIMEType)
-    MediaTypes.register(mediaType)
-    ContentType(mediaType, HttpCharsets.getForKey(format.getCharset.name()))
+    ContentType(MediaType.parse(format.getDefaultMIMEType).right.get, () => {
+      HttpCharsets.getForKey(format.getCharset.name()).getOrElse(HttpCharsets.`UTF-8`)
+    })
   }
 
   private def withContentType(expectedContentType: ContentType): Directive0 = {

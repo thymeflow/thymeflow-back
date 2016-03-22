@@ -15,11 +15,9 @@
         </encoder>
     </appender>
 
-
     <logger name="org.elasticsearch" level="WARN"/>
 
-    <root level="debug">
-
+    <root level="info">
         <!--
              <appender-ref ref="FILE" /> -->
         <appender-ref ref="STDOUT"/>

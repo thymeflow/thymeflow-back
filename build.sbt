@@ -44,15 +44,11 @@ val pkb = (project in file(".")).settings(rootSettings:_*).settings(
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",
   libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+",
-  libraryDependencies += "com.fasterxml.jackson.core" % "jackson-core" % "2.6.+", //Lf2SpacesIndenter is no more available on Jackson 2.7
-  libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.6.+",
   libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+",
-  libraryDependencies += "io.spray" %% "spray-can" % "1.+",
-  libraryDependencies += "io.spray" %% "spray-routing" % "1.+",
-  libraryDependencies += "io.spray" %% "spray-client" % "1.+",
-  libraryDependencies += "io.spray" %% "spray-json" % "1.+",
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.7.5"
 )
 
@@ -72,3 +68,5 @@ val thymeflowProject = Project (
     // , "org.scalanlp" %% "breeze-natives" % "0.12"
   )
 ).dependsOn(pkb)
+
+

@@ -1,115 +1,156 @@
 package pkb.sync
 
-import java.io.{File, FileInputStream, InputStream}
+import java.io.{File, InputStream}
+import java.nio.file.{DirectoryStream, Files, Path, Paths}
 import java.util.zip.ZipFile
 
 import akka.actor.Props
-import akka.stream.actor.ActorPublisher
-import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
-import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.ValueFactory
 import pkb.rdf.model.document.Document
 import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
+import pkb.sync.publisher.ScrollDocumentPublisher
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * @author Thomas Pellissier Tanon
   */
 object FileSynchronizer {
 
-  def source(valueFactory: ValueFactory) =
+  def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
-  case class Config(files: Traversable[String]) {
+  case class Config(file: File, mimeType: Option[String] = None) {
   }
 
-  private class Publisher(valueFactory: ValueFactory) extends ActorPublisher[Document] with StrictLogging {
+  private class Publisher(valueFactory: ValueFactory)(implicit val executionContext: ExecutionContext)
+    extends ScrollDocumentPublisher[Document, (Vector[Any]), Traversable[Document]] {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val iCalConverter = new ICalConverter(valueFactory)
     private val vCardConverter = new VCardConverter(valueFactory)
-    private val queue = new mutable.Queue[ConvertibleFile]
 
     override def receive: Receive = {
-      case Request(_) =>
-        deliverWaitingMessages()
       case config: Config =>
-        retrieveFiles(config.files.map(new File(_)))
-      case Cancel =>
-        context.stop(self)
+        currentScrollOption = Some(currentScrollOption match {
+          case Some(queuedConfigs) =>
+            queuedConfigs :+ config
+          case None =>
+            Vector(config)
+        })
+        nextResults()
+      case message =>
+        super.receive(message)
     }
 
-    private def retrieveFiles(files: Traversable[File]): Unit = {
-      files.foreach(file =>
-        if (file.isDirectory) {
-          retrieveFiles(file.listFiles())
-        } else {
-          retrieveFile(file)
+    override protected def queryBuilder = {
+      case (state +: queuedStates) =>
+        Future {
+          val (nextStates, hits) = state match {
+            case path: Path =>
+              if (Files.isDirectory(path)) {
+                val directories = Vector.newBuilder[Path]
+                val directoryStream = Files.newDirectoryStream(path)
+                val iterator = directoryStream.iterator().asScala.collect {
+                  case pathInsideDirectory =>
+                    if (Files.isDirectory(pathInsideDirectory)) {
+                      directories += pathInsideDirectory
+                      None
+                    } else {
+                      retrieveFile(pathInsideDirectory)
+                    }
+                }.flatten
+                (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
+              } else {
+                (retrieveFile(path).toVector, None)
+              }
+            case (convertibleFile: ConvertibleFile) =>
+              (Vector.empty, Some(convertibleFile.read()))
+            case (directoryIteration: DirectoryIteration) =>
+              if (directoryIteration.iterator.hasNext) {
+                (Vector(directoryIteration.iterator.next(), directoryIteration), None)
+              } else {
+                directoryIteration.directoryStream.close()
+                (directoryIteration.directories.result, None)
+              }
+            case (zipfile: ZipFile) =>
+              (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
+                case entry if !entry.isDirectory =>
+                  retrieveFile(Paths.get(entry.getName), zipfile.getInputStream(entry))
+              }.flatten)), None)
+            case zipIteration: ZipIteration =>
+              if (zipIteration.iterator.hasNext) {
+                (Vector(zipIteration.iterator.next(), zipIteration), None)
+              } else {
+                zipIteration.zipFile.close()
+                (Vector.empty, None)
+              }
+            case config: Config =>
+              (config.mimeType match {
+                case Some(mimeType) =>
+                  retrieveFile(config.file.toPath, mimeType).toVector
+                case None =>
+                  Vector(config.file.toPath)
+              }, None)
+          }
+          Result(scroll = Some(nextStates ++ queuedStates), hits = hits)
         }
-      )
+      case Vector() =>
+        Future.successful(Result(scroll = None, hits = None))
     }
 
-    private def retrieveFile(file: File): Unit = {
-      FilenameUtils.getExtension(file.toString) match {
-        case "eml" => addFile(ConvertibleFile(file, emailMessageConverter))
-        case "ics" => addFile(ConvertibleFile(file, iCalConverter))
-        case "vcf" => addFile(ConvertibleFile(file, vCardConverter))
-        case "zip" => retrieveFile(new ZipFile(file))
-        case extension =>
-          logger.info("Unsupported file extension " + extension + " for file " + file)
+    private def retrieveFile(path: Path): Option[Any] = {
+      retrieveFile(path, mimeTypeFromFile(path))
+    }
+
+    private def retrieveFile(path: Path, mimeType: String): Option[Any] = {
+      mimeType match {
+        case "application/zip" => Some(new ZipFile(path.toFile))
+        case "message/rfc822" | "text/calendar" | "text/vcard" =>
+          retrieveFile(path, Files.newInputStream(path))
+        case _ =>
+          logger.info("Unsupported MIME type " + mimeType + " for file " + path)
+          None
       }
     }
 
-    private def retrieveFile(file: ZipFile): Unit = {
-      file.entries().asScala.foreach(entry =>
-        if (!entry.isDirectory) {
-          retrieveFile(entry.getName, file.getInputStream(entry))
-        }
-      )
+    private def retrieveFile(path: Path, stream: InputStream): Option[ConvertibleFile] = {
+      retrieveFile(path, mimeTypeFromFile(path), stream)
     }
 
-    private def retrieveFile(fileName: String, stream: InputStream): Unit = {
-      FilenameUtils.getExtension(fileName) match {
-        case "eml" => addFile(ConvertibleFile(new File(fileName), emailMessageConverter, Some(stream)))
-        case "ics" => addFile(ConvertibleFile(new File(fileName), iCalConverter, Some(stream)))
-        case "vcf" => addFile(ConvertibleFile(new File(fileName), vCardConverter, Some(stream)))
-        case extension =>
-          logger.info("Unsupported file extension " + extension + " for file " + fileName)
+    private def retrieveFile(path: Path, mimeType: String, stream: InputStream): Option[ConvertibleFile] = {
+      mimeType match {
+        case "message/rfc822" => Some(ConvertibleFile(path, emailMessageConverter, stream))
+        case "text/calendar" => Some(ConvertibleFile(path, iCalConverter, stream))
+        case "text/vcard" => Some(ConvertibleFile(path, vCardConverter, stream))
+        case mimeType =>
+          logger.info("Unsupported MIME type " + mimeType + " for file " + path)
+          None
       }
     }
 
-    private def addFile(file: ConvertibleFile): Unit = {
-      if (waitingForData) {
-        onNext(file)
-      } else {
-        queue.enqueue(file)
+    private def mimeTypeFromFile(path: Path): String = {
+      FilenameUtils.getExtension(path.toString) match {
+        case "eml" => "message/rfc822"
+        case "ics" => "text/calendar"
+        case "vcf" => "text/vcard"
+        case "zip" => "application/zip"
+        case _ => "application/octet-stream"
       }
     }
 
-    private def onNext(file: ConvertibleFile): Unit = {
-      onNext(file.read())
-    }
+    private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile])
 
-    private def deliverWaitingMessages(): Unit = {
-      while (waitingForData && queue.nonEmpty) {
-        onNext(queue.dequeue())
-      }
-    }
+    private case class DirectoryIteration(directoryStream: DirectoryStream[Path], iterator: Iterator[Any], directories: scala.collection.mutable.Builder[Path, Vector[Path]])
 
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
-    }
-
-    private case class ConvertibleFile(path: File, converter: Converter, inputStream: Option[InputStream] = None) {
+    private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) {
       def read(): Document = {
-        val stream = inputStream.getOrElse(new FileInputStream(path))
-        val documentIri = valueFactory.createIRI(path.toURI.toString)
-        val model = converter.convert(stream, documentIri)
-        stream.close()
+        val documentIri = valueFactory.createIRI(path.toUri.toString)
+        val model = converter.convert(inputStream, documentIri)
+        inputStream.close()
         Document(documentIri, model)
       }
     }

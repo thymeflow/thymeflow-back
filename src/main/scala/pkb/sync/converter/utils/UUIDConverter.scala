@@ -10,16 +10,16 @@ import org.openrdf.model.{IRI, ValueFactory}
 class UUIDConverter(valueFactory: ValueFactory) {
 
   def convert(rawUuid: String): IRI = {
-    valueFactory.createIRI(buildUuidUri(rawUuid))
-  }
-
-  private def buildUuidUri(str: String): String = {
-    val simplifiedStr = str.replace("urn:uuid", "")
+    val simplifiedUuid = rawUuid.replace("urn:uuid:", "")
     try {
-      "urn:uuid:" + UUID.fromString(simplifiedStr).toString
+      valueFactory.createIRI("urn:uuid:" + UUID.fromString(simplifiedUuid).toString)
     } catch {
       case e: IllegalArgumentException =>
-        "urn:uuid:" + UUID.nameUUIDFromBytes(str.getBytes).toString
+        create(simplifiedUuid)
     }
+  }
+
+  def create(baseStr: String): IRI = {
+    valueFactory.createIRI("urn:uuid:" + UUID.nameUUIDFromBytes(baseStr.getBytes).toString)
   }
 }

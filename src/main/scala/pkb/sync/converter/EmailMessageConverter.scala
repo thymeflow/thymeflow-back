@@ -10,7 +10,7 @@ import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter}
+import pkb.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter, UUIDConverter}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -22,9 +22,14 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
+  private val uuidConverter = new UUIDConverter(valueFactory)
 
   override def convert(stream: InputStream, context: IRI): Model = {
     convert(new MimeMessage(null, stream), context)
+  }
+
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   def convert(message: Message, context: IRI): Model = {
@@ -32,10 +37,6 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     val converter = new ToModelConverter(model, context)
     converter.convert(message)
     model
-  }
-
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -94,7 +95,8 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = valueFactory.createBNode
+        val personResource = uuidConverter.create(address.toString)
+        model.add(personResource, RDF.TYPE, Personal.AGENT, context)
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(address.getPersonal, address.getAddress).foreach{
             case name => model.add(personResource, SchemaOrg.NAME, name, context)
@@ -110,15 +112,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         case mimeMessage: MimeMessage =>
           Option(mimeMessage.getMessageID).map(messageId =>
             emailMessageUriConverter.convert(mimeMessage.getMessageID)
-          ).getOrElse(blankNodeForMessage())
-        case _ => blankNodeForMessage()
+          ).getOrElse(valueFactory.createBNode())
+        case _ => valueFactory.createBNode()
       }
-    }
-
-    private def blankNodeForMessage(): Resource = {
-      val messageResource = valueFactory.createBNode()
-      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
-      messageResource
     }
   }
 }

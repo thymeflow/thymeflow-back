@@ -27,15 +27,15 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream), context)
   }
 
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
+  }
+
   def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(message)
     model
-  }
-
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -95,12 +95,12 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
         val personResource = uuidConverter.create(address.toString)
-        model.add(personResource, RDF.TYPE, Personal.AGENT, context)
+        model.add(personResource, RDF.TYPE, Personal.AGENT)
         Option(address.getPersonal).foreach(name =>
-          model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(address.getPersonal), context)
+          model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(address.getPersonal))
         )
         Option(address.getAddress).foreach(email =>
-          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, context)
+          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
         )
         personResource
       })

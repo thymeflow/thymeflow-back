@@ -148,11 +148,11 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
       emailAddressConverter.convert(address.localPart, address.domain, model).map {
         emailAddressResource =>
           val personResource = uuidConverter.create(address.toString)
-          model.add(personResource, RDF.TYPE, Personal.AGENT, context)
+          model.add(personResource, RDF.TYPE, Personal.AGENT)
           address.name.foreach(name =>
-            model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+            model.add(personResource, SchemaOrg.NAME, valueFactory.createLiteral(name))
           )
-          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, context)
+          model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
           personResource
       }
     }

@@ -12,22 +12,23 @@ import pkb.rdf.model.document.Document
 import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
 import pkb.sync.publisher.ScrollDocumentPublisher
 
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 /**
   * @author Thomas Pellissier Tanon
   */
-object FileSynchronizer {
+object FileSynchronizer extends Synchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
+  def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(file: File, mimeType: Option[String] = None) {
   }
 
-  private class Publisher(valueFactory: ValueFactory)(implicit val executionContext: ExecutionContext)
-    extends ScrollDocumentPublisher[Document, (Vector[Any]), Traversable[Document]] {
+  private class Publisher(valueFactory: ValueFactory)
+    extends ScrollDocumentPublisher[Document, (Vector[Any])] with BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val iCalConverter = new ICalConverter(valueFactory)
@@ -41,65 +42,84 @@ object FileSynchronizer {
           case None =>
             Vector(config)
         })
-        nextResults()
+        nextResults(totalDemand)
       case message =>
         super.receive(message)
     }
 
     override protected def queryBuilder = {
-      case (state +: queuedStates) =>
-        Future {
-          val (nextStates, hits) = state match {
-            case path: Path =>
-              if (Files.isDirectory(path)) {
-                val directories = Vector.newBuilder[Path]
-                val directoryStream = Files.newDirectoryStream(path)
-                val iterator = directoryStream.iterator().asScala.collect {
-                  case pathInsideDirectory =>
-                    if (Files.isDirectory(pathInsideDirectory)) {
-                      directories += pathInsideDirectory
-                      None
-                    } else {
-                      retrieveFile(pathInsideDirectory)
-                    }
-                }.flatten
-                (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
-              } else {
-                (retrieveFile(path).toVector, None)
-              }
-            case (convertibleFile: ConvertibleFile) =>
-              (Vector.empty, Some(convertibleFile.read()))
-            case (directoryIteration: DirectoryIteration) =>
-              if (directoryIteration.iterator.hasNext) {
-                (Vector(directoryIteration.iterator.next(), directoryIteration), None)
-              } else {
-                directoryIteration.directoryStream.close()
-                (directoryIteration.directories.result, None)
-              }
-            case (zipfile: ZipFile) =>
-              (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
-                case entry if !entry.isDirectory =>
-                  retrieveFile(Paths.get(entry.getName), zipfile.getInputStream(entry))
-              }.flatten)), None)
-            case zipIteration: ZipIteration =>
-              if (zipIteration.iterator.hasNext) {
-                (Vector(zipIteration.iterator.next(), zipIteration), None)
-              } else {
-                zipIteration.zipFile.close()
-                (Vector.empty, None)
-              }
-            case config: Config =>
-              (config.mimeType match {
-                case Some(mimeType) =>
-                  retrieveFile(config.file.toPath, mimeType).toVector
-                case None =>
-                  Vector(config.file.toPath)
-              }, None)
-          }
-          Result(scroll = Some(nextStates ++ queuedStates), hits = hits)
+      case (queuedStates, demand) =>
+        Future.successful {
+          val (newStates, hits) = handleStates(queuedStates, demand * 4)
+          Result(scroll = Some(newStates), hits = hits)
         }
-      case Vector() =>
-        Future.successful(Result(scroll = None, hits = None))
+    }
+
+    @tailrec
+    private final def handleStates(states: Vector[Any], requestCount: Long, hits: Vector[Document] = Vector()): (Vector[Any], Vector[Document]) = {
+      if (requestCount == 0) {
+        (states, hits)
+      } else {
+        states match {
+          case (state +: queuedStates) =>
+            val (nextStates, hit) = state match {
+              case (convertibleFile: ConvertibleFile) =>
+                (Vector.empty, Some(convertibleFile.read()))
+              case path: Path =>
+                if (Files.isDirectory(path)) {
+                  val directories = Vector.newBuilder[Path]
+                  val directoryStream = Files.newDirectoryStream(path)
+                  val iterator = directoryStream.iterator().asScala.collect {
+                    case pathInsideDirectory =>
+                      if (Files.isDirectory(pathInsideDirectory)) {
+                        directories += pathInsideDirectory
+                        None
+                      } else {
+                        retrieveFile(pathInsideDirectory)
+                      }
+                  }.flatten
+                  (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
+                } else {
+                  (retrieveFile(path).toVector, None)
+                }
+              case (directoryIteration: DirectoryIteration) =>
+                if (directoryIteration.iterator.hasNext) {
+                  (Vector(directoryIteration.iterator.next(), directoryIteration), None)
+                } else {
+                  directoryIteration.directoryStream.close()
+                  (directoryIteration.directories.result, None)
+                }
+              case zipIteration: ZipIteration =>
+                if (zipIteration.iterator.hasNext) {
+                  (Vector(zipIteration.iterator.next(), zipIteration), None)
+                } else {
+                  zipIteration.zipFile.close()
+                  (Vector.empty, None)
+                }
+              case (zipfile: ZipFile) =>
+                (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
+                  case entry if !entry.isDirectory =>
+                    retrieveFile(Paths.get(entry.getName), zipfile.getInputStream(entry))
+                }.flatten)), None)
+              case config: Config =>
+                (config.mimeType match {
+                  case Some(mimeType) =>
+                    retrieveFile(config.file.toPath, mimeType).toVector
+                  case None =>
+                    Vector(config.file.toPath)
+                }, None)
+            }
+            hit match {
+              case Some(h) =>
+                handleStates(nextStates ++ queuedStates, requestCount - 1, hits :+ h)
+              case None =>
+                handleStates(nextStates ++ queuedStates, requestCount, hits)
+            }
+          case _ =>
+            // empty states
+            (states, hits)
+        }
+      }
     }
 
     private def retrieveFile(path: Path): Option[Any] = {
@@ -126,7 +146,7 @@ object FileSynchronizer {
         case "message/rfc822" => Some(ConvertibleFile(path, emailMessageConverter, stream))
         case "text/calendar" => Some(ConvertibleFile(path, iCalConverter, stream))
         case "text/vcard" => Some(ConvertibleFile(path, vCardConverter, stream))
-        case mimeType =>
+        case _ =>
           logger.info("Unsupported MIME type " + mimeType + " for file " + path)
           None
       }

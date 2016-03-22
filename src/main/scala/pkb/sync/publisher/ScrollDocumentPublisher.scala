@@ -5,12 +5,13 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import com.typesafe.scalalogging.StrictLogging
 
 import scala.annotation.tailrec
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 /**
   * @author David Montoya
   */
-trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMENT]] extends ActorPublisher[DOCUMENT] with StrictLogging {
+trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT] with StrictLogging {
   protected var currentScrollOption: Option[SCROLL] = None
   protected var noMoreResults = false
   protected var processing = false
@@ -24,25 +25,21 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
       } else {
         currentScrollOption = scrollOption
       }
-      if (buf.isEmpty && isActive && totalDemand > 0)
-        hits foreach onNext
-      else {
-        buf ++= hits
-        deliverBuf()
-      }
+      buf ++= hits
+      deliverBuf()
       if (!(buf.isEmpty && noMoreResults)) {
         if (isActive && totalDemand > 0) {
-          nextResults()
+          nextResults(totalDemand)
         }
       }
     case Failure(failure) =>
       onError(failure)
       processing = false
-    case Request(cnt) =>
+    case Request(requestCount) =>
       deliverBuf()
       if (isActive) {
         if (!noMoreResults && totalDemand > 0) {
-          nextResults()
+          nextResults(requestCount)
         }
       }
     case Cancel =>
@@ -50,17 +47,15 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
     case _ =>
   }
 
-  protected def queryBuilder: (SCROLL) => Future[Result]
+  protected def queryBuilder: (SCROLL, Long) => Future[Result]
 
-  implicit protected def executionContext: ExecutionContext
-
-  protected def nextResults(): Unit = {
+  protected def nextResults(requestCount: Long): Unit = {
     try {
       if (!processing) {
         currentScrollOption match {
           case Some(currentScroll) =>
             processing = true
-            val future = queryBuilder(currentScroll)
+            val future = queryBuilder(currentScroll, requestCount)
             future.foreach {
               case result => this.self ! result
             }
@@ -95,7 +90,7 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL, DOCUMENTS <: Traversable[DOCUMEN
       }
     }
 
-  protected case class Result(scroll: Option[SCROLL], hits: DOCUMENTS)
+  protected case class Result(scroll: Option[SCROLL], hits: Traversable[DOCUMENT])
 
   protected case class Failure(throwable: Throwable)
 

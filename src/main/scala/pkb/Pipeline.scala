@@ -12,7 +12,11 @@ import pkb.inferencer.Inferencer
 import pkb.rdf.Converters._
 import pkb.rdf.model.document.Document
 import pkb.rdf.model.{ModelDiff, SimpleHashModel}
-import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
+import pkb.sync.Synchronizer.Sync
+import pkb.sync._
+
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
   * @author Thomas Pellissier Tanon
@@ -26,12 +30,13 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
     .to(Sink.ignore)
     .run()
 
+  actorRefs.foreach(system.scheduler.schedule(1 minute, 1 minute, _, Sync))
+
   def addSource[T](sourceConfig: T): Unit = {
     actorRefs.foreach(_ ! sourceConfig)
   }
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
-    import scala.concurrent.ExecutionContext.Implicits.global
     //TODO: find a way to not hardcode synchronizers
     val valueFactory = repositoryConnection.getValueFactory
 

@@ -2,7 +2,6 @@ package pkb.sync.dav
 
 import javax.xml.namespace.QName
 
-import akka.stream.actor.ActorPublisher
 import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
@@ -10,6 +9,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.document.Document
+import pkb.sync.Synchronizer
 import pkb.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
@@ -19,10 +19,10 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-trait BaseDavSynchronizer extends StrictLogging {
+trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
   protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory)
-    extends ActorPublisher[Document] {
+    extends BasePublisher {
 
     private val fetchers = new mutable.ArrayBuffer[DocumentFetcher]()
     private val queue = new mutable.Queue[Document]

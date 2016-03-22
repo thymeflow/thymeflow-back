@@ -9,20 +9,21 @@ import pkb.rdf.model.document.Document
 import pkb.sync.converter.EmailMessageConverter
 import pkb.sync.publisher.ScrollDocumentPublisher
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 
 /**
   * @author Thomas Pellissier Tanon
   */
-object EmailSynchronizer {
+object EmailSynchronizer extends Synchronizer {
 
   def source(valueFactory: ValueFactory)(implicit executionContext: ExecutionContext) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(store: Store)
 
-  private class Publisher(valueFactory: ValueFactory)(implicit val executionContext: ExecutionContext)
-    extends ScrollDocumentPublisher[Document, (Vector[Config], Option[(Folder, Int, Int)]), Traversable[Document]] {
+  private class Publisher(valueFactory: ValueFactory)
+    extends ScrollDocumentPublisher[Document, (Vector[Config], Option[(Folder, Int, Int)])] with BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
 
@@ -34,13 +35,13 @@ object EmailSynchronizer {
           case None =>
             (Vector(config), None)
         })
-        nextResults()
+        nextResults(totalDemand)
       case message =>
         super.receive(message)
     }
 
     override protected def queryBuilder = {
-      case (queuedConfigs, Some((folder, messageIndex, messageCount))) =>
+      case ((queuedConfigs, Some((folder, messageIndex, messageCount))), demand) =>
         Future {
           val message = folder.getMessage(messageIndex)
           val model = emailMessageConverter.convert(message, null)
@@ -53,7 +54,7 @@ object EmailSynchronizer {
           }
           Result(scroll = Some((queuedConfigs, nextMessageOption)), hits = Some(document))
         }
-      case (nextConfig +: tail, None) =>
+      case ((nextConfig +: tail, None), _) =>
         Future {
           val folder = nextConfig.store.getFolder("INBOX") //TODO: discover other folders
           folder.open(Folder.READ_ONLY)
@@ -67,7 +68,7 @@ object EmailSynchronizer {
           }
           Result(scroll = Some((tail, nextMessageOption)), hits = None)
         }
-      case (Vector(), None) =>
+      case ((Vector(), None), _) =>
         Future.successful(Result(scroll = None, hits = None))
     }
 

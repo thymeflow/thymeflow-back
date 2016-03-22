@@ -8,7 +8,6 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import pkb.actors._
 import spray.json.DefaultJsonProtocol
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
 object OAuth2 {

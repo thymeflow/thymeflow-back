@@ -1,16 +1,17 @@
 package pkb.sync
 
-import javax.mail.{Folder, Store}
+import javax.mail.event.{MessageCountEvent, MessageCountListener}
+import javax.mail.{FetchProfile, Folder, Message, Store}
 
 import akka.actor.Props
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import org.openrdf.model.ValueFactory
 import pkb.rdf.model.document.Document
+import pkb.sync.Synchronizer.Sync
 import pkb.sync.converter.EmailMessageConverter
-import pkb.sync.publisher.ScrollDocumentPublisher
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.collection.mutable
 
 /**
   * @author Thomas Pellissier Tanon
@@ -22,56 +23,76 @@ object EmailSynchronizer extends Synchronizer {
 
   case class Config(store: Store)
 
-  private class Publisher(valueFactory: ValueFactory)
-    extends ScrollDocumentPublisher[Document, (Vector[Config], Option[(Folder, Int, Int)])] with BasePublisher {
+  private class Publisher(valueFactory: ValueFactory) extends BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
+    private val queue = new mutable.Queue[Document]
+    private val folders = new mutable.ArrayBuffer[Folder]()
+    private val fetchProfile = new FetchProfile()
+    fetchProfile.add(FetchProfile.Item.ENVELOPE)
+    fetchProfile.add(FetchProfile.Item.CONTENT_INFO)
 
     override def receive: Receive = {
+      case Request(_) | Sync =>
+        deliverDocuments()
       case config: Config =>
-        currentScrollOption = Some(currentScrollOption match {
-          case Some((queuedConfigs, nextMessageOption)) =>
-            (queuedConfigs :+ config, nextMessageOption)
-          case None =>
-            (Vector(config), None)
-        })
-        nextResults(totalDemand)
-      case message =>
-        super.receive(message)
+        onNewStore(config.store)
+        deliverDocuments()
+      case Cancel =>
+        context.stop(self)
     }
 
-    override protected def queryBuilder = {
-      case ((queuedConfigs, Some((folder, messageIndex, messageCount))), demand) =>
-        Future {
-          val message = folder.getMessage(messageIndex)
-          val model = emailMessageConverter.convert(message, null)
-          val document = Document(null, model)
-          // indexes go from 1 to messageCount
-          val nextMessageOption = if (messageIndex + 1 <= messageCount) {
-            Some((folder, messageIndex + 1, messageCount))
-          } else {
-            None
-          }
-          Result(scroll = Some((queuedConfigs, nextMessageOption)), hits = Some(document))
-        }
-      case ((nextConfig +: tail, None), _) =>
-        Future {
-          val folder = nextConfig.store.getFolder("INBOX") //TODO: discover other folders
-          folder.open(Folder.READ_ONLY)
-          folder.getMessages
-          val messageCount = folder.getMessageCount
-          // indexes go from 1 to messageCount
-          val nextMessageOption = if (messageCount > 0) {
-            Some((folder, 1, messageCount))
-          } else {
-            None
-          }
-          Result(scroll = Some((tail, nextMessageOption)), hits = None)
-        }
-      case ((Vector(), None), _) =>
-        Future.successful(Result(scroll = None, hits = None))
+    private def onNewStore(store: Store) = {
+      store.getDefaultFolder.list("*")
+        .filter(holdsMessages)
+        .foreach(onNewFolder)
     }
 
+    private def holdsMessages(folder: Folder): Boolean = {
+      (folder.getType & javax.mail.Folder.HOLDS_MESSAGES) != 0
+    }
 
+    private def onNewFolder(folder: Folder) = {
+      folder.open(Folder.READ_ONLY)
+      folder.addMessageCountListener(new MessageCountListener {
+        override def messagesAdded(e: MessageCountEvent): Unit = {
+          addMessages(e.getMessages, folder)
+        }
+
+        override def messagesRemoved(e: MessageCountEvent): Unit = {
+          //TODO
+        }
+      })
+      addMessages(folder.getMessages(), folder)
+    }
+
+    private def addMessages(messages: Array[Message], folder: Folder) = {
+      folder.fetch(messages, fetchProfile)
+      messages.foreach(message => {
+        val document = new Document(null, emailMessageConverter.convert(message, null))
+        if (waitingForData) {
+          onNext(document)
+        } else {
+          queue.enqueue(document)
+        }
+      })
+    }
+
+    private def deliverDocuments(): Unit = {
+      deliverWaitingDocuments()
+      if (waitingForData) {
+        folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+      }
+    }
+
+    private def deliverWaitingDocuments(): Unit = {
+      while (waitingForData && queue.nonEmpty) {
+        onNext(queue.dequeue())
+      }
+    }
+
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
+    }
   }
 }

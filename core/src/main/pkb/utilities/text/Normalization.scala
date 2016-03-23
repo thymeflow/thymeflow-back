@@ -9,11 +9,11 @@ import scala.annotation.tailrec
   */
 object Normalization {
 
+  private val whitespaceRegex = """\s""".r
+
   def removeDiacriticalMarks(text: String) = {
     Normalizer.normalize(text, Normalizer.Form.NFD).replaceAll("[\\p{InCombiningDiacriticalMarks}]", "")
   }
-
-  private val whitespaceRegex = """\s""".r
 
   def normalizeWhitespace(text: String) = {
     whitespaceRegex.replaceAllIn(text, " ")

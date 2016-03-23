@@ -44,6 +44,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
+    private def fetchDocuments(): Unit = {
+      fetchers.foreach(retrieveDocuments)
+    }
+
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
@@ -56,10 +60,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
-    }
-
-    private def fetchDocuments(): Unit = {
-      fetchers.foreach(retrieveDocuments)
     }
   }
 

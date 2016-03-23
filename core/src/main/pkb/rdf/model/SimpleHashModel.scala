@@ -18,6 +18,16 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     toStatements(subj, pred, obj, contexts).map(add).reduce(_ || _)
   }
 
+  private def toStatements(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): Traversable[Statement] = {
+    if (contexts.isEmpty) {
+      List(valueFactory.createStatement(subj, pred, obj))
+    } else {
+      contexts.map(context =>
+        valueFactory.createStatement(subj, pred, obj, context)
+      )
+    }
+  }
+
   override def getNamespaces: util.Set[Namespace] = {
     throw new UnsupportedOperationException
   }
@@ -36,16 +46,6 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
 
   override def remove(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {
     toStatements(subj, pred, obj, contexts).map(remove).reduce(_ || _)
-  }
-
-  private def toStatements(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): Traversable[Statement] = {
-    if (contexts.isEmpty) {
-      List(valueFactory.createStatement(subj, pred, obj))
-    } else {
-      contexts.map(context =>
-        valueFactory.createStatement(subj, pred, obj, context)
-      )
-    }
   }
 
   override def removeNamespace(prefix: String): Optional[Namespace] = {
@@ -72,6 +72,10 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     doFilter(subj, pred, obj, contexts)
   }
 
+  override def `match`(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): util.Iterator[Statement] = {
+    doFilter(subj, pred, obj, contexts).iterator()
+  }
+
   private def doFilter(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): SimpleHashModel = {
     new SimpleHashModel(valueFactory, this.asScala.filter(statement =>
       (subj == null || statement.getSubject == subj) &&
@@ -79,10 +83,6 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
         (obj == null || statement.getObject == subj) &&
         (contexts.isEmpty || contexts.contains(statement.getContext))
     ).asJava)
-  }
-
-  override def `match`(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): util.Iterator[Statement] = {
-    doFilter(subj, pred, obj, contexts).iterator()
   }
 
   override def getValueFactory: ValueFactory = {

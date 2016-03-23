@@ -16,8 +16,10 @@ val mime4JLibraries = Seq(
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
-  libraryDependencies ++= testLibraries
+  libraryDependencies ++= testLibraries,
+  libraryDependencies ++= logLibraries
 )
+
 val commonSettings = rootSettings ++ Seq(
   scalaSource in Compile := baseDirectory.value / "src/main",
   scalaSource in Test := baseDirectory.value / "src/test",
@@ -25,8 +27,15 @@ val commonSettings = rootSettings ++ Seq(
   javaSource in Test := baseDirectory.value / "src/test"
 )
 
-val pkb = (project in file(".")).settings(rootSettings:_*).settings(
-  libraryDependencies ++= logLibraries,
+val rootProject = Project(
+  id = "root",
+  base = file(".")
+).settings(commonSettings: _*)
+
+val coreProject = Project(
+  id = "core",
+  base = file("core")
+).settings(commonSettings: _*).settings(
   libraryDependencies ++= mime4JLibraries,
   libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+", //If we want disk storage we should add sesame-sail-nativerdf
@@ -68,6 +77,6 @@ val thymeflowProject = Project (
     // NOTE: This has to be specifically tested if included
     // , "org.scalanlp" %% "breeze-natives" % "0.12"
   )
-).dependsOn(pkb)
+).dependsOn(coreProject)
 
 

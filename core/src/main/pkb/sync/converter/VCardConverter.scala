@@ -32,6 +32,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     convert(Ezvcard.parse(stream).all.asScala, context)
   }
 
+  override def convert(str: String, context: IRI): Model = {
+    convert(Ezvcard.parse(str).all.asScala, context)
+  }
+
   private def convert(vCards: Traversable[VCard], context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -39,10 +43,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       converter.convert(vCard)
     )
     model
-  }
-
-  override def convert(str: String, context: IRI): Model = {
-    convert(Ezvcard.parse(str).all.asScala, context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -148,6 +148,13 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       }
     }
 
+    private def convertToResource(str: String, rdfTypes: IRI*): Resource = {
+      val placeResource = valueFactory.createBNode()
+      rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType, context))
+      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str), context)
+      placeResource
+    }
+
     private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
       Option(dateTime.getDate).map(date => convert(date, dateTime.hasTime))
     }
@@ -202,13 +209,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
 
     private def convert(organization: Organization): Resource = {
       convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION) //TODO: support hierarchy?
-    }
-
-    private def convertToResource(str: String, rdfTypes: IRI*): Resource = {
-      val placeResource = valueFactory.createBNode()
-      rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType, context))
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str), context)
-      placeResource
     }
 
     private def convert(telephone: Telephone): Option[Resource] = {

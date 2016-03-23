@@ -33,10 +33,6 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
-  override def convert(stream: InputStream, context: IRI): Model = {
-    convert(Biweekly.parse(stream).all.asScala, context)
-  }
-
   private def convert(calendars: Traversable[ICalendar], context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -44,6 +40,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       converter.convert(calendar)
     }
     model
+  }
+
+  override def convert(stream: InputStream, context: IRI): Model = {
+    convert(Biweekly.parse(stream).all.asScala, context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {

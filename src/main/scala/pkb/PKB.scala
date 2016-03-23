@@ -11,7 +11,7 @@ import pkb.sync.FileSynchronizer
   */
 object PKB extends StrictLogging {
   def main(args: Array[String]) {
-    val repositoryConnection = RepositoryFactory.initializedMemoryRepository.getConnection
+    val repositoryConnection = RepositoryFactory.initializedMemoryRepository().getConnection
 
     val pipeline = new Pipeline(repositoryConnection, List())
     args.foreach(fileName => pipeline.addSource(FileSynchronizer.Config(new File(fileName))))

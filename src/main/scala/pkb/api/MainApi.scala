@@ -19,7 +19,7 @@ import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, Fil
   */
 object MainApi extends App with SparqlService {
 
-  override protected val repository = RepositoryFactory.initializedMemoryRepository
+  override protected val repository = RepositoryFactory.initializedMemoryRepository()
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration
   private val pipeline = new Pipeline(

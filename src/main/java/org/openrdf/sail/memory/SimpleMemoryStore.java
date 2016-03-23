@@ -48,7 +48,7 @@ import java.util.TimerTask;
  * @author Arjohn Kampman
  * @author jeen
  */
-public class CustomMemoryStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
+public class SimpleMemoryStore extends AbstractNotifyingSail implements FederatedServiceResolverClient {
 
 	/*-----------*
      * Constants *
@@ -123,7 +123,7 @@ public class CustomMemoryStore extends AbstractNotifyingSail implements Federate
     /**
      * Creates a new MemoryStore.
      */
-    public CustomMemoryStore() {
+    public SimpleMemoryStore() {
         setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED,
                 IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
         setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
@@ -136,7 +136,7 @@ public class CustomMemoryStore extends AbstractNotifyingSail implements Federate
      *
      * @param dataDir the data directory to be used for persistence.
      */
-    public CustomMemoryStore(File dataDir) {
+    public SimpleMemoryStore(File dataDir) {
         this();
         setDataDir(dataDir);
         setPersist(true);
@@ -225,7 +225,7 @@ public class CustomMemoryStore extends AbstractNotifyingSail implements Federate
             throws SailException {
         logger.debug("Initializing MemoryStore...");
 
-        this.store = new CustomMemorySailStore(debugEnabled());
+        this.store = new SimpleMemorySailStore(debugEnabled());
 
         if (persist) {
             File dataDir = getDataDir();
@@ -340,7 +340,7 @@ public class CustomMemoryStore extends AbstractNotifyingSail implements Federate
     @Override
     protected NotifyingSailConnection getConnectionInternal()
             throws SailException {
-        return new CustomMemoryStoreConnection(this);
+        return new SimpleMemoryStoreConnection(this);
     }
 
     public ValueFactory getValueFactory() {

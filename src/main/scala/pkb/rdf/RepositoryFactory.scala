@@ -7,7 +7,7 @@ import org.openrdf.repository.{Repository, RepositoryConnection}
 import org.openrdf.rio.RDFFormat
 import org.openrdf.sail.NotifyingSail
 import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
-import org.openrdf.sail.memory.{CustomMemoryStore, MemoryStore}
+import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 
@@ -20,7 +20,7 @@ object RepositoryFactory {
                                   rdfsInference: Boolean = true,
                                   owlInference: Boolean = true): Repository = {
     val store = if (noSnapshotCleanupStore) {
-      new CustomMemoryStore()
+      new SimpleMemoryStore()
     } else {
       new MemoryStore()
     }

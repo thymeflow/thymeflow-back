@@ -48,7 +48,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * @author James Leigh
  */
-class CustomMemorySailStore implements SailStore {
+class SimpleMemorySailStore implements SailStore {
 
     final Logger logger = LoggerFactory.getLogger(MemorySailStore.class);
     /**
@@ -88,7 +88,7 @@ class CustomMemorySailStore implements SailStore {
      */
     private volatile Thread snapshotCleanupThread;
 
-    public CustomMemorySailStore(boolean debug) {
+    public SimpleMemorySailStore(boolean debug) {
         statementListLockManager = new ReadPrefReadWriteLockManager(debug);
     }
 

@@ -36,13 +36,13 @@ import org.openrdf.sail.helpers.DefaultSailChangedEvent;
  * @author Arjohn Kampman
  * @author jeen
  */
-public class CustomMemoryStoreConnection extends SailSourceConnection {
+public class SimpleMemoryStoreConnection extends SailSourceConnection {
 
 	/*-----------*
      * Variables *
 	 *-----------*/
 
-    protected final CustomMemoryStore sail;
+    protected final SimpleMemoryStore sail;
 
     private volatile DefaultSailChangedEvent sailChangedEvent;
 
@@ -50,7 +50,7 @@ public class CustomMemoryStoreConnection extends SailSourceConnection {
 	 * Constructors *
 	 *--------------*/
 
-    protected CustomMemoryStoreConnection(CustomMemoryStore sail) {
+    protected SimpleMemoryStoreConnection(SimpleMemoryStore sail) {
         super(sail, sail.getSailStore(), sail.getFederatedServiceResolver());
         this.sail = sail;
         sailChangedEvent = new DefaultSailChangedEvent(sail);

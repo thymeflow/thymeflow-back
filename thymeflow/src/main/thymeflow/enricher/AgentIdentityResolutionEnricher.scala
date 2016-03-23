@@ -124,7 +124,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
 
         override def result(): Map[T, Map[String, Long]] = {
-          innerMap.toTraversable.groupBy(_._1._1).mapValues {
+          innerMap.groupBy(_._1._1).mapValues {
             case (g) => g.map {
               case ((_, name), count) => (name, count)
             }(scala.collection.breakOut)
@@ -175,20 +175,20 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val agentFacetRepresentativeMessageNames = agentFacetRepresentativeMessageNamesBuilder.result()
 
     val contactWeight = 1.0
-    val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.toTraversable.map((_, contactWeight))
-      ++ agentFacetRepresentativeMessageNames.toTraversable.map((_, 1.0))).groupBy(_._1._1).mapValues {
-      case g => g.flatMap(x => x._1._2.toTraversable.map((_, x._2))).groupBy(_._1._1).mapValues {
+    val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.map((_, contactWeight))
+      ++ agentFacetRepresentativeMessageNames.map((_, 1.0))).groupBy(_._1._1).mapValues {
+      case g => g.flatMap(x => x._1._2.map((_, x._2))).groupBy(_._1._1).mapValues {
         case h => h.map(x => (x._2 * x._1._2).toLong).sum
       }
     }
 
-    val agentStringValueToAgent = (agentFacetEmailAddresses.toTraversable.map(_._1) ++ agentFacetRepresentativeNames.toTraversable.map(_._1)).map {
+    val agentStringValueToAgent = (agentFacetEmailAddresses.map(_._1) ++ agentFacetRepresentativeNames.keys).map {
       case (agent) => (agent.stringValue(), agent)
     }(scala.collection.breakOut): Map[String, Resource]
 
     val reconciliatedAgentNames = reconciliateAgentNames(agentFacetRepresentativeMessageNames, agentFacetRepresentativeContactNames, entityMatchIndices)
 
-    val agentFacetAndNames = agentFacetRepresentativeNames.toTraversable.flatMap {
+    val agentFacetAndNames = agentFacetRepresentativeNames.flatMap {
       case (agentFacet, nameCounts) =>
         nameCounts.keys.map {
           case name => (agentFacet, name)

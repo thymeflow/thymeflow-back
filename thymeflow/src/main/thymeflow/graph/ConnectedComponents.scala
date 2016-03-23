@@ -33,7 +33,7 @@ object ConnectedComponents {
     for {
       u <- nodes if !(processed contains u)
     } bfs(u)
-    components.toSeq
+    components
   }
 
 }

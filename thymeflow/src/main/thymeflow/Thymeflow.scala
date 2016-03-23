@@ -9,7 +9,7 @@ import pkb.sync.FileSynchronizer
 import thymeflow.enricher.AgentIdentityResolutionEnricher
 
 import scala.concurrent.duration._
-import scala.languageFeature.postfixOps
+import scala.language.postfixOps
 
 /**
   * @author Thomas Pellissier Tanon

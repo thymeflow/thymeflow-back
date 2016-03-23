@@ -6,7 +6,7 @@ import pkb.inferencer.Inferencer
 import pkb.rdf.model.ModelDiff
 
 import scala.concurrent.duration._
-import scala.languageFeature.postfixOps
+import scala.language.postfixOps
 
 /**
   * @author David Montoya

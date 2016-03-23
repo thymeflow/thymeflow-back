@@ -3,8 +3,9 @@ package pkb.sync.converter
 import java.io.{ByteArrayInputStream, InputStream}
 import javax.mail.Message.RecipientType
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
-import javax.mail.{Address, Message}
+import javax.mail.{Address, Message, Multipart, Part}
 
+import com.sun.mail.imap.IMAPMessage
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
@@ -68,6 +69,16 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         message.getRecipients(RecipientType.BCC)
       }, messageResource, Personal.BLIND_COPY_RECIPIENT)
 
+      if (message.isInstanceOf[MimeMessage]) {
+        addMimeMessageExtra(message.asInstanceOf[MimeMessage], messageResource)
+
+        if (message.isInstanceOf[IMAPMessage]) {
+          addIMAPMessageExtra(message.asInstanceOf[IMAPMessage], messageResource)
+        }
+      }
+
+
+
       messageResource
     }
 
@@ -80,7 +91,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
           )
         )
       } catch {
-        case e: AddressException => None
+        case e: AddressException =>
       }
     }
 
@@ -107,11 +118,39 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       })
     }
 
+    private def addMimeMessageExtra(message: MimeMessage, messageResource: Resource): Unit = {
+      Option(message.getContentLanguage).foreach(_.foreach(language =>
+        model.add(messageResource, SchemaOrg.IN_LANGUAGE, valueFactory.createLiteral(language), context) //TODO: is it valid ISO code? if yes, use good XSD type
+      ))
+
+
+    }
+
+    private def addIMAPMessageExtra(message: IMAPMessage, messageResource: Resource): Unit = {
+      Option(message.getInReplyTo).map(inReplyTo =>
+        model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
+      )
+
+      //addPart(message, messageResource) TODO: add content?
+    }
+
+    private def addPart(part: Part, messageResource: Resource): Unit = {
+      part.getContent match {
+        case content: String =>
+          if (part.isMimeType("text/plain")) {
+            model.add(messageResource, SchemaOrg.TEXT, valueFactory.createLiteral(content), context)
+          }
+        case content: Multipart =>
+          (0 until content.getCount).foreach(i => addPart(content.getBodyPart(i), messageResource))
+        case _ => logger.warn("Unknown email content type: " + part.getContentType)
+      }
+    }
+
     private def resourceForMessage(message: Message): Resource = {
       message match {
         case mimeMessage: MimeMessage =>
           Option(mimeMessage.getMessageID).map(messageId =>
-            emailMessageUriConverter.convert(mimeMessage.getMessageID)
+            emailMessageUriConverter.convert(messageId)
           ).getOrElse(valueFactory.createBNode())
         case _ => valueFactory.createBNode()
       }

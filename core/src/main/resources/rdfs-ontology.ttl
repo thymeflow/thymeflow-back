@@ -253,6 +253,14 @@ personal:blindCopyRecipient a rdf:Property ;
 personal:copyRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .
 
+personal:domain a rdf:Property ;
+    rdfs:domain personal:EmailAddress ;
+    rdfs:range rdfs:Literal .
+
+personal:localPart a rdf:Property ;
+    rdfs:domain personal:EmailAddress ;
+    rdfs:range rdfs:Literal .
+
 personal:nickname a rdf:Property ;
     rdfs:subPropertyOf schema:alternateName ;
     rdfs:domain schema:Person ;
@@ -261,10 +269,6 @@ personal:nickname a rdf:Property ;
 personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf personal:recipient .
 
-personal:localPart a rdf:Property ;
-    rdfs:domain personal:EmailAddress ;
-    rdfs:range rdfs:Literal .
-
-personal:domain a rdf:Property ;
-    rdfs:domain personal:EmailAddress ;
-    rdfs:range rdfs:Literal .
+personal:inReplyTo a rdf:Property ;
+    rdfs:domain personal:Message ;
+    rdfs:range personal:Message .

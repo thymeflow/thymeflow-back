@@ -1,11 +1,8 @@
-package thymeflow.text.search.entityrecognition
-
-import scala.concurrent.Future
+package thymeflow.text.search
 
 /**
- * @author  David Montoya
- */
-
+  * @author David Montoya
+  */
 trait ContentPosition{
   def index: Int
   def count: Int
@@ -31,12 +28,8 @@ trait ContentPosition{
   def canEqual(other: Any): Boolean = other.isInstanceOf[ContentPosition]
 }
 
-trait EntityRecognizer[ENTITY] {
-  def recognizeEntities(content: Seq[String], searchDepth: Int, clearDuplicateNestedResults: Boolean): Future[(Traversable[(ContentPosition,Traversable[(ENTITY,Float)])])]
-}
-
 object ContentPosition{
   def apply(index: Int, count: Int) = {
-    impl.ContentPosition(index = index, count = count)
+    thymeflow.text.search.impl.ContentPosition(index = index, count = count)
   }
 }

@@ -1,12 +1,11 @@
 package pkb.sync.converter.utils
 
-import java.util.{Locale, UUID}
+import java.util.Locale
 
 import org.apache.lucene.search.spell.LevensteinDistance
-import org.openrdf.model.{Literal, IRI, ValueFactory}
+import org.openrdf.model.{Literal, ValueFactory}
 import pkb.utilities.text.Normalization
 
-import scala.annotation.tailrec
 import scala.util.matching.Regex
 
 /**

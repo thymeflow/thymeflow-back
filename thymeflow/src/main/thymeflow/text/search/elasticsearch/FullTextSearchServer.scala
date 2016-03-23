@@ -11,22 +11,25 @@ import org.elasticsearch.common.settings.{ImmutableSettings, Settings}
 import org.elasticsearch.common.xcontent.XContentFactory
 import org.elasticsearch.indices.IndexMissingException
 import org.elasticsearch.node.NodeBuilder._
-import thymeflow.text.search.TextSearchAgent
+import thymeflow.text.search.FullTextSearchAgent
 import thymeflow.text.search.elasticsearch.ListenableActionFutureExtensions._
 import thymeflow.text.search.elasticsearch.exceptions.{ElasticSearchAggregateException, ElasticSearchBulkException, ElasticSearchShardFailure}
 import thymeflow.utilities.IO
 
-import scala.collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future}
 
 /**
  * @author  David Montoya
  */
-class TextSearchServer[T] private(indexName: String, entityMap: (String, String) => T, searchSize: Int = 100)(implicit executionContext: ExecutionContext)
-  extends StrictLogging with TextSearchAgent[T]{
+class FullTextSearchServer[T] private(indexName: String,
+                                      entityDeserialize: String => T,
+                                      entitySerialize: T => String,
+                                      searchSize: Int = 100)(implicit executionContext: ExecutionContext)
+  extends StrictLogging with FullTextSearchAgent[T] {
 
+  private val entityFieldName = "entity"
   private val valueFieldName = "value"
-  private val esClient = TextSearchServer.esClient
+  private val esClient = FullTextSearchServer.esClient
 
   def refreshIndex() = {
     esClient.admin().indices().prepareRefresh(indexName).execute().future.map(x => handleShardFailures(x.getShardFailures))
@@ -47,20 +50,12 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
     deleteIndex()
   }
 
-  private def deleteIndex() = {
-    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
-      case _ => ()
-    }.recover {
-      case e: IndexMissingException => ()
-    }
-  }
-
-  def add(entities: Traversable[(String, String)]): Future[Unit] = {
+  def add(valuedEntities: Traversable[(T, String)]): Future[Unit] = {
     implicit val formats = org.json4s.DefaultFormats
     val bulkRequest = esClient.prepareBulk()
-    entities.foreach {
-      case (id, literal) =>
-        bulkRequest.add(new IndexRequest(indexName).`type`("literal").id(id).source(literalJsonBuilder(literal)))
+    valuedEntities.foreach {
+      case (entity, value) =>
+        bulkRequest.add(new IndexRequest(indexName).`type`("literal").source(literalJsonBuilder(entity, value)))
     }
     bulkRequest.execute.future.map(handleBulkResponseFailures)
   }
@@ -76,19 +71,11 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
     }
   }
 
-  private def literalJsonBuilder(literal: String) = {
-    XContentFactory.jsonBuilder().startObject().field(valueFieldName, literal).endObject()
+  private def literalJsonBuilder(entity: T, literal: String) = {
+    XContentFactory.jsonBuilder().startObject().field(entityFieldName, entitySerialize(entity)).field(valueFieldName, literal).endObject()
   }
 
-  def analyze(literal: String) = {
-    val query = esClient.prepareTermVector().setType("literal").setIndex(indexName).setDoc(literalJsonBuilder(literal))
-    query.execute().future.map {
-      case response =>
-        response.getFields.iterator().asScala.mkString("\n")
-    }
-  }
-
-  override def search(query: String, matchPercent: Int = 100): Future[Seq[(T, Float)]] = {
+  override def matchQuery(query: String, matchPercent: Int = 100): Future[Seq[(T, String, Float)]] = {
     val queryBuilder = org.elasticsearch.index.query.QueryBuilders
       .matchQuery(valueFieldName, query)
       .minimumShouldMatch(matchPercent.toString + "%")
@@ -98,9 +85,14 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
         handleShardFailures(searchResponse.getShardFailures)
         searchResponse.getHits.hits.toVector.map {
           case hit =>
-            (entityMap(hit.id(), hit.sourceAsMap().get(valueFieldName).asInstanceOf[String]), hit.score())
+            val (entity, value) = literalDeserializer(hit.sourceAsMap())
+            (entity, value, hit.score())
         }
     }
+  }
+
+  private def literalDeserializer(source: java.util.Map[String, Object]) = {
+    (entityDeserialize(source.get(entityFieldName).asInstanceOf[String]), source.get(valueFieldName).asInstanceOf[String])
   }
 
   private def recreateIndex() = {
@@ -117,9 +109,17 @@ class TextSearchServer[T] private(indexName: String, entityMap: (String, String)
     }
   }
 
+  private def deleteIndex() = {
+    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
+      case _ => ()
+    }.recover {
+      case e: IndexMissingException => ()
+    }
+  }
+
 }
 
-object TextSearchServer extends StrictLogging {
+object FullTextSearchServer extends StrictLogging {
 
   final val dataDirectory = "data"
   final val clusterName = "thymeflow"
@@ -135,10 +135,10 @@ object TextSearchServer extends StrictLogging {
   }
   private lazy val esDirectory: File = setupDirectories(dataDirectory)
 
-  def apply[T](entityMap: (String, String) => T)(implicit executionContext: ExecutionContext) = {
+  def apply[T](entityDeserialize: String => T)(entitySerialize: T => String)(implicit executionContext: ExecutionContext) = {
     // randomized index name
     val indexName = UUID.randomUUID().toString
-    val server = new TextSearchServer[T](indexName, entityMap)
+    val server = new FullTextSearchServer[T](indexName, entityDeserialize, entitySerialize)
     server.recreateIndex().map{
       case _ => server
     }

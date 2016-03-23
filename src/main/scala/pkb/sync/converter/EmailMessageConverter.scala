@@ -28,15 +28,15 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream), context)
   }
 
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
-  }
-
   def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(message)
     model
+  }
+
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -98,8 +98,8 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         val personResource = uuidConverter.create(address.toString)
         model.add(personResource, RDF.TYPE, Personal.AGENT)
         Option(address.getPersonal).foreach(name =>
-          emailAddressNameConverter.convert(address.getPersonal, address.getAddress).foreach{
-            case name => model.add(personResource, SchemaOrg.NAME, name)
+          emailAddressNameConverter.convert(name, address.getAddress).foreach{
+            case x => model.add(personResource, SchemaOrg.NAME, x)
           }
         )
         model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)

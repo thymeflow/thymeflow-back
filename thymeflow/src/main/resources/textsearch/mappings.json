@@ -8,6 +8,10 @@
       "value": {
         "type": "string",
         "analyzer": "index_ngram"
+      },
+      "entity": {
+        "type": "string",
+        "index": "no"
       }
     }
   }

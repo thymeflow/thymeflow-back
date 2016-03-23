@@ -1,7 +1,6 @@
-package thymeflow.text.search.entityrecognition
+package thymeflow.text.search
 
 import com.typesafe.scalalogging.StrictLogging
-import thymeflow.text.search.TextSearch
 import thymeflow.utilities.Memoize
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -9,21 +8,27 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * @author  David Montoya
  */
-trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with StrictLogging{
+
+/**
+  * A PartialTextMatcher implemented using FullTextSearch capabilities
+  * @tparam ENTITY the type of entities to match
+  */
+trait FullTextSearchPartialTextMatcher[ENTITY] extends PartialTextMatcher[ENTITY] with StrictLogging {
 
   private val defaultSearchDepth = 3
   private val matchPercent = 80
   private val cacheSize = 1000
-  private val memoizedSearch = Memoize.concurrentFifoCache(cacheSize, (x:String) => textSearch.search(x, matchPercent))
+  private val memoizedSearch = Memoize.concurrentFifoCache(cacheSize, (x: String) => fullTextSearch.matchQuery(x, matchPercent))
 
-  def textSearch: TextSearch[ENTITY]
+  def fullTextSearch: FullTextSearch[ENTITY]
 
   implicit def executionContext: ExecutionContext
 
-  override def recognizeEntities(tokens: Seq[String], searchDepth: Int = defaultSearchDepth, clearDuplicateNestedResults: Boolean = false): Future[Seq[(ContentPosition, Seq[(ENTITY, Float)])]] = {
+  override def partialMatchQuery(tokens: Seq[String], searchDepth: Int = defaultSearchDepth, clearDuplicateNestedResults: Boolean = false): Future[Seq[(ContentPosition, Seq[(ENTITY, String, Float)])]] = {
     val tokensLength = tokens.length
 
-    def searchRecursive(queries: Seq[ContentPosition]) : Future[Seq[(ContentPosition, Seq[(ENTITY, Float)])]] = {
+    // this method is future-recursive, so it cannot blow up the stack
+    def searchRecursive(queries: Seq[ContentPosition]): Future[Seq[(ContentPosition, Seq[(ENTITY, String, Float)])]] = {
 
       if(queries.isEmpty){
         Future.successful(Vector())
@@ -50,7 +55,7 @@ trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with S
                   filteredQueryResults.flatMap{
                     case (position, entities) =>
                       val filteredEntities = entities.filter{
-                        case (entity, _)  =>
+                        case (entity, _, _) =>
                           nestedEntityPositions.get(entity).map{
                             case (positions) =>
                               !positions.exists{
@@ -84,12 +89,12 @@ trait TextSearchEntityRecognizer[ENTITY] extends EntityRecognizer[ENTITY] with S
   }
 }
 
-object TextSearchEntityRecognizer{
-  def apply[ENTITY](textSearch: TextSearch[ENTITY])(implicit executionContext: ExecutionContext): TextSearchEntityRecognizer[ENTITY] = {
+object FullTextSearchPartialTextMatcher {
+  def apply[ENTITY](textSearch: FullTextSearch[ENTITY])(implicit executionContext: ExecutionContext): FullTextSearchPartialTextMatcher[ENTITY] = {
     val _textSearch = textSearch
     val _executionContext = executionContext
-    new TextSearchEntityRecognizer[ENTITY]{
-      override def textSearch: TextSearch[ENTITY] = _textSearch
+    new FullTextSearchPartialTextMatcher[ENTITY] {
+      override def fullTextSearch: FullTextSearch[ENTITY] = _textSearch
       override implicit def executionContext: ExecutionContext = _executionContext
     }
   }

@@ -12,7 +12,7 @@ import scala.languageFeature.postfixOps
   * @author David Montoya
   */
 trait DelayedEnricher extends Inferencer {
-  val tickActor = pkb.actors.system.actorOf(Props(new Actor {
+  private val tickActor = pkb.actors.system.actorOf(Props(new Actor {
     var previousDiffTimeOption: Option[Long] = None
     var previousEnrichmentOption: Option[Long] = None
 
@@ -30,7 +30,7 @@ trait DelayedEnricher extends Inferencer {
               }
               if (runEnrichment) {
                 previousEnrichmentOption = Some(previousDiffTime)
-                run()
+                runEnrichments()
               }
             }
           case None =>
@@ -38,16 +38,21 @@ trait DelayedEnricher extends Inferencer {
     }
   }))
 
+  /**
+    * @return duration to wait for before running the Enricher
+    */
   def delay: Duration
 
-  def run(): Unit
+  /**
+    * Run the enrichments defined by this Enricher
+    */
+  def runEnrichments(): Unit
 
   override def infer(diff: ModelDiff): Unit = {
     tickActor ! Diff
   }
   pkb.actors.system.scheduler.schedule(1 second, 10 seconds, tickActor, Tick)
 
-  object Tick
-
-  object Diff
+  private object Tick
+  private object Diff
 }

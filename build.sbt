@@ -49,6 +49,7 @@ val pkb = (project in file(".")).settings(rootSettings:_*).settings(
   libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
   libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
+  // Required here since we use a lucene dependency in the EmailAddressNameConverter
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.7.5"
 )
 

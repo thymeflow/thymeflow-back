@@ -16,30 +16,15 @@ import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
   */
 object RepositoryFactory {
 
-  def initializedMemoryRepository(noSnapshotCleanupStore: Boolean = true,
-                                  rdfsInference: Boolean = true,
-                                  owlInference: Boolean = true): Repository = {
-    val store = if (noSnapshotCleanupStore) {
-      new SimpleMemoryStore()
-    } else {
+  def initializedMemoryRepository(snapshotCleanupStore: Boolean = true, owlInference: Boolean = true): Repository = {
+    val store = if (snapshotCleanupStore) {
       new MemoryStore()
+    } else {
+      new SimpleMemoryStore()
     }
     store.setDefaultIsolationLevel(IsolationLevels.NONE)
-    def withRDFSInference(notifyingSail: NotifyingSail): NotifyingSail = {
-      if (rdfsInference) {
-        new ForwardChainingRDFSInferencer(notifyingSail)
-      } else {
-        notifyingSail
-      }
-    }
-    def withOWLInference(notifyingSail: NotifyingSail): NotifyingSail = {
-      if (owlInference) {
-        new ForwardChainingSimpleOWLInferencer(notifyingSail)
-      } else {
-        notifyingSail
-      }
-    }
-    val repository = new SailRepository(withOWLInference(withRDFSInference(store)))
+
+    val repository = new SailRepository(addInferencer(store, owlInference))
 
     repository.initialize()
 
@@ -49,6 +34,14 @@ object RepositoryFactory {
     repositoryConnection.close()
 
     repository
+  }
+
+  private def addInferencer(store: NotifyingSail, withOwl: Boolean): NotifyingSail = {
+    if (withOwl) {
+      new ForwardChainingSimpleOWLInferencer(new ForwardChainingRDFSInferencer(store))
+    } else {
+      store
+    }
   }
 
   private def addNamespacesToRepository(repositoryConnection: RepositoryConnection): Unit = {

@@ -1,12 +1,14 @@
 package pkb.sync
 
+import javax.mail._
 import javax.mail.event.{MessageCountEvent, MessageCountListener}
-import javax.mail.{FetchProfile, Folder, Message, Store}
+import javax.mail.internet.MimeMessage
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
-import org.openrdf.model.ValueFactory
+import org.openrdf.model.{IRI, ValueFactory}
+import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer.Sync
 import pkb.sync.converter.EmailMessageConverter
@@ -37,7 +39,6 @@ object EmailSynchronizer extends Synchronizer {
         deliverDocuments()
       case config: Config =>
         onNewStore(config.store)
-        deliverDocuments()
       case Cancel =>
         context.stop(self)
     }
@@ -60,7 +61,7 @@ object EmailSynchronizer extends Synchronizer {
         }
 
         override def messagesRemoved(e: MessageCountEvent): Unit = {
-          //TODO
+          removeMessages(e.getMessages, folder)
         }
       })
       addMessages(folder.getMessages(), folder)
@@ -69,19 +70,30 @@ object EmailSynchronizer extends Synchronizer {
     private def addMessages(messages: Array[Message], folder: Folder) = {
       folder.fetch(messages, fetchProfile)
       messages.foreach(message => {
-        val document = new Document(null, emailMessageConverter.convert(message, null))
-        if (waitingForData) {
-          onNext(document)
-        } else {
-          queue.enqueue(document)
-        }
+        val context = messageContext(message, folder)
+        deliverDocument(Document(context, emailMessageConverter.convert(message, context)))
       })
+    }
+
+    private def removeMessages(messages: Array[Message], folder: Folder) = {
+      messages.foreach(message =>
+        deliverDocument(Document(messageContext(message, folder), new SimpleHashModel()))
+      )
     }
 
     private def deliverDocuments(): Unit = {
       deliverWaitingDocuments()
       if (waitingForData) {
         folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+      }
+    }
+
+    private def deliverDocument(document: Document): Unit = {
+      deliverWaitingDocuments()
+      if (waitingForData && queue.isEmpty) {
+        onNext(document)
+      } else {
+        queue.enqueue(document)
       }
     }
 
@@ -93,6 +105,13 @@ object EmailSynchronizer extends Synchronizer {
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
+    }
+
+    private def messageContext(message: Message, folder: Folder): IRI = {
+      message match {
+        case message: MimeMessage => valueFactory.createIRI(folder.getURLName.toString + "#", message.getMessageID)
+        case _ => null
+      }
     }
   }
 }

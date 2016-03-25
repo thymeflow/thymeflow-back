@@ -1,42 +1,23 @@
 import sbt.Keys._
 
-name := "pkb"
-
-val testLibraries = Seq("org.scalatest" %% "scalatest" % "2.2.4")
-val logLibraries = Seq(
-  "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
-  "ch.qos.logback" % "logback-classic" % "1.1.3"
-)
-// mime4j
-val mime4JLibraries = Seq(
-  "org.apache.james" % "apache-mime4j-core" % "0.7.2",
-  "org.apache.james" % "apache-mime4j-dom" % "0.7.2"
-)
-
-val rootSettings = Seq(
+val commonSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
-  libraryDependencies ++= testLibraries,
-  libraryDependencies ++= logLibraries
-)
-
-val commonSettings = rootSettings ++ Seq(
+  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
+  libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
+  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+",
   scalaSource in Compile := baseDirectory.value / "src/main",
   scalaSource in Test := baseDirectory.value / "src/test",
   javaSource in Compile := baseDirectory.value / "src/main",
   javaSource in Test := baseDirectory.value / "src/test"
 )
 
-val rootProject = Project(
-  id = "root",
-  base = file(".")
-).settings(commonSettings: _*)
-
 val coreProject = Project(
   id = "core",
   base = file("core")
 ).settings(commonSettings: _*).settings(
-  libraryDependencies ++= mime4JLibraries,
+  libraryDependencies += "org.apache.james" % "apache-mime4j-core" % "0.7.+",
+  libraryDependencies += "org.apache.james" % "apache-mime4j-dom" % "0.7.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+", //If we want disk storage we should add sesame-sail-nativerdf
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-ntriples" % "4.+",
@@ -59,7 +40,7 @@ val coreProject = Project(
   libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
   libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
   // Required here since we use a lucene dependency in the EmailAddressNameConverter
-  libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.7.5"
+  libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 )
 
 val thymeflowProject = Project (
@@ -78,5 +59,3 @@ val thymeflowProject = Project (
     // , "org.scalanlp" %% "breeze-natives" % "0.12"
   )
 ).dependsOn(coreProject)
-
-

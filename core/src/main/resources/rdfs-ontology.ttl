@@ -131,6 +131,10 @@ schema:givenName a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range rdfs:Literal .
 
+schema:hasPart a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range schema:CreativeWork .
+
 schema:headline a rdf:Property ;
     rdfs:domain schema:CreativeWork ;
     rdfs:range rdfs:Literal .

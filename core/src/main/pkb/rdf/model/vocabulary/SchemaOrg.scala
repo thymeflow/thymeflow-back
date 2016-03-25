@@ -40,6 +40,7 @@ object SchemaOrg {
   val FAMILY_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "familyName")
   val GEO: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "geo")
   val GIVEN_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "givenName")
+  val HAS_PART: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "hasPart")
   val HEADLINE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "headline")
   val HONORIFIC_PREFIX: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "honorificPrefix")
   val HONORIFIC_SUFFIX: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "honorificSuffix")

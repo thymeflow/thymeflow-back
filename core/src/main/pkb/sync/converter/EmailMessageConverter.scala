@@ -5,7 +5,6 @@ import javax.mail.Message.RecipientType
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message, Multipart, Part}
 
-import com.sun.mail.imap.IMAPMessage
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
@@ -17,7 +16,6 @@ import pkb.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverte
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-
 class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
@@ -69,15 +67,11 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         message.getRecipients(RecipientType.BCC)
       }, messageResource, Personal.BLIND_COPY_RECIPIENT)
 
-      if (message.isInstanceOf[MimeMessage]) {
-        addMimeMessageExtra(message.asInstanceOf[MimeMessage], messageResource)
-
-        if (message.isInstanceOf[IMAPMessage]) {
-          addIMAPMessageExtra(message.asInstanceOf[IMAPMessage], messageResource)
-        }
+      message match {
+        case mimeMessage: MimeMessage =>
+          addMimeMessageExtra(mimeMessage, messageResource)
+        case _ =>
       }
-
-
 
       messageResource
     }
@@ -123,11 +117,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         model.add(messageResource, SchemaOrg.IN_LANGUAGE, valueFactory.createLiteral(language), context) //TODO: is it valid ISO code? if yes, use good XSD type
       ))
 
-
-    }
-
-    private def addIMAPMessageExtra(message: IMAPMessage, messageResource: Resource): Unit = {
-      Option(message.getInReplyTo).map(inReplyTo =>
+      Option(message.getHeader("In-Reply-To", null)).map(inReplyTo =>
         model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
       )
 

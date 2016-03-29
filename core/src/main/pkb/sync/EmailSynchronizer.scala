@@ -31,6 +31,7 @@ object EmailSynchronizer extends Synchronizer {
     private val queue = new mutable.Queue[Document]
     private val folders = new mutable.ArrayBuffer[Folder]()
     private val fetchProfile = new FetchProfile()
+    fetchProfile.add(FetchProfile.Item.FLAGS)
     fetchProfile.add(FetchProfile.Item.ENVELOPE)
     fetchProfile.add(FetchProfile.Item.CONTENT_INFO)
 

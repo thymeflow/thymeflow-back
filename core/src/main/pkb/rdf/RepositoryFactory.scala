@@ -1,6 +1,7 @@
 package pkb.rdf
 
-import org.openrdf.IsolationLevels
+import java.io.File
+
 import org.openrdf.model.vocabulary.{RDF, RDFS}
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
@@ -10,6 +11,7 @@ import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.lucene.LuceneSail
 import org.openrdf.sail.lucene4.LuceneIndex
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
+import org.openrdf.{IsolationLevel, IsolationLevels}
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 
@@ -18,16 +20,28 @@ import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
   */
 object RepositoryFactory {
 
-  def initializedMemoryRepository(snapshotCleanupStore: Boolean = true, owlInference: Boolean = true, elasticSearch: Boolean = true): Repository = {
+  def initializedMemoryRepository(
+                                   snapshotCleanupStore: Boolean = true,
+                                   owlInference: Boolean = true,
+                                   elasticSearch: Boolean = true,
+                                   persistenceDirectory: Option[File] = None,
+                                   isolationLevel: IsolationLevel = IsolationLevels.NONE
+                                 ): Repository = {
     val store = if (snapshotCleanupStore) {
-      new MemoryStore()
+      val store = new MemoryStore()
+      store.setPersist(persistenceDirectory.isDefined)
+      store.setSyncDelay(1)
+      store
     } else {
-      new SimpleMemoryStore()
+      val store = new SimpleMemoryStore()
+      store.setPersist(persistenceDirectory.isDefined)
+      store.setSyncDelay(1)
+      store
     }
-    store.setDefaultIsolationLevel(IsolationLevels.NONE)
+    store.setDefaultIsolationLevel(isolationLevel)
 
     val repository = new SailRepository(addElasticSearch(addInferencer(store, owlInference), elasticSearch))
-
+    persistenceDirectory.foreach(repository.setDataDir)
     repository.initialize()
 
     val repositoryConnection = repository.getConnection
@@ -42,7 +56,6 @@ object RepositoryFactory {
     if (withElasticSearch) {
       val luceneSail = new LuceneSail()
       luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
-      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true") //TODO: good idea?
       luceneSail.setBaseSail(store)
       luceneSail
     } else {

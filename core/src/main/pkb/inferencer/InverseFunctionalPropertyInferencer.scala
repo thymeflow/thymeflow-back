@@ -23,7 +23,7 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
 
   private val inferencerContext = valueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#inverseFunctionalInferencerOutput")
 
-  override def infer(diff: ModelDiff): Unit = {
+  override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
 
     //add

@@ -9,7 +9,7 @@ import scala.collection.mutable
 /**
   * @author Thomas Pellissier Tanon
   */
-abstract class AbstractInferrencer(repositoryConnection: RepositoryConnection) extends Inferencer {
+abstract class AbstractInferrencer(repositoryConnection: RepositoryConnection) extends Enricher {
 
   private val timesStatementIsInferred = new mutable.HashMap[Int, Int]() //The statement is stored as its hash
 

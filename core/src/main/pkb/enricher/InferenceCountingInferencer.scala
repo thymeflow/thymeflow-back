@@ -9,7 +9,7 @@ import scala.collection.mutable
 /**
   * @author Thomas Pellissier Tanon
   */
-abstract class AbstractInferrencer(repositoryConnection: RepositoryConnection) extends Enricher {
+abstract class InferenceCountingInferencer(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
 
   private val timesStatementIsInferred = new mutable.HashMap[Int, Int]() //The statement is stored as its hash
 
@@ -17,13 +17,9 @@ abstract class AbstractInferrencer(repositoryConnection: RepositoryConnection) e
     * Add an inferred statement to the repository if it is not already existing
     * In any case increment the counter of the number of inferences of this statement
     */
-  protected def addInferredStatement(diff: ModelDiff, statement: Statement): Unit = {
+  override protected def addStatement(diff: ModelDiff, statement: Statement): Unit = {
     timesStatementIsInferred.put(statement.hashCode(), timesStatementIsInferred.getOrElse(statement.hashCode(), 0) + 1)
-
-    if (!repositoryConnection.hasStatement(statement, true)) {
-      diff.added.add(statement)
-      repositoryConnection.add(statement)
-    }
+    super.addStatement(diff, statement)
   }
 
   /**
@@ -33,10 +29,11 @@ abstract class AbstractInferrencer(repositoryConnection: RepositoryConnection) e
     * WARNING: you should add a specific context to triples guessed by your inferencer in order to avoid removal of statements
     * added from an other inferencer/data source
     */
-  protected def removeInferredStatement(diff: ModelDiff, statement: Statement): Unit = {
-    if (timesStatementIsInferred.put(statement.hashCode(), timesStatementIsInferred.getOrElse(statement.hashCode(), 0) - 1).contains(1)) {
-      diff.removed.add(statement)
-      repositoryConnection.remove(statement)
+  override protected def removeStatement(diff: ModelDiff, statement: Statement): Unit = {
+    if (
+      timesStatementIsInferred.put(statement.hashCode(), timesStatementIsInferred.getOrElse(statement.hashCode(), 0) - 1).contains(1)
+    ) {
+      super.addStatement(diff, statement)
     }
   }
 }

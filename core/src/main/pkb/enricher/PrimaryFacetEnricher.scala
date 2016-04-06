@@ -1,7 +1,7 @@
 package pkb.enricher
 
 import org.openrdf.model.vocabulary.{OWL, RDF}
-import org.openrdf.model.{Model, Resource, Value}
+import org.openrdf.model.{Resource, Value}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import pkb.rdf.Converters._
@@ -15,7 +15,7 @@ import scala.collection.JavaConverters._
   *         Works only if the repository does symmetric inference for owl:sameAs
   *         (if owl:sameAs statements are only retrieved from InverseFunctionalPropertyInferencer it is already done)
   */
-class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends Enricher {
+class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
 
   private val enricherContext = repositoryConnection.getValueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#primaryFacetEnricherOutput")
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
@@ -28,24 +28,24 @@ class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends E
 
   override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
-    recomputePrimaryFacetsFrom(List(diff.added, diff.removed))
+    List(diff.added, diff.removed)
+      .map(_.filter(null, OWL.SAMEAS, null))
+      .flatMap(model => model.subjects().asScala ++ model.objects().asScala)
+      .foreach(recomputePrimaryFacetFrom(_, diff))
     repositoryConnection.commit()
   }
 
-  private def recomputePrimaryFacetsFrom(models: Traversable[Model]): Unit = {
-    models
-      .map(_.filter(null, OWL.SAMEAS, null))
-      .flatMap(model => model.subjects().asScala ++ model.objects().asScala)
-      .foreach(recomputePrimaryFacetFrom(_))
-  }
-
-  private def recomputePrimaryFacetFrom(startFacet: Value): Unit = {
+  private def recomputePrimaryFacetFrom(startFacet: Value, diff: ModelDiff): Unit = {
     val equivalentFacets = getEquivalentFacetsOrderedByNumberOfDescriptiveTriple(startFacet).map(_.asInstanceOf[Resource])
     equivalentFacets
       .find(_ => true)
-      .foreach(repositoryConnection.add(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+      .foreach(facet =>
+        addStatement(diff, repositoryConnection.getValueFactory.createStatement(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+      )
     //It removes the possible type from the other facets
-    equivalentFacets.foreach(repositoryConnection.remove(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+    equivalentFacets.foreach(facet =>
+      removeStatement(diff, repositoryConnection.getValueFactory.createStatement(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+    )
   }
 
   private def getEquivalentFacetsOrderedByNumberOfDescriptiveTriple(startFacet: Value): Iterator[Value] = {

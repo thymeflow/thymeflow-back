@@ -194,7 +194,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             equalityWeights.foreach {
               case (instance1, _, instance2, _, weight) if weight >= persistenceThreshold =>
                 val statement = valueFactory.createStatement(instance1, OWL.SAMEAS, instance2, inferencerContext)
-                repositoryConnection.add(statement)
+                if (!repositoryConnection.hasStatement(statement, false)) {
+                  repositoryConnection.add(statement)
+                }
               case _ =>
             }
             repositoryConnection.commit()

@@ -85,12 +85,12 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
 
   private def buildInferenceSystem(): Flow[ModelDiff, ModelDiff, NotUsed] = {
     var flow = Flow[ModelDiff]
-    enrichers.foreach(inferencer =>
+    for (enricher <- enrichers) {
       flow = flow.map(diff => {
-        inferencer.enrich(diff)
+        enricher.enrich(diff)
         diff
       })
-    )
+    }
     flow
   }
 }

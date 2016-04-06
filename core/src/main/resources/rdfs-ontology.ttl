@@ -241,6 +241,8 @@ personal:PhoneNumber a rdfs:Class ;
 personal:PreferredAddress a rdfs:Class ;
     rdfs:subClassOf personal:Address .
 
+personal:PrimaryFacet a rdfs:Class .
+
 personal:WorkAddress a rdfs:Class ;
     rdfs:subClassOf personal:Address .
 

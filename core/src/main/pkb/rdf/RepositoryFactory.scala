@@ -7,9 +7,9 @@ import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
 import org.openrdf.rio.RDFFormat
 import org.openrdf.sail.NotifyingSail
+import org.openrdf.sail.elasticsearch.ElasticsearchIndex
 import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.lucene.LuceneSail
-import org.openrdf.sail.lucene4.LuceneIndex
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
 import org.openrdf.{IsolationLevel, IsolationLevels}
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -57,7 +57,7 @@ object RepositoryFactory {
   private def addLucene(store: NotifyingSail, withElasticSearch: Boolean): NotifyingSail = {
     if (withElasticSearch) {
       val luceneSail = new LuceneSail()
-      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
+      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[ElasticsearchIndex].getName)
       luceneSail.setBaseSail(store)
       luceneSail
     } else {

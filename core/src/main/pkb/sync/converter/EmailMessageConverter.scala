@@ -121,7 +121,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
       )
 
-      addPart(message, messageResource)
+      //addPart(message, messageResource)
     }
 
     private def addPart(part: Part, messageResource: Resource): Unit = {

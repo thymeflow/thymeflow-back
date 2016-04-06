@@ -23,8 +23,7 @@ object MainApi extends App with SparqlService {
 
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/pkb/sesame-memory")),
-    isolationLevel = IsolationLevels.SERIALIZABLE,
-    lucene = false
+    isolationLevel = IsolationLevels.SERIALIZABLE
   )
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration

@@ -2,7 +2,7 @@ package pkb.sync.converter.utils
 
 import java.util.Locale
 
-import org.apache.lucene.search.spell.LevensteinDistance
+import org.apache.commons.lang3.StringUtils
 import org.openrdf.model.{Literal, ValueFactory}
 import pkb.utilities.text.Normalization
 
@@ -13,9 +13,7 @@ import scala.util.matching.Regex
   */
 class EmailAddressNameConverter(valueFactory: ValueFactory) {
 
-  private val emailNameFilterMetric = new LevensteinDistance()
   private val emailNameFilterThreshold: Double = 0.9
-
 
   def convert(rawName: String, localPart: String, domain: String): Option[Literal] = {
     convert(rawName, EmailAddressConverter.concatenateLocalPartAndDomain(localPart, domain))
@@ -31,7 +29,7 @@ class EmailAddressNameConverter(valueFactory: ValueFactory) {
     }.map{
       case name =>
         // filter out names with @ too close to the email address
-        if(name.contains("@") && emailNameFilterMetric.getDistance(name.toLowerCase(Locale.ROOT), email.toLowerCase(Locale.ROOT)) >= emailNameFilterThreshold){
+        if (name.contains("@") && levenshteinSimilarity(name.toLowerCase(Locale.ROOT), email.toLowerCase(Locale.ROOT)) >= emailNameFilterThreshold) {
           ""
         }else{
           name
@@ -46,5 +44,10 @@ class EmailAddressNameConverter(valueFactory: ValueFactory) {
       case name =>
         valueFactory.createLiteral(name)
     }
+  }
+
+  private def levenshteinSimilarity(s: String, t: String) = {
+    val distance = StringUtils.getLevenshteinDistance(s, t)
+    1.0f - (distance.toFloat / Math.max(s.length, t.length))
   }
 }

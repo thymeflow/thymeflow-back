@@ -8,14 +8,19 @@ import info.aduna.iteration.CloseableIteration
 object Converters {
 
   implicit class CloseableIterationWrapper[E, X <: Exception](closeableIteration: CloseableIteration[E, X])
-    extends Traversable[E] {
+    extends Iterator[E] {
 
-    override def foreach[U](f: (E) => U): Unit = {
-      while (closeableIteration.hasNext) {
-        f(closeableIteration.next())
+    override def hasNext: Boolean = {
+      if (closeableIteration.hasNext) {
+        true
+      } else {
+        closeableIteration.close()
+        false
       }
-      closeableIteration.close()
+    }
+
+    override def next(): E = {
+      closeableIteration.next()
     }
   }
-
 }

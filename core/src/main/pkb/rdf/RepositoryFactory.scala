@@ -20,6 +20,8 @@ import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
   */
 object RepositoryFactory {
 
+  private val storePersistenceSyncDelay = 1000
+
   def initializedMemoryRepository(
                                    snapshotCleanupStore: Boolean = true,
                                    owlInference: Boolean = true,
@@ -30,12 +32,12 @@ object RepositoryFactory {
     val store = if (snapshotCleanupStore) {
       val store = new MemoryStore()
       store.setPersist(persistenceDirectory.isDefined)
-      store.setSyncDelay(1)
+      store.setSyncDelay(storePersistenceSyncDelay)
       store
     } else {
       val store = new SimpleMemoryStore()
       store.setPersist(persistenceDirectory.isDefined)
-      store.setSyncDelay(1)
+      store.setSyncDelay(storePersistenceSyncDelay)
       store
     }
     store.setDefaultIsolationLevel(isolationLevel)

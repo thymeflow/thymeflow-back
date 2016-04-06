@@ -12,7 +12,7 @@ import org.apache.commons.io.IOUtils
 import org.openrdf.IsolationLevels
 import pkb.Pipeline
 import pkb.actors._
-import pkb.inferencer.{InverseFunctionalPropertyInferencer, PrimaryFacetEnricher}
+import pkb.enricher.{InverseFunctionalPropertyInferencer, PrimaryFacetEnricher}
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
@@ -24,7 +24,7 @@ object MainApi extends App with SparqlService {
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/pkb/sesame-memory")),
     isolationLevel = IsolationLevels.SERIALIZABLE,
-    elasticSearch = false
+    lucene = false
   )
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration

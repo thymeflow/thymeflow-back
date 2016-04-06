@@ -1,4 +1,4 @@
-package pkb.inferencer
+package pkb.enricher
 
 import pkb.rdf.model.ModelDiff
 

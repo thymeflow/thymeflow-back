@@ -23,7 +23,7 @@ object RepositoryFactory {
   def initializedMemoryRepository(
                                    snapshotCleanupStore: Boolean = true,
                                    owlInference: Boolean = true,
-                                   elasticSearch: Boolean = true,
+                                   lucene: Boolean = true,
                                    persistenceDirectory: Option[File] = None,
                                    isolationLevel: IsolationLevel = IsolationLevels.NONE
                                  ): Repository = {
@@ -40,7 +40,7 @@ object RepositoryFactory {
     }
     store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = new SailRepository(addElasticSearch(addInferencer(store, owlInference), elasticSearch))
+    val repository = new SailRepository(addLucene(addInferencer(store, owlInference), lucene))
     persistenceDirectory.foreach(repository.setDataDir)
     repository.initialize()
 
@@ -52,7 +52,7 @@ object RepositoryFactory {
     repository
   }
 
-  private def addElasticSearch(store: NotifyingSail, withElasticSearch: Boolean): NotifyingSail = {
+  private def addLucene(store: NotifyingSail, withElasticSearch: Boolean): NotifyingSail = {
     if (withElasticSearch) {
       val luceneSail = new LuceneSail()
       luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)

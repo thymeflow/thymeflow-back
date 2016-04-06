@@ -8,7 +8,7 @@ import akka.stream.scaladsl._
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.RepositoryConnection
 import pkb.actors._
-import pkb.inferencer.Enricher
+import pkb.enricher.Enricher
 import pkb.rdf.Converters._
 import pkb.rdf.model.document.Document
 import pkb.rdf.model.{ModelDiff, SimpleHashModel}

@@ -2,7 +2,7 @@ package thymeflow.enricher
 
 import akka.actor.{Actor, Props}
 import pkb.actors._
-import pkb.inferencer.Enricher
+import pkb.enricher.Enricher
 import pkb.rdf.model.ModelDiff
 
 import scala.concurrent.duration._

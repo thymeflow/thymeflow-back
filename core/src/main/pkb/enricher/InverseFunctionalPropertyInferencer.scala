@@ -1,4 +1,4 @@
-package pkb.inferencer
+package pkb.enricher
 
 import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{Model, Statement}

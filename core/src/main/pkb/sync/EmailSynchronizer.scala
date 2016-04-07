@@ -28,16 +28,18 @@ object EmailSynchronizer extends Synchronizer {
   private class Publisher(valueFactory: ValueFactory) extends BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val queue = new mutable.Queue[Document]
+    private val queue = new mutable.Queue[ImapAction]
     private val folders = new mutable.ArrayBuffer[Folder]()
-    private val fetchProfile = new FetchProfile()
-    fetchProfile.add(FetchProfile.Item.FLAGS)
-    fetchProfile.add(FetchProfile.Item.ENVELOPE)
-    fetchProfile.add(FetchProfile.Item.CONTENT_INFO)
+    private val fetchProfile = {
+      val profile = new FetchProfile()
+      profile.add(FetchProfile.Item.FLAGS)
+      profile.add(FetchProfile.Item.ENVELOPE)
+      profile.add(FetchProfile.Item.CONTENT_INFO)
+      profile
+    }
 
     override def receive: Receive = {
       case Request(_) | Sync =>
-        System.out.println("request|sync")
         deliverDocuments()
       case config: Config =>
         onNewStore(config.store)
@@ -71,53 +73,61 @@ object EmailSynchronizer extends Synchronizer {
 
     private def addMessages(messages: Array[Message], folder: Folder) = {
       folder.fetch(messages, fetchProfile)
-      messages.foreach(message => {
-        val context = messageContext(message, folder)
-        deliverDocument(Document(context, emailMessageConverter.convert(message, context)))
-      })
+      messages.foreach(message => deliverAction(AddedMessage(message)))
     }
 
     private def removeMessages(messages: Array[Message], folder: Folder) = {
-      messages.foreach(message =>
-        deliverDocument(Document(messageContext(message, folder), new SimpleHashModel()))
-      )
+      messages.foreach(message => deliverAction(RemovedMessage(message)))
     }
 
     private def deliverDocuments(): Unit = {
-      deliverWaitingDocuments()
+      deliverWaitingActions()
       if (waitingForData) {
         folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
       }
     }
 
-    private def deliverDocument(document: Document): Unit = {
-      deliverWaitingDocuments()
+    private def deliverAction(action: ImapAction): Unit = {
+      deliverWaitingActions()
+
       if (waitingForData && queue.isEmpty) {
-        System.out.println("actual deliever with queue: " + queue.size + " and demand: " + totalDemand)
-        onNext(document)
+        onNext(documentForAction(action))
       } else {
-        System.out.println("stacking deliever with queue: " + queue.size + " and demand: " + totalDemand)
-        queue.enqueue(document)
+        queue.enqueue(action)
       }
     }
 
-    private def deliverWaitingDocuments(): Unit = {
-      System.out.println("start deliverWaitingDocuments with queue: " + queue.size + " and demand: " + totalDemand)
+    private def deliverWaitingActions(): Unit = {
       while (waitingForData && queue.nonEmpty) {
-        onNext(queue.dequeue())
+        onNext(documentForAction(queue.dequeue()))
       }
-      System.out.println("end deliverWaitingDocuments with queue: " + queue.size + " and demand: " + totalDemand)
+    }
+
+    private def documentForAction(action: ImapAction): Document = {
+      action match {
+        case action: AddedMessage =>
+          val context = messageContext(action.message)
+          Document(context, emailMessageConverter.convert(action.message, context))
+        case action: RemovedMessage =>
+          Document(messageContext(action.message), new SimpleHashModel())
+      }
     }
 
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
     }
 
-    private def messageContext(message: Message, folder: Folder): IRI = {
+    private def messageContext(message: Message): IRI = {
       message match {
-        case message: MimeMessage => valueFactory.createIRI(folder.getURLName.toString + "#", message.getMessageID)
+        case message: MimeMessage => valueFactory.createIRI(message.getFolder.getURLName.toString + "#", message.getMessageID)
         case _ => null
       }
     }
+
+    class ImapAction
+
+    case class AddedMessage(message: Message) extends ImapAction
+
+    case class RemovedMessage(message: Message) extends ImapAction
   }
 }

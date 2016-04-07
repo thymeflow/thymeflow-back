@@ -1,5 +1,6 @@
 package pkb.api
 
+import java.io.File
 import java.util.Properties
 import javax.mail.Session
 
@@ -8,9 +9,10 @@ import akka.http.scaladsl.model.{StatusCodes, Uri}
 import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
 import org.apache.commons.io.IOUtils
+import org.openrdf.IsolationLevels
 import pkb.Pipeline
 import pkb.actors._
-import pkb.inferencer.InverseFunctionalPropertyInferencer
+import pkb.enricher.{InverseFunctionalPropertyInferencer, PrimaryFacetEnricher}
 import pkb.rdf.RepositoryFactory
 import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
@@ -19,12 +21,15 @@ import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, Fil
   */
 object MainApi extends App with SparqlService {
 
-  override protected val repository = RepositoryFactory.initializedMemoryRepository()
+  override protected val repository = RepositoryFactory.initializedMemoryRepository(
+    persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/pkb/sesame-memory")),
+    isolationLevel = IsolationLevels.SERIALIZABLE
+  )
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration
   private val pipeline = new Pipeline(
     repository.getConnection,
-    List(new InverseFunctionalPropertyInferencer(repository.getConnection))
+    List(new InverseFunctionalPropertyInferencer(repository.getConnection), new PrimaryFacetEnricher(repository.getConnection))
   )
 
   private val route = {

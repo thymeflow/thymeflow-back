@@ -121,19 +121,46 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
       )
 
-      //addPart(message, messageResource) TODO: add content?
+      //addPart(message, messageResource)
     }
 
     private def addPart(part: Part, messageResource: Resource): Unit = {
-      part.getContent match {
-        case content: String =>
-          if (part.isMimeType("text/plain")) {
-            model.add(messageResource, SchemaOrg.TEXT, valueFactory.createLiteral(content), context)
-          }
-        case content: Multipart =>
-          (0 until content.getCount).foreach(i => addPart(content.getBodyPart(i), messageResource))
-        case _ => logger.warn("Unknown email content type: " + part.getContentType)
+      if (hasAttachmentDisposition(part)) {
+        return
       }
+
+      if (part.isMimeType("message/rfc822")) {
+        part.getContent match {
+          case content: Message =>
+            model.add(messageResource, SchemaOrg.HAS_PART, convert(content), context)
+          case _ =>
+            logger.warn("Badly encoded message/rfc822 message content")
+        }
+      } else if (part.isMimeType("multipart/*")) {
+        part.getContent match {
+          case content: Multipart =>
+            (0 until content.getCount).foreach(i => {
+              if (i == 1 || part.isMimeType("multipart/alternative")) {
+                addPart(content.getBodyPart(i), messageResource)
+              }
+            })
+          case _ =>
+            logger.warn("Badly encoded multipart message content")
+        }
+      } else if (part.isMimeType("text/plain")) {
+        part.getContent match {
+          case content: String =>
+            model.add(messageResource, SchemaOrg.TEXT, valueFactory.createLiteral(content), context)
+          case _ =>
+            logger.warn("Badly encoded text/plain message content")
+        }
+      } else {
+        logger.info("Ignored email content type: " + part.getContentType)
+      }
+    }
+
+    private def hasAttachmentDisposition(part: Part): Boolean = {
+      Option(part.getDisposition).exists(_.equalsIgnoreCase(Part.ATTACHMENT))
     }
 
     private def resourceForMessage(message: Message): Resource = {

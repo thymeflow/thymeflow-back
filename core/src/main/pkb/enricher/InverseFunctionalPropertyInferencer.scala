@@ -1,4 +1,4 @@
-package pkb.inferencer
+package pkb.enricher
 
 import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{Model, Statement}
@@ -15,7 +15,7 @@ import scala.collection.JavaConverters._
   *         An inferencer that uses some owl:InverseFunctionalProperty to add owl:sameAs statements
   */
 class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnection)
-  extends AbstractInferrencer(repositoryConnection) {
+  extends InferenceCountingInferencer(repositoryConnection) {
 
   private val inverseFunctionalProperties = Set(SchemaOrg.ADDRESS, SchemaOrg.TELEPHONE, SchemaOrg.EMAIL, SchemaOrg.URL)
 
@@ -23,17 +23,17 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
 
   private val inferencerContext = valueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#inverseFunctionalInferencerOutput")
 
-  override def infer(diff: ModelDiff): Unit = {
+  override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
 
     //add
     getInferencesWithOnePremiseInWithInverseFunctionalProperty(diff.added).foreach(statement =>
-      addInferredStatement(diff, statement)
+      addStatement(diff, statement)
     )
 
     //remove
     getInferencesWithOnePremiseInWithInverseFunctionalProperty(diff.removed).foreach(statement =>
-      removeInferredStatement(diff, statement)
+      removeStatement(diff, statement)
     )
 
     repositoryConnection.commit()

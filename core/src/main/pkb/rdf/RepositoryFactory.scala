@@ -1,13 +1,17 @@
 package pkb.rdf
 
-import org.openrdf.IsolationLevels
+import java.io.File
+
 import org.openrdf.model.vocabulary.{RDF, RDFS}
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
 import org.openrdf.rio.RDFFormat
 import org.openrdf.sail.NotifyingSail
+import org.openrdf.sail.elasticsearch.ElasticsearchIndex
 import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
+import org.openrdf.sail.lucene.LuceneSail
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
+import org.openrdf.{IsolationLevel, IsolationLevels}
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 
@@ -16,16 +20,30 @@ import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
   */
 object RepositoryFactory {
 
-  def initializedMemoryRepository(snapshotCleanupStore: Boolean = true, owlInference: Boolean = true): Repository = {
+  private val storePersistenceSyncDelay = 1000
+
+  def initializedMemoryRepository(
+                                   snapshotCleanupStore: Boolean = true,
+                                   owlInference: Boolean = true,
+                                   lucene: Boolean = true,
+                                   persistenceDirectory: Option[File] = None,
+                                   isolationLevel: IsolationLevel = IsolationLevels.NONE
+                                 ): Repository = {
     val store = if (snapshotCleanupStore) {
-      new MemoryStore()
+      val store = new MemoryStore()
+      store.setPersist(persistenceDirectory.isDefined)
+      store.setSyncDelay(storePersistenceSyncDelay)
+      store
     } else {
-      new SimpleMemoryStore()
+      val store = new SimpleMemoryStore()
+      store.setPersist(persistenceDirectory.isDefined)
+      store.setSyncDelay(storePersistenceSyncDelay)
+      store
     }
-    store.setDefaultIsolationLevel(IsolationLevels.NONE)
+    store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = new SailRepository(addInferencer(store, owlInference))
-
+    val repository = new SailRepository(addLucene(addInferencer(store, owlInference), lucene))
+    persistenceDirectory.foreach(repository.setDataDir)
     repository.initialize()
 
     val repositoryConnection = repository.getConnection
@@ -34,6 +52,17 @@ object RepositoryFactory {
     repositoryConnection.close()
 
     repository
+  }
+
+  private def addLucene(store: NotifyingSail, withElasticSearch: Boolean): NotifyingSail = {
+    if (withElasticSearch) {
+      val luceneSail = new LuceneSail()
+      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[ElasticsearchIndex].getName)
+      luceneSail.setBaseSail(store)
+      luceneSail
+    } else {
+      store
+    }
   }
 
   private def addInferencer(store: NotifyingSail, withOwl: Boolean): NotifyingSail = {

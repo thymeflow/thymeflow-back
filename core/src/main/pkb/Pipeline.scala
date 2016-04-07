@@ -8,7 +8,7 @@ import akka.stream.scaladsl._
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.RepositoryConnection
 import pkb.actors._
-import pkb.inferencer.Inferencer
+import pkb.enricher.Enricher
 import pkb.rdf.Converters._
 import pkb.rdf.model.document.Document
 import pkb.rdf.model.{ModelDiff, SimpleHashModel}
@@ -21,7 +21,7 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable[Inferencer])
+class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[Enricher])
   extends StrictLogging {
 
   private val actorRefs = buildSource()
@@ -85,12 +85,12 @@ class Pipeline(repositoryConnection: RepositoryConnection, inferencers: Iterable
 
   private def buildInferenceSystem(): Flow[ModelDiff, ModelDiff, NotUsed] = {
     var flow = Flow[ModelDiff]
-    inferencers.foreach(inferencer =>
+    for (enricher <- enrichers) {
       flow = flow.map(diff => {
-        inferencer.infer(diff)
+        enricher.enrich(diff)
         diff
       })
-    )
+    }
     flow
   }
 }

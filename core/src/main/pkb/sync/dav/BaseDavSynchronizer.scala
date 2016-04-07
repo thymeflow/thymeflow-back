@@ -1,5 +1,6 @@
 package pkb.sync.dav
 
+import java.net.SocketException
 import javax.xml.namespace.QName
 
 import com.github.sardine.impl.SardineException
@@ -44,8 +45,8 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
-    private def fetchDocuments(): Unit = {
-      fetchers.foreach(retrieveDocuments)
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
     }
 
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
@@ -58,8 +59,8 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       )
     }
 
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
+    private def fetchDocuments(): Unit = {
+      fetchers.foreach(retrieveDocuments)
     }
   }
 
@@ -96,6 +97,9 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         case e: SardineException =>
           logger.error(ExceptionUtils.getUnrolledStackTrace(e))
           None
+        case e: SocketException =>
+          logger.error(ExceptionUtils.getUnrolledStackTrace(e))
+          None
       }
     }
 
@@ -105,6 +109,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         val documentIri = valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath))
         Document(documentIri, convert(data, documentIri))
       })
+    }
+
+    private def buildUriFromBaseAndPath(base: String, path: String): String = {
+      new URIBuilder(base).setPath(path).toString
     }
 
     protected def dataNodeName: QName
@@ -117,10 +125,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
-    }
-
-    private def buildUriFromBaseAndPath(base: String, path: String): String = {
-      new URIBuilder(base).setPath(path).toString
     }
   }
 }

@@ -55,7 +55,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          | }
       """.stripMargin
 
-    val agentFacetEmailAddresses = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentEmailAddressesQuery).evaluate().view.map {
+    val agentFacetEmailAddresses = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentEmailAddressesQuery).evaluate().toTraversable.view.map {
       bindingSet =>
         (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
     }.collect {
@@ -194,7 +194,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             equalityWeights.foreach {
               case (instance1, _, instance2, _, weight) if weight >= persistenceThreshold =>
                 val statement = valueFactory.createStatement(instance1, OWL.SAMEAS, instance2, inferencerContext)
-                repositoryConnection.add(statement)
+                if (!repositoryConnection.hasStatement(statement, false)) {
+                  repositoryConnection.add(statement)
+                }
               case _ =>
             }
             repositoryConnection.commit()
@@ -238,6 +240,27 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
+  private def entityMatchingWeightCombine(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], weight: Seq[(Seq[String], Seq[String], Double)]) => {
+    weight.map {
+      case (terms1, terms2, distance) =>
+        terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
+    }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
+  }
+
+  /**
+    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
+    *
+    * @param term the term to normalized
+    * @return the normalized term
+    */
+  private def normalizeTerm(term: String) = {
+    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   /**
     * Given a binary relation R over (RESOURCE, VALUE) tuples, computes the RESOURCE equivalence
     * classes imposed by an inverse functionality constraint over R.
@@ -276,7 +299,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
     resourceRepresentativeMap
   }
-
 
   /**
     * Creates VALUE occurrence counter for given RESOURCES
@@ -355,23 +377,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case g => math.log(N / g.size)
     }
     idfs
-  }
-
-  /**
-    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
-    *
-    * @param term the term to normalized
-    * @return the normalized term
-    */
-  private def normalizeTerm(term: String) = {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
-  }
-
-  private def entityMatchingWeightCombine(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], weight: Seq[(Seq[String], Seq[String], Double)]) => {
-    weight.map {
-      case (terms1, terms2, distance) =>
-        terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
-    }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
   }
 
   private def reconcileEntityNames[ENTITY](entityNames: Traversable[(ENTITY, Map[String, Long])],
@@ -489,10 +494,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
         equivalentNames.sortBy(_._2).reverse
     }.toVector
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])

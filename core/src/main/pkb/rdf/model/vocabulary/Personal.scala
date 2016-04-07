@@ -14,6 +14,7 @@ object Personal {
   val HOME_ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "HomeAddress")
   val PHONE_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "PhoneNumber")
   val PREFERRED_ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "PreferredAddress")
+  val PRIMARY_FACET: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "PrimaryFacet")
   val WORK_ADDRESS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "WorkAddress")
 
   val BLIND_COPY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "blindCopyRecipient")

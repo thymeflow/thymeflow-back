@@ -37,6 +37,7 @@ object EmailSynchronizer extends Synchronizer {
 
     override def receive: Receive = {
       case Request(_) | Sync =>
+        System.out.println("request|sync")
         deliverDocuments()
       case config: Config =>
         onNewStore(config.store)
@@ -92,16 +93,20 @@ object EmailSynchronizer extends Synchronizer {
     private def deliverDocument(document: Document): Unit = {
       deliverWaitingDocuments()
       if (waitingForData && queue.isEmpty) {
+        System.out.println("actual deliever with queue: " + queue.size + " and demand: " + totalDemand)
         onNext(document)
       } else {
+        System.out.println("stacking deliever with queue: " + queue.size + " and demand: " + totalDemand)
         queue.enqueue(document)
       }
     }
 
     private def deliverWaitingDocuments(): Unit = {
+      System.out.println("start deliverWaitingDocuments with queue: " + queue.size + " and demand: " + totalDemand)
       while (waitingForData && queue.nonEmpty) {
         onNext(queue.dequeue())
       }
+      System.out.println("end deliverWaitingDocuments with queue: " + queue.size + " and demand: " + totalDemand)
     }
 
     private def waitingForData: Boolean = {

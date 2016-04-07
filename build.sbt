@@ -33,7 +33,7 @@ val coreProject = Project(
   libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqlxml" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-text" % "4.+",
   //libraryDependencies += "org.openrdf.sesame" % "sesame-queryalgebra-geosparql" % "4.+", TODO: enable if we want GeoSPARQL support
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-elasticsearch" % "4.+",
+  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-lucene4" % "4.+",
   libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+",
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",
@@ -59,5 +59,5 @@ val thymeflowProject = Project (
     // be compatible with the Apache License. No GPL code, as best I know.
     // NOTE: This has to be specifically tested if included
   // "org.scalanlp" %% "breeze-natives" % "0.12"
-  libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.7.0" //Same version as sesame-sail-elasticsearch in order to avoid duplicates
+  libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 ).dependsOn(coreProject)

@@ -111,10 +111,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       })
     }
 
-    private def buildUriFromBaseAndPath(base: String, path: String): String = {
-      new URIBuilder(base).setPath(path).toString
-    }
-
     protected def dataNodeName: QName
 
     protected def buildQueryReport(withData: Boolean): SardineReport[Traversable[DavResource]]
@@ -125,6 +121,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
+    }
+
+    private def buildUriFromBaseAndPath(base: String, path: String): String = {
+      new URIBuilder(base).setPath(path).toString
     }
   }
 }

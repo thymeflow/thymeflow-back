@@ -16,7 +16,7 @@ import scala.language.postfixOps
   */
 object Thymeflow extends StrictLogging {
   def main(args: Array[String]) {
-    val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false)
+    val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false, lucene = false)
     val pipeline = new Pipeline(repository.getConnection, List(new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)))
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)

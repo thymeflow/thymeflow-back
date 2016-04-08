@@ -14,7 +14,7 @@ import pkb.Pipeline
 import pkb.actors._
 import pkb.enricher.{InverseFunctionalPropertyInferencer, PrimaryFacetEnricher}
 import pkb.rdf.RepositoryFactory
-import pkb.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
+import pkb.sync._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -23,7 +23,7 @@ object MainApi extends App with SparqlService {
 
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/pkb/sesame-memory")),
-    isolationLevel = IsolationLevels.SERIALIZABLE
+    isolationLevel = IsolationLevels.NONE
   )
   private val redirectionTarget = Uri("http://localhost:4200")
   //TODO: should be in configuration
@@ -31,6 +31,7 @@ object MainApi extends App with SparqlService {
     repository.getConnection,
     List(new InverseFunctionalPropertyInferencer(repository.getConnection), new PrimaryFacetEnricher(repository.getConnection))
   )
+  private val googleOAuth = OAuth2.Google("http://localhost:8080/oauth/google/token")
 
   private val route = {
     path("sparql") {
@@ -39,16 +40,16 @@ object MainApi extends App with SparqlService {
       pathPrefix("oauth") {
         pathPrefix("google") {
           path("auth") {
-            redirect(OAuth2.Google.getAuthUri(Array(
+            redirect(googleOAuth.getAuthUri(Array(
               "https://www.googleapis.com/auth/userinfo.email",
               "https://www.googleapis.com/auth/carddav",
               "https://www.googleapis.com/auth/calendar",
               "https://mail.google.com/"
-            ), "http://localhost:8080/oauth/google/token"), StatusCodes.TemporaryRedirect) //TODO: avoid to hardcode the URI
+            )), StatusCodes.TemporaryRedirect) //TODO: avoid to hardcode the URI
           } ~
             path("token") {
               parameter('code) { code =>
-                OAuth2.Google.getAccessToken(code, "http://localhost:8080/oauth/google/token").foreach(onGoogleToken)
+                googleOAuth.getAccessToken(code).foreach(onGoogleToken)
                 redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
             }
@@ -68,8 +69,8 @@ object MainApi extends App with SparqlService {
 
   //TODO: make it configurable
 
-  private def onGoogleToken(token: String): Unit = {
-    val sardine = new SardineImpl(token)
+  private def onGoogleToken(token: googleOAuth.Token): Unit = {
+    val sardine = new SardineImpl(token.access_token)
 
     //Get user email
     val gmailAddress = IOUtils.toString(sardine.get("https://www.googleapis.com/userinfo/email"))
@@ -90,7 +91,7 @@ object MainApi extends App with SparqlService {
     props.put("mail.imap.ssl.enable", "true")
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
     val store = Session.getInstance(props).getStore("imap")
-    store.connect("imap.gmail.com", gmailAddress, token)
+    store.connect("imap.gmail.com", gmailAddress, token.access_token)
     pipeline.addSource(EmailSynchronizer.Config(store))
   }
 }

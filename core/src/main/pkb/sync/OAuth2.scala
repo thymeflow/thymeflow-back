@@ -1,5 +1,6 @@
 package pkb.sync
 
+import akka.actor.Cancellable
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.Uri.Query
@@ -52,6 +53,6 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
   case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: String, id_token: String) {
     def renew(): Future[Token] = getAccessToken(refresh_token)
 
-    def whenShouldBeRenewed = system.scheduler.schedule((expires_in - 1) seconds, (expires_in - 1) seconds)
+    def onShouldBeRenewed(f: ⇒ Unit): Cancellable = system.scheduler.schedule((expires_in - 1) seconds, (expires_in - 1) seconds)(pkb.actors.executor)
   }
 }

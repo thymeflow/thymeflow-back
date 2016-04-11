@@ -31,6 +31,7 @@ object MainApi extends App with SparqlService {
     repository.getConnection,
     List(new InverseFunctionalPropertyInferencer(repository.getConnection), new PrimaryFacetEnricher(repository.getConnection))
   )
+  //TODO: avoid to hardcode the URI
   private val googleOAuth = OAuth2.Google("http://localhost:8080/oauth/google/token")
 
   private val route = {
@@ -45,7 +46,7 @@ object MainApi extends App with SparqlService {
               "https://www.googleapis.com/auth/carddav",
               "https://www.googleapis.com/auth/calendar",
               "https://mail.google.com/"
-            )), StatusCodes.TemporaryRedirect) //TODO: avoid to hardcode the URI
+            )), StatusCodes.TemporaryRedirect)
           } ~
             path("token") {
               parameter('code) { code =>
@@ -53,6 +54,20 @@ object MainApi extends App with SparqlService {
                 redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
             }
+        }
+      } ~
+      pathPrefix("imap") {
+        post {
+          formFieldMap { fields =>
+            val props = new Properties()
+            if (fields.get("ssl").contains("true")) {
+              props.put("mail.imap.ssl.enable", "true")
+            }
+            val store = Session.getInstance(props).getStore("imap")
+            store.connect(fields.get("host").get, fields.get("user").get, fields.get("password").get)
+            pipeline.addSource(EmailSynchronizer.Config(store))
+            redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+          }
         }
       } ~
       path("upload") {

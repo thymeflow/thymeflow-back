@@ -2,7 +2,7 @@ package pkb.sync.converter
 
 import java.io.InputStream
 import java.text.SimpleDateFormat
-import java.util.Date
+import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.typesafe.scalalogging.StrictLogging
 import ezvcard.parameter.{AddressType, EmailType, TelephoneType}
@@ -32,10 +32,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     convert(Ezvcard.parse(stream).all.asScala, context)
   }
 
-  override def convert(str: String, context: IRI): Model = {
-    convert(Ezvcard.parse(str).all.asScala, context)
-  }
-
   private def convert(vCards: Traversable[VCard], context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -43,6 +39,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       converter.convert(vCard)
     )
     model
+  }
+
+  override def convert(str: String, context: IRI): Model = {
+    convert(Ezvcard.parse(str).all.asScala, context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -112,21 +112,31 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
 
     private def convert(address: Address): Resource = {
-      val addressResource = valueFactory.createBNode
+      val addressResource = uuidConverter.createBNode(address)
       model.add(addressResource, RDF.TYPE, SchemaOrg.POSTAL_ADDRESS, context)
       //TODO: getExtendedAddresses
       address.getStreetAddresses.asScala.foreach(street =>
         model.add(addressResource, SchemaOrg.STREET_ADDRESS, valueFactory.createLiteral(street), context)
       )
-      address.getLocalities.asScala.foreach(locality =>
-        model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, convertToResource(locality, SchemaOrg.PLACE), context)
-      )
-      address.getRegions.asScala.foreach(region =>
-        model.add(addressResource, SchemaOrg.ADDRESS_REGION, convertToResource(region, SchemaOrg.PLACE), context)
-      )
-      address.getCountries.asScala.foreach(country =>
-        model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, convertToResource(country, SchemaOrg.COUNTRY, SchemaOrg.PLACE), context)
-      )
+      address.getLocalities.asScala.foreach(locality => {
+        val localityResource = uuidConverter.createBNode(addressResource.toString + "#locality-" + locality)
+        model.add(localityResource, RDF.TYPE, SchemaOrg.PLACE, context)
+        model.add(localityResource, SchemaOrg.NAME, valueFactory.createLiteral(locality), context)
+        model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, localityResource, context)
+      })
+      address.getRegions.asScala.foreach(region => {
+        val regionResource = uuidConverter.createBNode(addressResource.toString + "#region-" + region)
+        model.add(regionResource, RDF.TYPE, SchemaOrg.PLACE, context)
+        model.add(regionResource, SchemaOrg.NAME, valueFactory.createLiteral(region), context)
+        model.add(addressResource, SchemaOrg.ADDRESS_REGION, regionResource, context)
+      })
+      address.getCountries.asScala.foreach(country => {
+        val countryResource = uuidConverter.createBNode("country:" + country.toLowerCase)
+        model.add(countryResource, RDF.TYPE, SchemaOrg.COUNTRY, context)
+        model.add(countryResource, RDF.TYPE, SchemaOrg.PLACE, context)
+        model.add(countryResource, SchemaOrg.NAME, valueFactory.createLiteral(country), context)
+        model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, countryResource, context)
+      })
       address.getPoBoxes.asScala.foreach(poBox =>
         model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
       )
@@ -148,19 +158,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       }
     }
 
-    private def convertToResource(str: String, rdfTypes: IRI*): Resource = {
-      val placeResource = valueFactory.createBNode()
-      rdfTypes.foreach(rdfType => model.add(placeResource, RDF.TYPE, rdfType, context))
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(str), context)
-      placeResource
-    }
-
     private def convert(dateTime: DateOrTimeProperty): Option[Literal] = {
       Option(dateTime.getDate).map(date => convert(date, dateTime.hasTime))
     }
 
     private def convert(date: Date, hasTime: Boolean): Literal = {
-      if (date.getYear == 70) {
+      val calendarDate = new GregorianCalendar()
+      calendarDate.setTime(date)
+      if (calendarDate.get(Calendar.YEAR) == 1970) {
         //Google use 1970 as year if there is no year set
         valueFactory.createLiteral(new SimpleDateFormat("MM-dd").format(date), XMLSchema.GMONTHDAY)
       } else if (hasTime) {
@@ -208,7 +213,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
 
     private def convert(organization: Organization): Resource = {
-      convertToResource(organization.getValues.get(0), SchemaOrg.ORGANIZATION) //TODO: support hierarchy?
+      val organizationResource = uuidConverter.createBNode(organization)
+      model.add(organizationResource, RDF.TYPE, SchemaOrg.ORGANIZATION, context)
+      model.add(organizationResource, SchemaOrg.NAME, valueFactory.createLiteral(organization.getValues.get(0)), context) //TODO: support hierarchy?
+      organizationResource
     }
 
     private def convert(telephone: Telephone): Option[Resource] = {

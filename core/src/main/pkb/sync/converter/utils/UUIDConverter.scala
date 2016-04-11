@@ -2,7 +2,7 @@ package pkb.sync.converter.utils
 
 import java.util.UUID
 
-import org.openrdf.model.{IRI, ValueFactory}
+import org.openrdf.model.{BNode, IRI, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -15,11 +15,15 @@ class UUIDConverter(valueFactory: ValueFactory) {
       valueFactory.createIRI("urn:uuid:" + UUID.fromString(simplifiedUuid).toString)
     } catch {
       case e: IllegalArgumentException =>
-        create(simplifiedUuid)
+        createIRI(simplifiedUuid)
     }
   }
 
-  def create(baseStr: String): IRI = {
-    valueFactory.createIRI("urn:uuid:" + UUID.nameUUIDFromBytes(baseStr.getBytes).toString)
+  def createIRI(base: Any): IRI = {
+    valueFactory.createIRI("urn:uuid:" + UUID.nameUUIDFromBytes(base.toString.getBytes).toString)
+  }
+
+  def createBNode(base: Any): BNode = {
+    valueFactory.createBNode(UUID.nameUUIDFromBytes(base.toString.getBytes).toString)
   }
 }

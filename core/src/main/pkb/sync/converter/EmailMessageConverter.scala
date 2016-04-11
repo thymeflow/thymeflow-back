@@ -100,7 +100,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = uuidConverter.create(address.toString)
+        val personResource = uuidConverter.createIRI(address)
         model.add(personResource, RDF.TYPE, Personal.AGENT)
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(name, address.getAddress).foreach{

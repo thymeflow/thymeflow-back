@@ -33,6 +33,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
+  override def convert(stream: InputStream, context: IRI): Model = {
+    convert(Biweekly.parse(stream).all.asScala, context)
+  }
+
   private def convert(calendars: Traversable[ICalendar], context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -40,10 +44,6 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       converter.convert(calendar)
     }
     model
-  }
-
-  override def convert(stream: InputStream, context: IRI): Model = {
-    convert(Biweekly.parse(stream).all.asScala, context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -112,7 +112,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convert(attendee: Attendee): Resource = {
-      val attendeeResource = valueFactory.createBNode()
+      val attendeeResource = uuidConverter.createBNode(attendee)
 
       Option(attendee.getCommonName).foreach(name =>
         model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
@@ -177,21 +177,21 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convert(location: Location): Resource = {
-      val placeResource = valueFactory.createBNode()
+      val placeResource = uuidConverter.createBNode(location)
       model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
       model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue), context)
       placeResource
     }
 
     private def convert(organizer: Organizer): Resource = {
-      val attendeeResource = valueFactory.createBNode()
+      val organizerResource = uuidConverter.createBNode(organizer)
 
       Option(organizer.getCommonName).foreach(name =>
-        model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+        model.add(organizerResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
       )
       Option(organizer.getEmail).foreach(email =>
         emailAddressConverter.convert(email, model).foreach {
-          resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
+          resource => model.add(organizerResource, SchemaOrg.EMAIL, resource, context)
         }
       )
       Option(organizer.getUri).foreach(url =>
@@ -199,10 +199,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
           val uri = new URI(url)
           if (uri.getScheme == "message") {
             emailAddressConverter.convert(uri, model).foreach {
-              resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
+              resource => model.add(organizerResource, SchemaOrg.EMAIL, resource, context)
             }
           } else {
-            model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
+            model.add(organizerResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
             logger.info("Organizer address that is not a mailto URI: " + url)
           }
         } catch {
@@ -211,7 +211,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
         }
       )
 
-      attendeeResource
+      organizerResource
     }
 
     private def convert(url: Url): Option[Resource] = {
@@ -226,7 +226,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convertXAppleStructuredLocation(xAppleStructuredLocation: RawProperty): Resource = {
-      val placeResource = valueFactory.createBNode()
+      val placeResource = uuidConverter.createBNode(xAppleStructuredLocation)
       model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
       model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(xAppleStructuredLocation.getParameter("X-TITLE")), context)
       geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, model).foreach(

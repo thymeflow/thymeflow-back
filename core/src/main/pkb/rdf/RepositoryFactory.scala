@@ -2,6 +2,7 @@ package pkb.rdf
 
 import java.io.File
 
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, RDFS}
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
@@ -18,7 +19,7 @@ import pkb.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 /**
   * @author Thomas Pellissier Tanon
   */
-object RepositoryFactory {
+object RepositoryFactory extends StrictLogging {
 
   private val storePersistenceSyncDelay = 1000
 
@@ -29,6 +30,8 @@ object RepositoryFactory {
                                    persistenceDirectory: Option[File] = None,
                                    isolationLevel: IsolationLevel = IsolationLevels.NONE
                                  ): Repository = {
+    logger.info("Start initializing memory store")
+
     val store = if (snapshotCleanupStore) {
       val store = new MemoryStore()
       store.setPersist(persistenceDirectory.isDefined)
@@ -50,6 +53,8 @@ object RepositoryFactory {
     addNamespacesToRepository(repositoryConnection)
     loadOntology(repositoryConnection)
     repositoryConnection.close()
+
+    logger.info("Memory store initialization done")
 
     repository
   }

@@ -1,6 +1,6 @@
 package thymeflow.graph
 
-import scala.annotation.tailrec
+import scala.collection.mutable
 
 /**
   * @author David Montoya
@@ -9,104 +9,95 @@ object FlowAlgorithms {
 
   final val INF = Double.PositiveInfinity
 
-
   /**
-    * Solves the Min-cost max-flow algorithm
-    * For details http://courses.csail.mit.edu/6.854/06/scribe/s12-minCostFlowAlg.pdf
+    * Solves the min-cost max-flow problem using potentials.
+    * Cannot handle negative edge costs.
     *
-    * @param nodes    a traversable over the nodes in the network
-    * @param capacity the capacity of an edge given a pair of from -> to nodes
-    * @param cost     the cost of an edge given a pair of from -> to nodes
-    * @param source   the flow's source
-    * @param sink     the flow's sink
+    * @param edges  the edges of this network, (from, to, capacity, cost)
+    * @param source the flow's source
+    * @param sink   the flow's sink
     * @tparam T the node type
-    * @return
+    * @return (totalFlow, totalCost, flow) where flow maps an edge (from, to) to its flow value
     */
-  def minCostMaxFlow[T](nodes: Traversable[T],
-                        capacity: (T, T) => Double,
-                        cost: (T, T) => Double,
+  def minCostMaxFlow[T](edges: Traversable[(T, T, Double, Double)],
                         source: T,
-                        sink: T) = {
-
-    val flow = new scala.collection.mutable.HashMap[(T, T), Double].withDefaultValue(0d)
-    val dist = new scala.collection.mutable.HashMap[T, Double].withDefaultValue(INF)
-    val parent = new scala.collection.mutable.HashMap[T, T]
-    val pi = new scala.collection.mutable.HashMap[T, Double].withDefaultValue(0d)
-
-    def search(source: T, sink: T) = {
-      val found = new scala.collection.mutable.HashSet[T]
-      @tailrec
-      def rec(optionU: Option[T]) {
-        optionU match {
-          case Some(u) =>
-            var optionBest: Option[T] = None
-            found(u) = true
-            for (k <- nodes) {
-              if (!found(k)) {
-                if (flow((k, u)) != 0d) {
-                  dist(u) match {
-                    case INF =>
-                    case uDist =>
-                      val v = uDist + pi(u) - pi(k) - cost(k, u)
-                      if (dist(k) > v) {
-                        dist(k) = v
-                        parent(k) = u
-                      }
-                  }
-                }
-                if (flow((u, k)) < capacity(u, k)) {
-                  dist(u) match {
-                    case INF =>
-                    case uDist =>
-                      val v = uDist + pi(u) - pi(k) + cost(u, k)
-                      if (dist(k) > v) {
-                        dist(k) = v
-                        parent(k) = u
-                      }
-                  }
-
-                }
-                val distBest = optionBest.map(dist).getOrElse(INF)
-                if (dist(k) < distBest) optionBest = Some(k)
-              }
-            }
-            rec(optionBest)
-          case None =>
-        }
+                        sink: T,
+                        maxFlow: Double = Double.PositiveInfinity) = {
+    val priority = new mutable.HashMap[T, Double].withDefaultValue(INF)
+    val currentFlow = new mutable.HashMap[T, Double].withDefaultValue(INF)
+    val flow = new mutable.HashMap[(T, T), Double].withDefaultValue(0d)
+    val parent = new mutable.HashMap[T, (T, Double)]
+    val potential = new mutable.HashMap[T, Double].withDefaultValue(0d)
+    val positiveNeighbors = edges.groupBy(_._1).mapValues {
+      case g => g.map {
+        case e@(u, v, capacity, cost) =>
+          if (cost < 0d) throw new IllegalArgumentException(s"Expected non-negative edge costs. Found ($e).")
+          (v, capacity, cost)
       }
-      dist.clear()
-      dist(source) = 0d
-      rec(Some(source))
-      for (k <- nodes) {
-        pi(k) = Math.min(pi(k) + dist(k), INF)
+    }.getOrElse(_: T, Vector.empty)
+    val negativeNeighbors = edges.groupBy(_._2).mapValues {
+      case g => g.map {
+        case e@(u, v, _, cost) =>
+          (u, 0d, -cost)
       }
-      found(sink)
+    }.getOrElse(_: T, Vector.empty)
+    def allNeighbors(node: T) = {
+      positiveNeighbors(node).view ++ negativeNeighbors(node).seq
     }
-
     var totalFlow = 0d
     var totalCost = 0d
-    while (search(source, sink)) {
-      var amt = INF
-      var x = sink
-      while (x != source) {
-        amt = Math.min(amt, if (flow((x, parent(x))) != 0d) flow((x, parent(x))) else capacity(parent(x), x) - flow((parent(x), x)))
-        x = parent(x)
+    val ordering = new Ordering[(T, Double)] {
+      override def compare(x: (T, Double), y: (T, Double)): Int = {
+        y._2.compareTo(x._2)
       }
-      x = sink
-      while (x != source) {
-        if (flow((x, parent(x))) != 0d) {
-          flow((x, parent(x))) -= amt
-          totalCost -= amt * cost(x, parent(x))
-        } else {
-          flow((parent(x), x)) += amt
-          totalCost += amt * cost(parent(x), x)
-        }
-        x = parent(x)
-      }
-      totalFlow += amt
     }
-
-    (totalFlow, totalCost, flow)
+    val q = new mutable.PriorityQueue[(T, Double)]()(ordering)
+    var b = true
+    while (b && totalFlow < maxFlow) {
+      q.clear()
+      priority.clear()
+      q.enqueue((source, 0d))
+      priority(source) = 0d
+      val finished = new mutable.HashSet[T]
+      currentFlow(source) = INF
+      while (!finished.contains(sink) && q.nonEmpty) {
+        val (u, uPriority) = q.dequeue()
+        if (uPriority == priority(u)) {
+          finished += u
+          for ((v, capacity, cost) <- allNeighbors(u)) {
+            val f = flow((u, v))
+            if (f < capacity) {
+              val newPriority = uPriority + cost + potential(u) - potential(v)
+              if (priority(v) > newPriority) {
+                priority(v) = newPriority
+                q.enqueue((v, newPriority))
+                parent(v) = (u, cost)
+                currentFlow(v) = Math.min(currentFlow(u), capacity - f)
+              }
+            }
+          }
+        }
+      }
+      if (priority(sink) != INF) {
+        for (k <- finished) {
+          potential(k) += priority(k) - priority(sink)
+        }
+        val dFlow = Math.min(currentFlow(sink), maxFlow - totalFlow)
+        totalFlow += dFlow
+        var v = sink
+        while (v != source) {
+          val (u, cost) = parent(v)
+          flow((u, v)) += dFlow
+          flow((v, u)) -= dFlow
+          totalCost += dFlow * cost
+          v = u
+        }
+      } else {
+        b = false
+      }
+    }
+    (totalFlow, totalCost, flow.getOrElse(_: (T, T), 0d))
   }
+
 
 }

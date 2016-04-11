@@ -14,26 +14,26 @@ object Alignment {
   final val matchScore = 1.0
   final val mismatchScore = -1.0
 
-  def alignment(queries: Seq[String],
-                text: String,
-                filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
+  def alignment[T](queries: Traversable[T],
+                   text: String,
+                   filter: (Double, Int, Int) => Boolean = (_, _, _) => true)(implicit queryToString: T => String) = {
     var id = 0
-    val graph = new scala.collection.mutable.HashMap[(AlignmentNode, AlignmentNode), (Double, Double)]
+    val edgeMap = new scala.collection.mutable.HashMap[(AlignmentNode, AlignmentNode), (Double, Double)]
     val candidates = queries.collect {
-      case query if query.nonEmpty =>
+      case query if queryToString(query).nonEmpty =>
         id += 1
-        val queryTerm = new QueryTerm(id, query)
-        graph((Source, queryTerm)) = (1d, 0d)
-        val matches = find(query, text, filter).map {
+        val queryTerm = new QueryTerm(id, queryToString(query))
+        edgeMap((Source, queryTerm)) = (1d, 0d)
+        val matches = find(queryTerm.term, text, filter).map {
           case (queryRange, textRange, score1, score2) =>
             id += 1
-            val queryTermMatch = new QueryTermMatch(id, query.substring(queryRange._1, queryRange._2 + 1))
-            graph((queryTerm, queryTermMatch)) = (1d, (query.length - queryTermMatch.term.length).toDouble / query.length.toDouble)
+            val queryTermMatch = new QueryTermMatch(id, queryTerm.term.substring(queryRange._1, queryRange._2 + 1), text.substring(textRange._1, textRange._2 + 1))
+            edgeMap((queryTerm, queryTermMatch)) = (1d, queryTerm.term.length - queryTermMatch.term.length * score2)
             (queryTermMatch, textRange, score1, score2)
         }
-        (queryTerm, matches)
-    }
-    val textMatches = candidates.flatMap(_._2.flatMap {
+        (query, queryTerm, matches)
+    }.toVector
+    val textMatches = candidates.flatMap(_._3.flatMap {
       case (_, (from, to), _, _) =>
         Vector(from, to + 1)
     }).distinct.sorted.sliding(2, 1).map {
@@ -42,7 +42,7 @@ object Alignment {
         new TextMatch(id, from, to - 1, text.substring(from, to))
     }.toVector
     val usedTextMatches = candidates.flatMap {
-      case (_, termMatches) =>
+      case (_, _, termMatches) =>
         termMatches.flatMap {
           case (termMatch, (from, to), _, _) =>
             val includedTextMatches = textMatches.collect {
@@ -52,29 +52,61 @@ object Alignment {
             val totalWeight = includedTextMatches.map(_._2).sum.toDouble
             includedTextMatches.map {
               case (textMatch, weight) =>
-                graph((termMatch, textMatch)) = (weight.toDouble / totalWeight, 1d)
+                edgeMap((termMatch, textMatch)) = (weight.toDouble / totalWeight, 0d)
                 textMatch
             }
         }
     }.distinct
 
     usedTextMatches.foreach {
-      case textMatch => graph((textMatch, Target)) = (1d, 0d)
+      case textMatch => edgeMap((textMatch, Sink)) = (1d, 0d)
     }
 
-    val nodes = graph.keys.flatMap(x => Vector(x._1, x._2)).toVector.distinct
+    val nodes = edgeMap.keys.flatMap(x => Vector(x._1, x._2)).toVector.distinct
 
-    val (_, _, flow) = FlowAlgorithms.minCostMaxFlow[AlignmentNode](
-      nodes, { case (from, to) => graph.get((from, to)).map(_._1).getOrElse(0) }, { case (from, to) => graph.get((from, to)).map(_._2).getOrElse(0d) },
-      Source,
-      Target
-    )
+    @tailrec
+    def fixPointFlow(): ((AlignmentNode, AlignmentNode)) => Double = {
+      val (_, _, flow) = FlowAlgorithms.minCostMaxFlow[AlignmentNode](
+        edgeMap.view.map {
+          case ((u, v), (capacity, cost)) => (u, v, capacity, cost)
+        },
+        Source,
+        Sink
+      )
+      var foundDouble = false
+      nodes.foreach {
+        case y: TextMatch =>
+          nodes.iterator.collect {
+            case x: QueryTermMatch => flow(x, y)
+          }.foldLeft(None: Option[(Double, Int)]) {
+            case (None, f) if f > 0 => Some((f, 1))
+            case (Some((currentMin, count)), f) if f > 0 => Some((Math.min(currentMin, f), count + 1))
+            case (x, _) => x
+          } match {
+            case Some((min, count)) =>
+              val (_, cost) = edgeMap((y, Sink))
+              if (count > 1) foundDouble = true
+              edgeMap((y, Sink)) = (min, cost)
+            case _ =>
+          }
+        case _ =>
+      }
+      if (foundDouble) {
+        fixPointFlow()
+      } else {
+        flow
+      }
+    }
+
+    val flow = fixPointFlow()
     val result = candidates.map {
-      case (queryTerm, _) =>
+      case (query, queryTerm, _) =>
         @tailrec
-        def bfs(fromNodes: Vector[AlignmentNode]): Vector[AlignmentNode] = {
-          if (fromNodes.exists(_.isInstanceOf[TextMatch])) {
-            fromNodes
+        def bfs(fromNodes: Vector[AlignmentNode]): Vector[TextMatch] = {
+          if (fromNodes.isEmpty || fromNodes.exists(_.isInstanceOf[TextMatch])) {
+            fromNodes.collect {
+              case x: TextMatch => x
+            }
           } else {
             bfs(fromNodes.flatMap {
               case from =>
@@ -84,7 +116,17 @@ object Alignment {
             }.distinct)
           }
         }
-        (queryTerm, bfs(Vector(queryTerm)))
+        val matches = bfs(Vector(queryTerm)).sortBy(_.from).foldLeft(Vector.empty[(Vector[TextMatch], Int)]) {
+          case (s :+ ((p, index)), textMatch) if textMatch.from == index + 1 =>
+            s :+(p :+ textMatch, textMatch.to)
+          case (s, textMatch) =>
+            s :+(Vector(textMatch), textMatch.to)
+        }.map {
+          case (s, _) =>
+            (s.map(_.textPart).mkString(""), s.head.from, s.last.to)
+        }
+
+        (query, matches)
     }
     result
   }
@@ -290,14 +332,20 @@ object Alignment {
 
   class QueryTerm(val id: Int, val term: String) extends AlignmentNode {
     override def canEqual(other: Any): Boolean = other.isInstanceOf[QueryTerm]
+
+    override def toString: String = s"QueryTerm($id, $term)"
   }
 
-  class QueryTermMatch(val id: Int, val term: String) extends AlignmentNode {
+  class QueryTermMatch(val id: Int, val term: String, val text: String) extends AlignmentNode {
     override def canEqual(other: Any): Boolean = other.isInstanceOf[QueryTermMatch]
+
+    override def toString: String = s"QueryTermMatch($id, $term, $text)"
   }
 
-  class TextMatch(val id: Int, val from: Int, val to: Int, val term: String) extends AlignmentNode {
+  class TextMatch(val id: Int, val from: Int, val to: Int, val textPart: String) extends AlignmentNode {
     override def canEqual(other: Any): Boolean = other.isInstanceOf[TextMatch]
+
+    override def toString: String = s"TextMatch($id, $from, $to, $textPart)"
   }
 
   case class RowSequence(text: String)
@@ -335,9 +383,11 @@ object Alignment {
         case _ => false
       }
     }
+
+    override def toString: String = s"Source"
   }
 
-  object Target extends AlignmentNode {
+  object Sink extends AlignmentNode {
     val id = -2
 
     override def equals(other: scala.Any): Boolean = {
@@ -346,6 +396,8 @@ object Alignment {
         case _ => false
       }
     }
+
+    override def toString: String = s"Sink"
   }
 
   object CellLeft extends Direction

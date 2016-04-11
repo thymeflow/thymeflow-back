@@ -7,7 +7,7 @@ import org.scalatest._
   */
 class AlignmentSpec extends FlatSpec with Matchers {
   // TODO: elaborate these test cases
-  "Alignment" should "do handle multiple different alignments" in {
+  "Alignment" should "globally align two texts without crashing" in {
     def filter(score: Double, matches: Int, mismatches: Int) = {
       matches.toDouble / (matches + mismatches).toDouble >= 0.7
     }
@@ -30,7 +30,22 @@ class AlignmentSpec extends FlatSpec with Matchers {
     val f2 = Alignment.find("JOHN", "DOE JOHN", filter)
     val f3 = Alignment.find("JOHN", "XOHN", filter)
     val f4 = Alignment.find("JOHN", "JDOE", filter)
+  }
 
+  "Alignment" should "globally align some text with a sequence of terms" in {
+    def filter(score: Double, matches: Int, mismatches: Int) = {
+      matches.toDouble / (matches + mismatches).toDouble >= 0.7
+    }
     val a1 = Alignment.alignment(Seq("JOHN", "SMITH"), "SMITH.JOHN", filter)
+    a1 should be(Vector(("JOHN", Vector(("JOHN", 6, 9))), ("SMITH", Vector(("SMITH", 0, 4)))))
+    val a2 = Alignment.alignment(Seq("gbbbg", "gaaaaaa"), "gbbbg.gaaaaaa", filter)
+    a2 should be(Vector(("gbbbg", Vector(("gbbbg", 0, 4))), ("gaaaaaa", Vector(("gaaaaaa", 6, 12)))))
+    // the following test case is not yet well specified
+    val a3 = Alignment.alignment(Seq("shdrahi", "brishrastomo"), "xxbrishra", filter)
+    a3 should be(Vector(("shdrahi", Vector(("shra", 5, 8))), ("brishrastomo", Vector(("bri", 2, 4)))))
+    val a4 = Alignment.alignment(Seq("aaaaaa", "bbbbbbbbbbb", "aaaaaa"), "aaaaaa.bbbbbbbbbbb", filter)
+    a4 should be(Vector(("aaaaaa", Vector(("aaaaaa", 0, 5))), ("bbbbbbbbbbb", Vector(("bbbbbbbbbbb", 7, 17))), ("aaaaaa", Vector())))
+    val a6 = Alignment.alignment(Seq("abbbbb", "aaaaaa"), "abbb", filter)
+    a6 should be(Vector(("abbbbb", Vector(("abbb", 0, 3))), ("aaaaaa", Vector())))
   }
 }

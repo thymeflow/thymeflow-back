@@ -5,9 +5,9 @@ import java.util.Locale
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.lucene.search.spell.LevensteinDistance
-import org.openrdf.model.Resource
 import org.openrdf.model.impl.SimpleLiteral
 import org.openrdf.model.vocabulary.{OWL, RDF}
+import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import pkb.actors._
@@ -15,6 +15,7 @@ import pkb.rdf.Converters._
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.utilities.text.Normalization
 import thymeflow.graph.ConnectedComponents
+import thymeflow.text.alignment.Alignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
 import thymeflow.text.search.{FullTextSearchPartialTextMatcher, PartialTextMatcher}
@@ -55,16 +56,20 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          | }
       """.stripMargin
 
-    val agentFacetEmailAddresses = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentEmailAddressesQuery).evaluate().toTraversable.view.map {
+    val agentFacetEmailAddresses = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentEmailAddressesQuery).evaluate().toIterator.map {
       bindingSet =>
         (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
     }.collect {
       case (Some(agent), Some(emailAddress)) => (agent, emailAddress)
-    }.force
+    }.toVector
 
     val agentFacetRepresentativeMap = getResourceRepresentatives(agentFacetEmailAddresses)
 
+    val agentEmailAddresses = agentFacetEmailAddresses.map {
+      case (agent, emailAddress) => (agentFacetRepresentativeMap(agent), emailAddress)
+    }.groupBy(_._1).mapValues(_.map(_._2))
 
+    agentNames(agentEmailAddresses, agentFacetRepresentativeMap)
     val agentFacetRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
     val agentFacetRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
 
@@ -204,6 +209,82 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
+  def agentNames(agentEmailAddressMap: Map[Resource, Traversable[String]],
+                 agentRepresentativeMap: Map[Resource, Resource]) = {
+    val emailAddressesQuery =
+      s"""
+         |SELECT ?emailAddressName ?domain ?localPart
+         |WHERE {
+         |  ?emailAddress <${Personal.DOMAIN}> ?domain .
+         |  ?emailAddress <${Personal.LOCAL_PART}> ?localPart .
+         |  ?emailAddress <${SchemaOrg.NAME}> ?emailAddressName .
+         |}
+      """.stripMargin
+
+    val emailAddressesDecomposition = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, emailAddressesQuery).evaluate().toIterator.map {
+      bindingSet =>
+        (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
+          Option(bindingSet.getValue("localPart")).map(_.stringValue()),
+          Option(bindingSet.getValue("domain")).map(_.stringValue()))
+    }.collect {
+      case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
+    }.toMap
+
+    val agentNamesQuery =
+      s"""
+         |SELECT ?agent ?nameProperty ?name
+         |WHERE {
+         |  ?agent ?nameProperty ?name .
+         |  FILTER( ?nameProperty = <${SchemaOrg.GIVEN_NAME}> || ?nameProperty = <${SchemaOrg.FAMILY_NAME}> )
+         |}
+      """.stripMargin
+
+    val agentNames = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesQuery).evaluate().toIterator.map {
+      bindingSet =>
+        (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+          Option(bindingSet.getValue("nameProperty").asInstanceOf[Resource]),
+          Option(bindingSet.getValue("name")).map(_.stringValue()))
+    }.collect {
+      case (Some(agent), Some(nameProperty), Some(name)) => (agent, nameProperty, name)
+    }.toVector
+
+    def filter(score: Double, matches: Int, mismatches: Int) = {
+      matches.toDouble / (matches + mismatches).toDouble >= 0.7
+    }
+    val agentNameEmailAddressAlignment = agentNames.groupBy(_._1).map {
+      case (agent, g) =>
+        val agentRepresentative = agentRepresentativeMap.getOrElse(agent, agent)
+        val emailAddresses = agentEmailAddressMap.getOrElse(agentRepresentative, Vector.empty)
+        val names = g.map(x => (x._2, x._3.toLowerCase(Locale.ROOT)))
+        emailAddresses.map {
+          case emailAddress =>
+            val (localPart, domain) = emailAddressesDecomposition(emailAddress)
+            val a = Alignment.alignment(names, localPart.toLowerCase(Locale.ROOT), filter)(_._2).flatMap {
+              case (query, matches) =>
+                matches.map((query, _))
+            }.sortBy(_._2._2)
+            val aligned = a.foldLeft((Vector.empty[String], 0)) {
+              case ((s, index), ((property, _), (text, from, to))) =>
+                (s ++ (if (index != from) {
+                  Some(localPart.substring(index, from))
+                } else {
+                  None
+                }) :+ s"<${property.asInstanceOf[IRI].getLocalName}>", to + 1)
+            }._1
+            if (aligned.contains(s"<${SchemaOrg.GIVEN_NAME.getLocalName}>") && !aligned.contains(s"<${SchemaOrg.FAMILY_NAME.getLocalName}>")) {
+              logger.info(s"$localPart, $names")
+            }
+            (emailAddress, localPart, domain, aligned.mkString(""))
+        }
+    }.toVector
+    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._3).mapValues {
+      case g =>
+        val m = g.map(_._4).groupBy(identity).mapValues(_.size)
+        (m.values.sum, m)
+    }.toIndexedSeq.sortBy(_._2._1)
+    byDomain
+  }
+
   private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
                                            nameStatements: (RESOURCE) => Traversable[(String, Long)],
                                            termIDFs: Map[String, Double],
@@ -255,10 +336,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     */
   private def normalizeTerm(term: String) = {
     Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**
@@ -371,12 +448,16 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     * @return a TERM -> IDF map
     */
   private def computeTermIDFs(documents: Traversable[String]) = {
-    val normalizedContent = documents.map(x => entitySplit(x).map(y => normalizeTerm(y)).distinct).toIndexedSeq
+    val normalizedContent = documents.map(x => entitySplit(x).map(y => normalizeTerm(y)).distinct)
     val N = normalizedContent.size
     val idfs = normalizedContent.flatten.groupBy(identity).mapValues {
       case g => math.log(N / g.size)
     }
     idfs
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def reconcileEntityNames[ENTITY](entityNames: Traversable[(ENTITY, Map[String, Long])],

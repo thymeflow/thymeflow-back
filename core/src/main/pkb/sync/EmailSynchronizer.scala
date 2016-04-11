@@ -7,6 +7,7 @@ import javax.mail.{FolderClosedException, _}
 import akka.actor.Props
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
+import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.document.Document
@@ -18,7 +19,7 @@ import scala.collection.mutable
 /**
   * @author Thomas Pellissier Tanon
   */
-object EmailSynchronizer extends Synchronizer {
+object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
@@ -48,9 +49,13 @@ object EmailSynchronizer extends Synchronizer {
     }
 
     private def onNewStore(store: Store) = {
-      store.getDefaultFolder.list("*")
+      val folders = store
+        .getDefaultFolder.list("*")
         .filter(holdsMessages)
-        .foreach(onNewFolder)
+
+      logger.info("Importing the folders " + folders.mkString(", "))
+
+      folders.foreach(onNewFolder)
     }
 
     private def holdsMessages(folder: Folder): Boolean = {

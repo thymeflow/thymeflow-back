@@ -2,7 +2,7 @@ package pkb.api
 
 import java.io.File
 import java.util.Properties
-import javax.mail.Session
+import javax.mail.{MessagingException, Session}
 
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{StatusCodes, Uri}
@@ -33,6 +33,8 @@ object MainApi extends App with SparqlService {
   )
   //TODO: avoid to hardcode the URI
   private val googleOAuth = OAuth2.Google("http://localhost:8080/oauth/google/token")
+  //TODO: avoid to hardcode the URI
+  private val microsoftOAuth = OAuth2.Microsoft("http://localhost:8080/oauth/microsoft/token") //TODO: avoid to hardcode the URI
 
   private val route = {
     path("sparql") {
@@ -54,7 +56,18 @@ object MainApi extends App with SparqlService {
                 redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
             }
-        }
+        } ~
+          pathPrefix("microsoft") {
+            path("auth") {
+              redirect(microsoftOAuth.getAuthUri(Array("wl.imap", "wl.offline_access")), StatusCodes.TemporaryRedirect)
+            } ~
+              path("token") {
+                parameter('code) { code =>
+                  microsoftOAuth.getAccessToken(code).foreach(onMicrosoftToken)
+                  redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+                }
+              }
+          }
       } ~
       pathPrefix("imap") {
         post {
@@ -105,8 +118,28 @@ object MainApi extends App with SparqlService {
     val props = new Properties()
     props.put("mail.imap.ssl.enable", "true")
     props.put("mail.imap.auth.mechanisms", "XOAUTH2")
-    val store = Session.getInstance(props).getStore("imap")
-    store.connect("imap.gmail.com", gmailAddress, token.access_token)
-    pipeline.addSource(EmailSynchronizer.Config(store))
+
+    try {
+      val store = Session.getInstance(props).getStore("imap")
+      store.connect("imap.gmail.com", gmailAddress, token.access_token)
+      pipeline.addSource(EmailSynchronizer.Config(store))
+    } catch {
+      case e: MessagingException => logger.error(e.getLocalizedMessage, e)
+    }
+  }
+
+  private def onMicrosoftToken(token: microsoftOAuth.Token): Unit = {
+    //Emails
+    val props = new Properties()
+    props.put("mail.imap.ssl.enable", "true")
+    props.put("mail.imap.auth.mechanisms", "XOAUTH2")
+
+    try {
+      val store = Session.getInstance(props).getStore("imap")
+      store.connect("imap-mail.outlook.com", token.user_id.get, token.access_token)
+      pipeline.addSource(EmailSynchronizer.Config(store))
+    } catch {
+      case e: MessagingException => logger.error(e.getLocalizedMessage, e)
+    }
   }
 }

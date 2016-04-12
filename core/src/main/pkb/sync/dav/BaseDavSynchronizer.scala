@@ -58,10 +58,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         }
       )
     }
-
-    private def fetchDocuments(): Unit = {
-      fetchers.foreach(retrieveDocuments)
-    }
   }
 
   protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) {

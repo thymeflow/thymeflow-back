@@ -148,7 +148,7 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
     private def convert(address: EmailAddress): Option[Resource] = {
       emailAddressConverter.convert(address.localPart, address.domain, model).map {
         emailAddressResource =>
-          val personResource = uuidConverter.create(address.toString)
+          val personResource = uuidConverter.createIRI(address)
           model.add(personResource, RDF.TYPE, Personal.AGENT)
           address.name.foreach(name =>
             emailAddressNameConverter.convert(name, address.localPart, address.domain).foreach {
@@ -163,12 +163,7 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
     private def resourceForMessage(message: EmailMessage): Resource = {
       message.messageId.map(messageId =>
         emailMessageUriConverter.convert(messageId)
-      ).getOrElse(blankNodeForMessage(model))
-    }
-
-    private def blankNodeForMessage(model: Model): Resource = {
-      val messageResource = valueFactory.createBNode()
-      messageResource
+      ).getOrElse(valueFactory.createBNode())
     }
 
     private def adjustDateUsingDeliveryDate(deliveryDateOption: Option[Temporal], dateOption: Option[Temporal]) = {

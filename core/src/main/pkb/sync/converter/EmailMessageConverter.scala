@@ -27,15 +27,15 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream), context)
   }
 
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
+  }
+
   def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(message)
     model
-  }
-
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -44,10 +44,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
 
       // use sent date as published date. If sent date is invalid, use received date.
-      (Option(message.getSentDate) match {
-        case date@Some(_) => date
-        case None => Option(message.getReceivedDate)
-      }).foreach(date =>
+      Option(message.getSentDate).orElse(Option(message.getReceivedDate)).foreach(date =>
         model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date), context)
       )
       Option(message.getSubject).foreach(subject =>
@@ -100,7 +97,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = uuidConverter.create(address.toString)
+        val personResource = uuidConverter.createIRI(address)
         model.add(personResource, RDF.TYPE, Personal.AGENT)
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(name, address.getAddress).foreach{

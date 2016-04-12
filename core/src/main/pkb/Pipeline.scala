@@ -15,6 +15,7 @@ import pkb.rdf.model.{ModelDiff, SimpleHashModel}
 import pkb.sync.Synchronizer.Sync
 import pkb.sync._
 
+import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -76,8 +77,14 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
       )
     }
 
+    //Do not add already existing statements
+    val statementsToAdd = new SimpleHashModel(
+      repositoryConnection.getValueFactory,
+      statements.asScala.filterNot(statement => repositoryConnection.hasStatement(statement, false)).asJava
+    )
+
+    repositoryConnection.add(statementsToAdd)
     repositoryConnection.remove(statementsToRemove)
-    repositoryConnection.add(statements)
     repositoryConnection.commit()
 
     new ModelDiff(statements, statementsToRemove)

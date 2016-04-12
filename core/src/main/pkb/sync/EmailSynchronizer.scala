@@ -1,8 +1,8 @@
 package pkb.sync
 
-import javax.mail._
 import javax.mail.event.{MessageCountEvent, MessageCountListener}
 import javax.mail.internet.MimeMessage
+import javax.mail.{FolderClosedException, _}
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
@@ -107,7 +107,13 @@ object EmailSynchronizer extends Synchronizer {
       action match {
         case action: AddedMessage =>
           val context = messageContext(action.message)
-          Document(context, emailMessageConverter.convert(action.message, context))
+          try {
+            Document(context, emailMessageConverter.convert(action.message, context))
+          } catch {
+            case e: FolderClosedException =>
+              action.message.getFolder.open(Folder.READ_ONLY)
+              Document(context, emailMessageConverter.convert(action.message, context))
+          }
         case action: RemovedMessage =>
           Document(messageContext(action.message), new SimpleHashModel())
       }

@@ -65,8 +65,8 @@ object Alignment {
     val nodes = edgeMap.keys.flatMap(x => Vector(x._1, x._2)).toVector.distinct
 
     @tailrec
-    def fixPointFlow(): ((AlignmentNode, AlignmentNode)) => Double = {
-      val (_, _, flow) = FlowAlgorithms.minCostMaxFlow[AlignmentNode](
+    def fixPointFlow(): (Double, Double, ((AlignmentNode, AlignmentNode)) => Double) = {
+      val (totalFlow, totalCost, flow) = FlowAlgorithms.minCostMaxFlow[AlignmentNode](
         edgeMap.view.map {
           case ((u, v), (capacity, cost)) => (u, v, capacity, cost)
         },
@@ -94,11 +94,11 @@ object Alignment {
       if (foundDouble) {
         fixPointFlow()
       } else {
-        flow
+        (totalFlow, totalCost, flow)
       }
     }
 
-    val flow = fixPointFlow()
+    val (totalFlow, totalCost, flow) = fixPointFlow()
     val result = candidates.map {
       case (query, queryTerm, _) =>
         @tailrec
@@ -128,7 +128,7 @@ object Alignment {
 
         (query, matches)
     }
-    result
+    (if (totalFlow != 0) totalCost / totalFlow else 0d, result)
   }
 
   def find(query: String, text: String, filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
@@ -149,6 +149,18 @@ object Alignment {
       }
     }
     val (rows, cols, score, previous) = sequenceAlignment(rowSequence, columnSequence, positiveScores = false, getInitialScore, getInitialPrevious)
+    val iterator = for (i <- Iterator.range(0, rows); j <- Iterator.range(0, cols)) yield {
+      val cell = Cell(i, j)
+      cell -> score(cell)
+    }
+    val orderedScores = iterator.toIndexedSeq.sortBy(_._2._1).reverse
+    alignCandidates(previous, orderedScores, filter)(rowSequence, columnSequence)
+  }
+
+  def align(sequence1: String, sequence2: String, filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
+    val rowSequence = RowSequence(sequence1)
+    val columnSequence = ColumnSequence(sequence2)
+    val (rows, cols, score, previous) = sequenceAlignment(rowSequence, columnSequence)
     val iterator = for (i <- Iterator.range(0, rows); j <- Iterator.range(0, cols)) yield {
       val cell = Cell(i, j)
       cell -> score(cell)
@@ -299,18 +311,6 @@ object Alignment {
         }
       }
     }
-  }
-
-  def align(sequence1: String, sequence2: String, filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
-    val rowSequence = RowSequence(sequence1)
-    val columnSequence = ColumnSequence(sequence2)
-    val (rows, cols, score, previous) = sequenceAlignment(rowSequence, columnSequence)
-    val iterator = for (i <- Iterator.range(0, rows); j <- Iterator.range(0, cols)) yield {
-      val cell = Cell(i, j)
-      cell -> score(cell)
-    }
-    val orderedScores = iterator.toIndexedSeq.sortBy(_._2._1).reverse
-    alignCandidates(previous, orderedScores, filter)(rowSequence, columnSequence)
   }
 
   sealed trait AlignmentNode {

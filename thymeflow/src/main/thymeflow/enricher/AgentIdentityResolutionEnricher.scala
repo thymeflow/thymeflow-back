@@ -19,6 +19,7 @@ import thymeflow.text.alignment.Alignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
 import thymeflow.text.search.{FullTextSearchPartialTextMatcher, PartialTextMatcher}
+import thymeflow.utilities.Memoize
 
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
@@ -32,20 +33,27 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#agentIdentityResolution")
 
+  private val metric = new LevensteinDistance()
+  private val matchingDistance = new BipartiteMatchingDistance(
+    (s1, s2) => 1.0d - metric.getDistance(normalizeTerm(s1), normalizeTerm(s2)), 0.3
+  )
+  private val entityMatchingWeight = matchingDistance.getDistance _
+  private val entityMatchIndices = matchingDistance.matchIndices _
+  private val parallelism = 1
+  private val sameAsThreshold = 0.7d
+  private val persistenceThreshold = 0.9d
   // \u2022 is the bullet character
   private val tokenSeparator =
     """[\p{Punct}\s\u2022]+""".r
+  /**
+    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
+    *
+    */
+  private val normalizeTerm = Memoize.concurrentFifoCache(1000, (term: String) => {
+    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
+  })
 
   def runEnrichments() = {
-    val parallelism = 1
-    val metric = new LevensteinDistance()
-    val sameAsThreshold = 0.7d
-    val persistenceThreshold = 0.9d
-    val distance = new BipartiteMatchingDistance(
-      (s1, s2) => 1.0d - metric.getDistance(normalizeTerm(s1), normalizeTerm(s2)), 0.3
-    )
-    val entityMatchingWeight = distance.getDistance _
-    val entityMatchIndices = distance.matchIndices _
 
     val agentEmailAddressesQuery =
       s"""
@@ -69,7 +77,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (agent, emailAddress) => (agentFacetRepresentativeMap(agent), emailAddress)
     }.groupBy(_._1).mapValues(_.map(_._2))
 
-    agentNames(agentEmailAddresses, agentFacetRepresentativeMap)
     val agentFacetRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
     val agentFacetRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
 
@@ -130,6 +137,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val agentFacetRepresentativeContactNames = agentFacetRepresentativeContactNamesBuilder.result()
     val agentFacetRepresentativeMessageNames = agentFacetRepresentativeMessageNamesBuilder.result()
 
+    agentNames(agentFacetRepresentativeMessageNames, agentEmailAddresses, agentFacetRepresentativeMap)
+
     val contactWeight = 1.0
     val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.map((_, contactWeight))
       ++ agentFacetRepresentativeMessageNames.map((_, 1.0))).groupBy(_._1._1).mapValues {
@@ -141,8 +150,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val agentStringValueToAgent = (agentFacetEmailAddresses.map(_._1) ++ agentFacetRepresentativeNames.keys).map {
       case (agent) => (agent.stringValue(), agent)
     }(scala.collection.breakOut): Map[String, Resource]
-
-    val reconciledAgentNames = reconcileEntityNames(agentFacetRepresentativeMessageNames, agentFacetRepresentativeContactNames, entityMatchIndices)
 
     val agentFacetAndNames = agentFacetRepresentativeNames.flatMap {
       case (agentFacet, nameCounts) =>
@@ -209,7 +216,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
-  def agentNames(agentEmailAddressMap: Map[Resource, Traversable[String]],
+  def agentNames(agentFacetRepresentativeMessageNames: Map[Resource, Map[String, Long]],
+                 agentEmailAddressMap: Map[Resource, Traversable[String]],
                  agentRepresentativeMap: Map[Resource, Resource]) = {
     val emailAddressesQuery =
       s"""
@@ -242,47 +250,192 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val agentNames = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesQuery).evaluate().toIterator.map {
       bindingSet =>
         (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
-          Option(bindingSet.getValue("nameProperty").asInstanceOf[Resource]),
+          Option(bindingSet.getValue("nameProperty").asInstanceOf[IRI]),
           Option(bindingSet.getValue("name")).map(_.stringValue()))
     }.collect {
-      case (Some(agent), Some(nameProperty), Some(name)) => (agent, nameProperty, name)
+      case (Some(agent), Some(nameProperty), Some(name)) => (agentRepresentativeMap.getOrElse(agent, agent), nameProperty, name)
     }.toVector
+
+    val entityPreferredNames = agentNames.groupBy(_._1).mapValues {
+      _.map {
+        case (_, nameProperty, name) => (name, nameProperty)
+      }
+    }
+
+    val agentWithAllNames = (agentFacetRepresentativeMessageNames.keySet ++ entityPreferredNames.keySet).view.map {
+      case agent =>
+        agent ->(agentFacetRepresentativeMessageNames.getOrElse(agent, Traversable.empty), entityPreferredNames.getOrElse(agent, Vector.empty))
+    }.toVector
+
+    val reconciledAgentNames = reconcileEntityNames(agentWithAllNames, entityMatchIndices)
 
     def filter(score: Double, matches: Int, mismatches: Int) = {
       matches.toDouble / (matches + mismatches).toDouble >= 0.7
     }
-    val agentNameEmailAddressAlignment = agentNames.groupBy(_._1).map {
-      case (agent, g) =>
-        val agentRepresentative = agentRepresentativeMap.getOrElse(agent, agent)
+    val agentNameEmailAddressAlignment = reconciledAgentNames.map {
+      case (agentRepresentative, g, _) =>
         val emailAddresses = agentEmailAddressMap.getOrElse(agentRepresentative, Vector.empty)
-        val names = g.map(x => (x._2, x._3.toLowerCase(Locale.ROOT)))
+        val names = g.map(x => (x._2._2.toSet, normalizeTerm(x._1)))
         emailAddresses.map {
           case emailAddress =>
             val (localPart, domain) = emailAddressesDecomposition(emailAddress)
-            val a = Alignment.alignment(names, localPart.toLowerCase(Locale.ROOT), filter)(_._2).flatMap {
+            val (cost, alignment) = Alignment.alignment(names, normalizeTerm(localPart), filter)(_._2)
+            var anonymousPropertyCount = 0
+            val aligned = alignment.flatMap {
               case (query, matches) =>
                 matches.map((query, _))
-            }.sortBy(_._2._2)
-            val aligned = a.foldLeft((Vector.empty[String], 0)) {
+            }.sortBy(_._2._2).foldLeft((Vector.empty[String], 0)) {
               case ((s, index), ((property, _), (text, from, to))) =>
+                val propertyName = if (property.nonEmpty) property.map(_.getLocalName).mkString("|")
+                else {
+                  anonymousPropertyCount += 1
+                  s"P$anonymousPropertyCount"
+                }
                 (s ++ (if (index != from) {
                   Some(localPart.substring(index, from))
                 } else {
                   None
-                }) :+ s"<${property.asInstanceOf[IRI].getLocalName}>", to + 1)
-            }._1
-            if (aligned.contains(s"<${SchemaOrg.GIVEN_NAME.getLocalName}>") && !aligned.contains(s"<${SchemaOrg.FAMILY_NAME.getLocalName}>")) {
-              logger.info(s"$localPart, $names")
+                }) :+ s"<$propertyName>", to + 1)
+            } match {
+              case (s, index) =>
+                if (index != localPart.length) {
+                  s :+ localPart.substring(index, localPart.length)
+                } else {
+                  s
+                }
             }
-            (emailAddress, localPart, domain, aligned.mkString(""))
+            (emailAddress, localPart, domain, aligned.mkString(""), cost, names)
         }
-    }.toVector
+    }
     val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._3).mapValues {
       case g =>
-        val m = g.map(_._4).groupBy(identity).mapValues(_.size)
-        (m.values.sum, m)
+        val m = g.groupBy(_._4).mapValues {
+          x => (x.size, x.map(_._5).sum / x.size.toDouble, x)
+        }
+        (m.values.map(_._1).sum, m.values.map(_._2).sum / m.size.toDouble, m)
     }.toIndexedSeq.sortBy(_._2._1)
     byDomain
+  }
+
+  private def reconcileEntityNames[ENTITY, TERM_PART](entityNames: Traversable[(ENTITY, (Traversable[(String, Long)], Traversable[(String, TERM_PART)]))],
+                                                      equivalenceMatching: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
+    val ordering = new Ordering[(Long, Vector[TERM_PART])] {
+      override def compare(x: (Long, Vector[TERM_PART]), y: (Long, Vector[TERM_PART])): Int = {
+        val (xCount, xTs) = x
+        val (yCount, yTs) = y
+        val c = yTs.size.compareTo(xTs.size)
+        if (c == 0) yCount.compareTo(xCount) else c
+      }
+    }
+    def map(s: Seq[Either[Long, TERM_PART]]) = {
+      s.map {
+        case Left(count) => (count, Vector.empty)
+        case Right(t) => (0L, Vector(t))
+      }
+    }
+    def reduce(s: Seq[(Long, Vector[TERM_PART])]) = {
+      s.foldLeft((0L, Vector.empty[TERM_PART])) {
+        case ((count1, ts1), (count2, ts2)) =>
+          (count1 + count2, ts1 ++ ts2)
+      }
+    }
+    entityNames.map {
+      case (agent, (names, nameParts)) =>
+        val splitNames = (names.view.map {
+          case (name, count) => (entitySplit(name), Left(count))
+        } ++ nameParts.map {
+          case (name, t) => (entitySplit(name), Right(t))
+        }.view).toVector
+        val reconciledNames = reconcileNames(splitNames, equivalenceMatching).map {
+          case (equivalentNames) =>
+            equivalentNames.groupBy(_._1).mapValues {
+              x => reduce(map(x.map(_._2)))
+            }.toVector.sortBy(_._2)(ordering)
+        }
+        val best = reconciledNames.map {
+          case x =>
+            val s = reduce(x.collect {
+              case (terms, countAndT) if terms.length == 1 => countAndT
+            })
+            (x.find(_._1.length == 1).map(_._1.mkString(" ")), s)
+        }.collect {
+          case (Some(token), countAndT) => (token, countAndT)
+        }.sortBy(_._2)(ordering)
+        (agent, best, reconciledNames)
+    }.toVector
+  }
+
+  private def reconcileNames[TERM, METADATA, SCORE](names: Seq[(Seq[TERM], METADATA)],
+                                                    comparator: (Seq[TERM], Seq[TERM]) => Seq[(Seq[Int], Seq[Int], SCORE)]) = {
+    type INDEX = (Int, Seq[Int])
+    val nameMap = new scala.collection.mutable.HashMap[INDEX, Long]
+    var idCounter = 0L
+    def newId() = {
+      idCounter += 1
+      idCounter
+    }
+    names.indices.foreach {
+      nameIndex1 =>
+        val (name1, _) = names(nameIndex1)
+        names.indices.drop(nameIndex1 + 1).foreach {
+          nameIndex2 =>
+            val (name2, _) = names(nameIndex2)
+            comparator(name1, name2).foreach {
+              case (nameTermIndexes1, nameTermIndexes2, d) =>
+                val index1 = (nameIndex1, nameTermIndexes1)
+                val index2 = (nameIndex2, nameTermIndexes2)
+                (nameMap.get(index1), nameMap.get(index2)) match {
+                  case (None, None) =>
+                    val id = newId()
+                    nameMap(index1) = id
+                    nameMap(index2) = id
+                  case (Some(id), None) =>
+                    nameMap(index2) = id
+                  case (None, Some(id)) =>
+                    nameMap(index1) = id
+                  case (Some(id1), Some(id2)) =>
+                    if (id1 != id2) {
+                      // Detected a corner case.
+                      (nameMap.collect {
+                        case (v, id) if id == id2 => v
+                      }(scala.collection.breakOut): Seq[INDEX]).foreach {
+                        case v => nameMap(v) = id1
+                      }
+                    }
+                }
+            }
+
+        }
+    }
+    // compute the set of used (nameIndex, nameTermIndex)
+    val usedIndexes = nameMap.keys.flatMap {
+      case (nameIndex, nameTermIndexes) =>
+        nameTermIndexes.map((nameIndex, _))
+    }.toSet
+    // create a new id for each unused (nameIndex, nameTermIndex)
+    names.indices.foreach {
+      index =>
+        val (name, _) = names(index)
+        name.indices.foreach {
+          case c =>
+            if (!usedIndexes.contains((index, c))) {
+              nameMap((index, Vector(c))) = newId()
+            }
+        }
+    }
+    // group indexes by id
+    nameMap.toVector.groupBy(_._2).map {
+      case (id, g) =>
+        val equivalentNames = g.map {
+          case ((nameIndex, nameTermIndexes), _) =>
+            val (name, count) = names(nameIndex)
+            val nameParts = nameTermIndexes.map {
+              case nameTermIndex => name(nameTermIndex)
+            }
+            (nameParts, count)
+        }
+        equivalentNames
+    }.toVector
   }
 
   private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
@@ -326,16 +479,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (terms1, terms2, distance) =>
         terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
-  }
-
-  /**
-    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
-    *
-    * @param term the term to normalized
-    * @return the normalized term
-    */
-  private def normalizeTerm(term: String) = {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
   }
 
   /**
@@ -458,123 +601,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
   private def entitySplit(content: String) = {
     tokenSeparator.split(content).toIndexedSeq
-  }
-
-  private def reconcileEntityNames[ENTITY](entityNames: Traversable[(ENTITY, Map[String, Long])],
-                                           entityPreferredNames: Map[ENTITY, Map[String, Long]],
-                                           equivalenceMatching: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
-    val ordering = implicitly[Ordering[Long]].reverse
-    entityNames.map {
-      case (agent, names) =>
-        val weight = names.values.sum
-        val splitNames = names.map {
-          case (name, count) => (entitySplit(name), count)
-        }.toVector
-        val reconciledNames = reconcileNames(splitNames, equivalenceMatching).map {
-          case (s) =>
-            s.map {
-              case (tokens, count) =>
-                (tokens.map {
-                  case token =>
-                    if (token.nonEmpty) {
-                      token.head.toString.toUpperCase(Locale.ROOT) + token.tail.toLowerCase(Locale.ROOT)
-                    } else {
-                      token
-                    }
-                }, count)
-            }.groupBy(_._1).mapValues {
-              case x => x.map(_._2).sum
-            }.toVector.sortBy(_._2)(ordering)
-        }
-        val best = reconciledNames.map {
-          case x =>
-            val s = x.collect {
-              case (tokens, count) if tokens.length == 1 => count
-            }.sum
-            (x.find(_._1.length == 1).map(_._1.mkString(" ")), s)
-        }.collect {
-          case (Some(token), count) => (token, count)
-        }.sortBy(_._2).reverse
-        (weight, entityPreferredNames.getOrElse(agent, Map.empty), Vector(best, reconciledNames))
-    }.toVector.sortBy(_._1)(ordering)
-  }
-
-  private def reconcileNames(names: Seq[(Seq[String], Long)],
-                             comparator: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
-    type INDEX = (Int, Seq[Int])
-    val nameMap = new scala.collection.mutable.HashMap[INDEX, Long]
-    var idCounter = 0L
-    def newId() = {
-      idCounter += 1
-      idCounter
-    }
-    names.indices.foreach {
-      idx1 =>
-        val (name1, _) = names(idx1)
-        names.indices.drop(idx1 + 1).foreach {
-          idx2 =>
-            val (name2, _) = names(idx2)
-            comparator(name1, name2).foreach {
-              case (c1, c2, d) =>
-                val v1 = (idx1, c1)
-                val v2 = (idx2, c2)
-                (nameMap.get(v1), nameMap.get(v2)) match {
-                  case (None, None) =>
-                    val id = newId()
-                    nameMap(v1) = id
-                    nameMap(v2) = id
-                  case (Some(id), None) =>
-                    nameMap(v2) = id
-                  case (None, Some(id)) =>
-                    nameMap(v1) = id
-                  case (Some(id1), Some(id2)) =>
-                    if (id1 != id2) {
-                      // Detected a corner case.
-                      (nameMap.collect {
-                        case (v, id) if id == id2 => v
-                      }(scala.collection.breakOut): Seq[INDEX]).foreach {
-                        case v => nameMap(v) = id1
-                      }
-                    }
-                }
-            }
-
-        }
-    }
-    val usedIndexes = nameMap.keys.flatMap {
-      case (idx, c) =>
-        c.map((idx, _))
-    }.toSet
-    names.indices.foreach {
-      idx =>
-        val (name, _) = names(idx)
-        name.indices.foreach {
-          case c =>
-            if (!usedIndexes.contains((idx, c))) {
-              nameMap((idx, Vector(c))) = newId()
-            }
-        }
-    }
-    val indexToNameMap = names.indices.flatMap {
-      idx =>
-        val (name, count) = names(idx)
-        name.indices.map {
-          case c => (idx, c) ->(name(c), count)
-        }
-    }.toMap
-    nameMap.toVector.groupBy(_._2).map {
-      case (id, g) =>
-        val equivalentNames = g.map {
-          case ((idx, v), _) =>
-            val nameParts = v.map {
-              case c =>
-                indexToNameMap((idx, c))
-            }
-            val count = nameParts.head._2
-            (nameParts.map(_._1), count)
-        }
-        equivalentNames.sortBy(_._2).reverse
-    }.toVector
   }
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])

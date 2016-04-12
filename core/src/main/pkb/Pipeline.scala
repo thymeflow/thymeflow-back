@@ -80,7 +80,7 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
     //Do not add already existing statements
     val statementsToAdd = new SimpleHashModel(
       repositoryConnection.getValueFactory,
-      statements.asScala.filter(statement => !repositoryConnection.hasStatement(statement, false)).asJava
+      statements.asScala.filterNot(statement => repositoryConnection.hasStatement(statement, false)).asJava
     )
 
     repositoryConnection.add(statementsToAdd)

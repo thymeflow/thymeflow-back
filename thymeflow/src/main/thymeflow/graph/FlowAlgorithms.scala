@@ -16,58 +16,61 @@ object FlowAlgorithms {
     * @param edges  the edges of this network, (from, to, capacity, cost)
     * @param source the flow's source
     * @param sink   the flow's sink
-    * @tparam T the node type
+    * @tparam NODE the node type
     * @return (totalFlow, totalCost, flow) where flow maps an edge (from, to) to its flow value
     */
-  def minCostMaxFlow[T](edges: Traversable[(T, T, Double, Double)],
-                        source: T,
-                        sink: T,
-                        maxFlow: Double = Double.PositiveInfinity) = {
-    val priority = new mutable.HashMap[T, Double].withDefaultValue(INF)
-    val currentFlow = new mutable.HashMap[T, Double].withDefaultValue(INF)
-    val flow = new mutable.HashMap[(T, T), Double].withDefaultValue(0d)
-    val parent = new mutable.HashMap[T, (T, Double)]
-    val potential = new mutable.HashMap[T, Double].withDefaultValue(0d)
+  def minCostMaxFlow[NODE](edges: Traversable[(NODE, NODE, Double, Double)],
+                           source: NODE,
+                           sink: NODE,
+                           maxFlow: Double = Double.PositiveInfinity) = {
+    val priority = new mutable.HashMap[NODE, Double].withDefaultValue(INF)
+    val currentFlow = new mutable.HashMap[NODE, Double].withDefaultValue(INF)
+    val flow = new mutable.HashMap[(NODE, NODE), Double].withDefaultValue(0d)
+    val parent = new mutable.HashMap[NODE, (NODE, Double)]
+    val potential = new mutable.HashMap[NODE, Double].withDefaultValue(0d)
     val positiveNeighbors = edges.groupBy(_._1).mapValues {
       case g => g.map {
-        case e@(u, v, capacity, cost) =>
+        case e@(_, v, capacity, cost) =>
           if (cost < 0d) throw new IllegalArgumentException(s"Expected non-negative edge costs. Found ($e).")
           (v, capacity, cost)
       }
-    }.getOrElse(_: T, Vector.empty)
+    }
     val negativeNeighbors = edges.groupBy(_._2).mapValues {
       case g => g.map {
-        case e@(u, v, _, cost) =>
+        case e@(u, _, _, cost) =>
           (u, 0d, -cost)
       }
-    }.getOrElse(_: T, Vector.empty)
-    def allNeighbors(node: T) = {
-      positiveNeighbors(node).view ++ negativeNeighbors(node).seq
     }
+    val neighborMap = (positiveNeighbors.keySet ++ negativeNeighbors.keySet).map {
+      case (node) => node -> (positiveNeighbors.getOrElse(node, Vector.empty) ++ negativeNeighbors.getOrElse(node, Vector.empty)).toVector
+    }.toMap
+    val neighbors = neighborMap.getOrElse(_: NODE, Vector.empty)
     var totalFlow = 0d
     var totalCost = 0d
-    val ordering = new Ordering[(T, Double)] {
-      override def compare(x: (T, Double), y: (T, Double)): Int = {
+    val ordering = new Ordering[(NODE, Double)] {
+      override def compare(x: (NODE, Double), y: (NODE, Double)): Int = {
         y._2.compareTo(x._2)
       }
     }
-    val q = new mutable.PriorityQueue[(T, Double)]()(ordering)
+    val q = new mutable.PriorityQueue[(NODE, Double)]()(ordering)
     var b = true
     while (b && totalFlow < maxFlow) {
       q.clear()
       priority.clear()
       q.enqueue((source, 0d))
       priority(source) = 0d
-      val finished = new mutable.HashSet[T]
+      val finished = new mutable.HashSet[NODE]
       currentFlow(source) = INF
       while (!finished.contains(sink) && q.nonEmpty) {
         val (u, uPriority) = q.dequeue()
         if (uPriority == priority(u)) {
           finished += u
-          for ((v, capacity, cost) <- allNeighbors(u)) {
+          for ((v, capacity, cost) <- neighbors(u) if !finished.contains(v)) {
             val f = flow((u, v))
             if (f < capacity) {
-              val newPriority = uPriority + cost + potential(u) - potential(v)
+              // due to numerical precision loss, and since costs are non-negative,
+              // we explicitly ensure that newPriority is >= uPriority
+              val newPriority = Math.max(uPriority + (cost + (potential(u) - potential(v))), uPriority)
               if (priority(v) > newPriority) {
                 priority(v) = newPriority
                 q.enqueue((v, newPriority))
@@ -96,7 +99,7 @@ object FlowAlgorithms {
         b = false
       }
     }
-    (totalFlow, totalCost, flow.getOrElse(_: (T, T), 0d))
+    (totalFlow, totalCost, flow.getOrElse(_: (NODE, NODE), 0d))
   }
 
 

@@ -34,6 +34,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#agentIdentityResolution")
 
   private val metric = new LevensteinDistance()
+  private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
   private val matchingDistance = new BipartiteMatchingDistance(
     (s1, s2) => 1.0d - metric.getDistance(normalizeTerm(s1), normalizeTerm(s2)), 0.3
   )
@@ -45,13 +46,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   // \u2022 is the bullet character
   private val tokenSeparator =
     """[\p{Punct}\s\u2022]+""".r
-  /**
-    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
-    *
-    */
-  private val normalizeTerm = Memoize.concurrentFifoCache(1000, (term: String) => {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
-  })
 
   def runEnrichments() = {
 
@@ -140,12 +134,15 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     agentNames(agentFacetRepresentativeMessageNames, agentEmailAddresses, agentFacetRepresentativeMap)
 
     val contactWeight = 1.0
-    val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.map((_, contactWeight))
-      ++ agentFacetRepresentativeMessageNames.map((_, 1.0))).groupBy(_._1._1).mapValues {
-      case g => g.flatMap(x => x._1._2.map((_, x._2))).groupBy(_._1._1).mapValues {
-        case h => h.map(x => (x._2 * x._1._2).toLong).sum
+    val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.map((_, contactWeight)) ++ agentFacetRepresentativeMessageNames.map((_, 1.0)))
+      .groupBy(_._1._1).map {
+      case (agent, g) =>
+        val nameWithWeights = g.flatMap(x => x._1._2.map((_, x._2)))
+        agent -> nameWithWeights.groupBy(_._1._1).map {
+          case (name, h) =>
+            name -> h.map(x => (x._2 * x._1._2).toLong).sum
+        }
       }
-    }
 
     val agentStringValueToAgent = (agentFacetEmailAddresses.map(_._1) ++ agentFacetRepresentativeNames.keys).map {
       case (agent) => (agent.stringValue(), agent)
@@ -247,7 +244,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
          |}
       """.stripMargin
 
-    val agentNames = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesQuery).evaluate().toIterator.map {
+    val agentNameParts = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesQuery).evaluate().toIterator.map {
       bindingSet =>
         (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
           Option(bindingSet.getValue("nameProperty").asInstanceOf[IRI]),
@@ -256,10 +253,11 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (Some(agent), Some(nameProperty), Some(name)) => (agentRepresentativeMap.getOrElse(agent, agent), nameProperty, name)
     }.toVector
 
-    val entityPreferredNames = agentNames.groupBy(_._1).mapValues {
-      _.map {
-        case (_, nameProperty, name) => (name, nameProperty)
-      }
+    val entityPreferredNames = agentNameParts.groupBy(_._1).map {
+      case (agent, g) =>
+        agent -> g.map {
+          case (_, nameProperty, name) => (name, nameProperty)
+        }
     }
 
     val agentWithAllNames = (agentFacetRepresentativeMessageNames.keySet ++ entityPreferredNames.keySet).view.map {
@@ -307,12 +305,12 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             (emailAddress, localPart, domain, aligned.mkString(""), cost, names)
         }
     }
-    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._3).mapValues {
-      case g =>
-        val m = g.groupBy(_._4).mapValues {
-          x => (x.size, x.map(_._5).sum / x.size.toDouble, x)
+    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._3).map {
+      case (domain, g) =>
+        val m = g.groupBy(_._4).map {
+          case (aligned, h) => aligned ->(h.size, h.map(_._5).sum / h.size.toDouble, h)
         }
-        (m.values.map(_._1).sum, m.values.map(_._2).sum / m.size.toDouble, m)
+        domain ->(m.values.map(_._1).sum, m.values.map(_._2).sum / m.size.toDouble, m)
     }.toIndexedSeq.sortBy(_._2._1)
     byDomain
   }
@@ -348,8 +346,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }.view).toVector
         val reconciledNames = reconcileNames(splitNames, equivalenceMatching).map {
           case (equivalentNames) =>
-            equivalentNames.groupBy(_._1).mapValues {
-              x => reduce(map(x.map(_._2)))
+            equivalentNames.groupBy(_._1).map {
+              case (terms, g) => terms -> reduce(map(g.map(_._2)))
             }.toVector.sortBy(_._2)(ordering)
         }
         val best = reconciledNames.map {
@@ -491,8 +489,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     * @return a RESOURCE -> RESOURCE map assigning to each RESOURCE its equivalence class representative
     */
   private def getResourceRepresentatives[RESOURCE, VALUE](resourceValues: Traversable[(RESOURCE, VALUE)]) = {
-    val resourceValuesByValue = resourceValues.groupBy(_._2).mapValues(_.map(_._1))
-    val resourceValuesByResource = resourceValues.groupBy(_._1).mapValues(_.map(_._2))
+    val resourceValuesByValue = resourceValues.groupBy(_._2).map { case (value, g) => value -> g.map(_._1) }
+    val resourceValuesByResource = resourceValues.groupBy(_._1).map { case (resource, g) => resource -> g.map(_._2) }
 
     val resourceComponents = ConnectedComponents.compute[Either[RESOURCE, VALUE]](resourceValuesByValue.keys.map(Right(_)), {
       case Left(agent) => resourceValuesByResource.getOrElse(agent, Vector.empty).map(Right.apply)
@@ -539,10 +537,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       }
 
       override def result(): Map[RESOURCE, Map[VALUE, Long]] = {
-        innerMap.groupBy(_._1._1).mapValues {
-          case (g) => g.map {
+        innerMap.groupBy(_._1._1).map {
+          case (agent, g) => agent -> (g.map {
             case ((_, name), count) => (name, count)
-          }(scala.collection.breakOut)
+          }(scala.collection.breakOut): Map[VALUE, Long])
         }
       }
 
@@ -593,14 +591,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private def computeTermIDFs(documents: Traversable[String]) = {
     val normalizedContent = documents.map(x => entitySplit(x).map(y => normalizeTerm(y)).distinct)
     val N = normalizedContent.size
-    val idfs = normalizedContent.flatten.groupBy(identity).mapValues {
-      case g => math.log(N / g.size)
+    val idfs = normalizedContent.flatten.groupBy(identity).map {
+      case (term, terms) => term -> math.log(N / terms.size)
     }
     idfs
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
@@ -618,6 +612,20 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
+  /** *
+    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
+    *
+    * @param term term to normalize
+    * @return normalized term
+    */
+  private def uncachedNormalizeTerm(term: String) = {
+    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
   }
 
 }

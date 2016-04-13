@@ -24,6 +24,7 @@ import scala.language.postfixOps
   */
 object EmailSynchronizer extends Synchronizer with StrictLogging {
 
+  private val ignoredFolderNames = Array("Junk", "Deleted", "Deleted Messages", "Spam")
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
@@ -60,11 +61,15 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     private def onNewStore(store: Store) = {
       val folders = store
         .getDefaultFolder.list("*")
-        .filter(holdsMessages)
+        .filter(holdsInterestingMessages)
 
       logger.info("Importing the IMAP folders: " + folders.mkString(", "))
 
       folders.foreach(onNewFolder)
+    }
+
+    private def holdsInterestingMessages(folder: Folder): Boolean = {
+      holdsMessages(folder) && !ignoredFolderNames.contains(folder.getName)
     }
 
     private def holdsMessages(folder: Folder): Boolean = {

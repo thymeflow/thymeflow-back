@@ -21,12 +21,20 @@ object OAuth2 {
     "39tNR9btCqLNKIriJFY28Yop", //TODO: remove before making the repository public
     redirectUri
   )
+
+  def Microsoft(redirectUri: String) = new OAuth2(
+    "https://login.live.com/oauth20_authorize.srf", //https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    "https://login.live.com/oauth20_token.srf", //"https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    "0000000044185A2B",
+    "O0RVtj-cfkiINpVVdc-LrF-3euqHf2cW", //TODO: remove before making the repository public
+    redirectUri
+  )
 }
 
 class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String, redirectUri: String)
   extends SprayJsonSupport with DefaultJsonProtocol {
 
-  implicit lazy val TokenFormat = jsonFormat5(Token)
+  implicit lazy val TokenFormat = jsonFormat6(Token)
 
   def getAuthUri(scopes: Traversable[String]): Uri = {
     Uri(authorizeUri).withQuery(Query(
@@ -50,9 +58,10 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
     }
   }
 
-  case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: String, id_token: String) {
-    def renew(): Future[Token] = getAccessToken(refresh_token)
+  case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: Option[String], id_token: Option[String], user_id: Option[String]) {
+    def renew(): Future[Token] = refresh_token.map(getAccessToken(_)).get //TODO: avoid hard fail
 
-    def onShouldBeRenewed(f: ⇒ Unit): Cancellable = system.scheduler.schedule((expires_in - 1) seconds, (expires_in - 1) seconds)(pkb.actors.executor)
+    def onShouldBeRenewed(f: ⇒ Unit): Cancellable =
+      system.scheduler.schedule((expires_in - 1) seconds, (expires_in - 1) seconds)(pkb.actors.executor)
   }
 }

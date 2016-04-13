@@ -9,12 +9,14 @@ import com.github.sardine.{DavResource, Sardine}
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.{IRI, Model, ValueFactory}
+import pkb.actors._
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer
 import pkb.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
@@ -28,25 +30,22 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     private val fetchers = new mutable.ArrayBuffer[DocumentFetcher]()
     private val queue = new mutable.Queue[Document]
 
-    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
-      fetchers += fetcher
-    }
-
-    protected def deliverDocuments(): Unit = {
-      deliverWaitingDocuments()
+    system.scheduler.schedule(1 minute, 1 minute)({
       if (waitingForData) {
         fetchers.foreach(retrieveDocuments)
       }
+    })
+
+    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
+      fetchers += fetcher
+      deliverWaitingDocuments()
+      retrieveDocuments(fetcher)
     }
 
-    private def deliverWaitingDocuments(): Unit = {
+    protected def deliverWaitingDocuments(): Unit = {
       while (waitingForData && queue.nonEmpty) {
         onNext(queue.dequeue())
       }
-    }
-
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
     }
 
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
@@ -57,6 +56,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           queue.enqueue(document)
         }
       )
+    }
+
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
     }
   }
 
@@ -107,6 +110,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       })
     }
 
+    private def buildUriFromBaseAndPath(base: String, path: String): String = {
+      new URIBuilder(base).setPath(path).toString
+    }
+
     protected def dataNodeName: QName
 
     protected def buildQueryReport(withData: Boolean): SardineReport[Traversable[DavResource]]
@@ -117,10 +124,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
-    }
-
-    private def buildUriFromBaseAndPath(base: String, path: String): String = {
-      new URIBuilder(base).setPath(path).toString
     }
   }
 }

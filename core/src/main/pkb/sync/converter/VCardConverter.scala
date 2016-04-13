@@ -93,6 +93,8 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           convert(photo).foreach(photoResource =>
             model.add(cardResource, SchemaOrg.IMAGE, photoResource, context)
           )
+        //REVISION
+        case _: Revision => //We do not care about last revision time
         //TEL
         case telephone: Telephone =>
           convert(telephone).foreach(telephoneResource =>
@@ -100,6 +102,8 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           )
         //TITLE
         case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue), context)
+        //UID
+        case _: Uid => //We are already using this field to build the resource ID
         //URL
         case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url, context)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
         //X-SOCIALPROFILE

@@ -31,7 +31,7 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
     .to(Sink.ignore)
     .run()
 
-  actorRefs.foreach(system.scheduler.schedule(1 minute, 1 minute, _, Sync))
+  actorRefs.foreach(system.scheduler.schedule(1 second, 1 second, _, Sync))
 
   def addSource[T](sourceConfig: T): Unit = {
     actorRefs.foreach(_ ! sourceConfig)

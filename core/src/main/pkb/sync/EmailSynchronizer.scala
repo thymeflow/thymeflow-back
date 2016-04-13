@@ -9,12 +9,15 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
+import pkb.actors._
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer.Sync
 import pkb.sync.converter.EmailMessageConverter
 
 import scala.collection.mutable
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
   * @author Thomas Pellissier Tanon
@@ -39,9 +42,15 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       profile
     }
 
+    system.scheduler.schedule(1 minute, 1 minute)({
+      if (waitingForData) {
+        folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+      }
+    })
+
     override def receive: Receive = {
       case Request(_) | Sync =>
-        deliverDocuments()
+        deliverWaitingActions()
       case config: Config =>
         onNewStore(config.store)
       case Cancel =>
@@ -53,7 +62,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         .getDefaultFolder.list("*")
         .filter(holdsMessages)
 
-      logger.info("Importing the folders " + folders.mkString(", "))
+      logger.info("Importing the IMAP folders: " + folders.mkString(", "))
 
       folders.foreach(onNewFolder)
     }
@@ -85,13 +94,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       messages.foreach(message => deliverAction(RemovedMessage(message)))
     }
 
-    private def deliverDocuments(): Unit = {
-      deliverWaitingActions()
-      if (waitingForData) {
-        folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
-      }
-    }
-
     private def deliverAction(action: ImapAction): Unit = {
       deliverWaitingActions()
 
@@ -113,6 +115,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         case action: AddedMessage =>
           val context = messageContext(action.message)
           try {
+            logger.info("importing message with context " + context)
             Document(context, emailMessageConverter.convert(action.message, context))
           } catch {
             case e: FolderClosedException =>

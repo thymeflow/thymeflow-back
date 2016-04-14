@@ -63,6 +63,7 @@ object RepositoryFactory extends StrictLogging {
     if (withElasticSearch) {
       val luceneSail = new LuceneSail()
       luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
+      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
       luceneSail.setBaseSail(store)
       luceneSail
     } else {

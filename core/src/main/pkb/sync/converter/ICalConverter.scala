@@ -13,7 +13,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import pkb.rdf.model.SimpleHashModel
-import pkb.rdf.model.vocabulary.SchemaOrg
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 
 import scala.collection.JavaConverters._
@@ -33,10 +33,6 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
-  override def convert(stream: InputStream, context: IRI): Model = {
-    convert(Biweekly.parse(stream).all.asScala, context)
-  }
-
   private def convert(calendars: Traversable[ICalendar], context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -44,6 +40,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
       converter.convert(calendar)
     }
     model
+  }
+
+  override def convert(stream: InputStream, context: IRI): Model = {
+    convert(Biweekly.parse(stream).all.asScala, context)
   }
 
   private class ToModelConverter(model: Model, context: IRI) {
@@ -113,6 +113,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
 
     private def convert(attendee: Attendee): Resource = {
       val attendeeResource = uuidConverter.createBNode(attendee)
+      model.add(attendeeResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(attendee.getCommonName).foreach(name =>
         model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
@@ -185,6 +186,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
 
     private def convert(organizer: Organizer): Resource = {
       val organizerResource = uuidConverter.createBNode(organizer)
+      model.add(organizerResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(organizer.getCommonName).foreach(name =>
         model.add(organizerResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)

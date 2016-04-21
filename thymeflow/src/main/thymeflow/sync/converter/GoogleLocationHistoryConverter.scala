@@ -12,6 +12,7 @@ import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.Converter
+import pkb.sync.converter.utils.GeoCoordinatesConverter
 import pkb.utilities.ExceptionUtils
 
 /**
@@ -41,6 +42,7 @@ case class LocationHistory(locations: Seq[Location])
 
 class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
+  private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   // Do not close inputStreams by default
   org.json4s.jackson.JsonMethods.mapper.configure(SerializationFeature.CLOSE_CLOSEABLE, false)
 
@@ -78,24 +80,11 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     def convert(location: Location): Unit = {
       location.time match {
         case Some(time) =>
-          val geoCoordinatesNode = valueFactory.createBNode()
+          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy, model)
           val timeGeoLocationNode = valueFactory.createBNode()
           model.add(timeGeoLocationNode, RDF.TYPE, Personal.TIME_GEO_LOCATION, context)
           model.add(timeGeoLocationNode, SchemaOrg.DATE_CREATED, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
 
-          model.add(geoCoordinatesNode, RDF.TYPE, SchemaOrg.GEO_COORDINATES, context)
-          model.add(timeGeoLocationNode, SchemaOrg.GEO, Personal.TIME_GEO_LOCATION, context)
-          model.add(geoCoordinatesNode, SchemaOrg.LONGITUDE, valueFactory.createLiteral(location.longitude), context)
-          model.add(geoCoordinatesNode, SchemaOrg.LATITUDE, valueFactory.createLiteral(location.latitude), context)
-          location.accuracy.foreach {
-            case accuracy =>
-              model.add(geoCoordinatesNode, Personal.ACCURACY, valueFactory.createLiteral(accuracy), context)
-          }
-          // less frequent
-          location.altitude.foreach {
-            case altitude =>
-              model.add(geoCoordinatesNode, SchemaOrg.ELEVATION, valueFactory.createLiteral(altitude), context)
-          }
           // less frequent
           location.velocity.foreach {
             case magnitude =>

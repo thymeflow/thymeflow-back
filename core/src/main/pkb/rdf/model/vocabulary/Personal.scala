@@ -25,4 +25,11 @@ object Personal {
   val PRIMARY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "primaryRecipient")
   val IN_REPLY_TO: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "inReplyTo")
 
+  // Geo
+  val TIME_GEO_LOCATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "TimeGeoLocation")
+  val GEO_VECTOR: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "GeoVector")
+  val ACCURACY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "accuracy")
+  val VELOCITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "velocity")
+  val MAGNITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "magnitude")
+  val ANGLE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "angle")
 }

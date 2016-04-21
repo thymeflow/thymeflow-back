@@ -23,9 +23,6 @@ import scala.compat.java8.OptionConverters._
   */
 trait SparqlService extends StrictLogging {
   val `application/sparql-query` = applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
-
-  protected val repository: Repository
-
   protected val sparqlRoute = {
     respondWithHeaders(
       `Access-Control-Allow-Origin`.*,
@@ -55,6 +52,8 @@ trait SparqlService extends StrictLogging {
       }
     }
   }
+
+  protected def repository: Repository
 
   private def execute(queryStr: String, accept: Option[Accept]): Route = {
     val repositoryConnection = repository.getConnection

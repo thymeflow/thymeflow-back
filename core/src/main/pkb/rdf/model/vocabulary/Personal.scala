@@ -28,7 +28,7 @@ object Personal {
   // Geo
   val TIME_GEO_LOCATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "TimeGeoLocation")
   val GEO_VECTOR: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "GeoVector")
-  val ACCURACY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "accuracy")
+  val UNCERTAINTY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "uncertainty")
   val VELOCITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "velocity")
   val MAGNITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "magnitude")
   val ANGLE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "angle")

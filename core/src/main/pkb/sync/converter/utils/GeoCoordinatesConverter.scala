@@ -5,7 +5,7 @@ import java.util.regex.{Matcher, Pattern}
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.rdf.model.vocabulary.SchemaOrg
+import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -26,10 +26,27 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
 
     val latitude = matcher.group(1).toFloat
     val longitude = matcher.group(2).toFloat
-    val geoResource = valueFactory.createIRI("geo:" + latitude + "," + longitude)
+    Some(convert(longitude, latitude, None, None, model))
+  }
+
+  /**
+    * Creates a simple geo from a (longitude,latitude,elevation,accuracy) tuple
+    */
+  def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Float], model: Model): IRI = {
+    val elevationSuffix = elevationOption.map(x => s",${x.toString}").getOrElse("")
+    val accuracySuffix = uncertaintyOption.map(x => s";u=${x.toString}").getOrElse("")
+    val geoResource = valueFactory.createIRI(s"geo:${latitude.toString},${longitude.toString}$elevationSuffix$accuracySuffix")
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))
-    Some(geoResource)
+    uncertaintyOption.foreach {
+      uncertainty =>
+        model.add(geoResource, Personal.UNCERTAINTY, valueFactory.createLiteral(uncertainty))
+    }
+    elevationOption.foreach {
+      elevation =>
+        model.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation))
+    }
+    geoResource
   }
 }

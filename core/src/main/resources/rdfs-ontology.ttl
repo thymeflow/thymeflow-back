@@ -95,6 +95,10 @@ schema:datePublished a rdf:Property ;
     rdfs:domain schema:CreativeWork ;
     rdfs:range rdfs:Literal .
 
+schema:dateCreated a rdf:Property ;
+    rdfs:domain schema:CreativeWork ;
+    rdfs:range rdfs:Literal .
+
 schema:deathDate a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range rdfs:Literal .
@@ -111,6 +115,10 @@ schema:duration a rdf:Property ;
     rdfs:domain schema:Event ;
     rdfs:range xsd:duration .
 
+schema:elevation a rdf:Property ;
+    rdfs:domain schema:GeoCoordinates ;
+    rdfs:range xsd:float .
+
 schema:endDate a rdf:Property ;
     rdfs:domain schema:Event ;
     rdfs:range rdfs:Literal .
@@ -125,7 +133,7 @@ schema:familyName a rdf:Property ;
 
 schema:geo a rdf:Property ;
     rdfs:domain schema:Place ;
-    rdfs:range personal:GeoCoordinates .
+    rdfs:range schema:GeoCoordinates .
 
 schema:givenName a rdf:Property ;
     rdfs:domain schema:Person ;

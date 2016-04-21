@@ -151,11 +151,16 @@ object FileSynchronizer extends Synchronizer {
     }
 
     private def retrieveFile(path: Path, mimeType: String): Option[Any] = {
-      mimeType match {
-        case "application/zip" =>
-          Some(new ZipFile(path.toFile))
-        case _ =>
-          retrieveFile(path, mimeType, () => Files.newInputStream(path))
+      if (Files.exists(path)) {
+        mimeType match {
+          case "application/zip" =>
+            Some(new ZipFile(path.toFile))
+          case _ =>
+            retrieveFile(path, mimeType, () => Files.newInputStream(path))
+        }
+      } else {
+        logger.warn(s"Path does not exist: $path")
+        None
       }
     }
 

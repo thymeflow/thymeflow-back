@@ -153,7 +153,7 @@ object FileSynchronizer extends Synchronizer {
     private def retrieveFile(path: Path, mimeType: String): Option[Any] = {
       if (Files.exists(path)) {
         mimeType match {
-          case "application/zip" =>
+          case "application/zip" | "application/x-zip-compressed" =>
             Some(new ZipFile(path.toFile))
           case _ =>
             retrieveFile(path, mimeType, () => Files.newInputStream(path))

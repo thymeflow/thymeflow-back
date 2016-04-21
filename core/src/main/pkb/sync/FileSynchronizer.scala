@@ -9,7 +9,7 @@ import akka.stream.scaladsl.Source
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.ValueFactory
 import pkb.rdf.model.document.Document
-import pkb.sync.converter.{Converter, EmailMessageConverter, ICalConverter, VCardConverter}
+import pkb.sync.converter._
 import pkb.sync.publisher.ScrollDocumentPublisher
 
 import scala.annotation.tailrec
@@ -21,18 +21,38 @@ import scala.concurrent.Future
   */
 object FileSynchronizer extends Synchronizer {
 
+  private var registeredConverters: Map[String, ValueFactory => Converter] = Map(
+    "message/rfc822" -> (new EmailMessageConverter(_)),
+    "text/calendar" -> (new ICalConverter(_)),
+    "text/vcard" -> (new VCardConverter(_))
+  )
+  private var registeredExtensions: Map[String, String] = Map(
+    "eml" -> "message/rfc822",
+    "ics" -> "text/calendar",
+    "vcf" -> "text/vcard",
+    "zip" -> "application/zip"
+  ).withDefaultValue("application/octet-stream")
+
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
-  case class Config(file: File, mimeType: Option[String] = None) {
+  def registerConverter(mimeType: String, converter: ValueFactory => Converter) = {
+    registeredConverters += mimeType -> converter
   }
+
+  def registerExtension(extension: String, mimeType: String) = {
+    registeredExtensions += extension -> mimeType
+  }
+
+  case class Config(file: File, mimeType: Option[String] = None)
 
   private class Publisher(valueFactory: ValueFactory)
     extends ScrollDocumentPublisher[Document, (Vector[Any])] with BasePublisher {
 
-    private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val iCalConverter = new ICalConverter(valueFactory)
-    private val vCardConverter = new VCardConverter(valueFactory)
+    val converters = registeredConverters.map {
+      case (k, converter) =>
+        k -> converter(valueFactory)
+    }
 
     override def receive: Receive = {
       case config: Config =>
@@ -103,7 +123,7 @@ object FileSynchronizer extends Synchronizer {
               case (zipfile: ZipFile) =>
                 (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
                   case entry if !entry.isDirectory =>
-                    retrieveFile(Paths.get(entry.getName), zipfile.getInputStream(entry))
+                    retrieveFile(Paths.get(entry.getName), () => zipfile.getInputStream(entry))
                 }.flatten)), None)
               case config: Config =>
                 (config.mimeType match {
@@ -132,38 +152,28 @@ object FileSynchronizer extends Synchronizer {
 
     private def retrieveFile(path: Path, mimeType: String): Option[Any] = {
       mimeType match {
-        case "application/zip" => Some(new ZipFile(path.toFile))
-        case "message/rfc822" | "text/calendar" | "text/vcard" =>
-          retrieveFile(path, Files.newInputStream(path))
+        case "application/zip" =>
+          Some(new ZipFile(path.toFile))
         case _ =>
-          logger.info("Unsupported MIME type " + mimeType + " for file " + path)
-          None
+          retrieveFile(path, mimeType, () => Files.newInputStream(path))
       }
     }
 
-    private def retrieveFile(path: Path, stream: InputStream): Option[ConvertibleFile] = {
-      retrieveFile(path, mimeTypeFromFile(path), stream)
+    private def retrieveFile(path: Path, streamClosure: () => InputStream): Option[ConvertibleFile] = {
+      retrieveFile(path, mimeTypeFromFile(path), streamClosure)
     }
 
-    private def retrieveFile(path: Path, mimeType: String, stream: InputStream): Option[ConvertibleFile] = {
-      mimeType match {
-        case "message/rfc822" => Some(ConvertibleFile(path, emailMessageConverter, stream))
-        case "text/calendar" => Some(ConvertibleFile(path, iCalConverter, stream))
-        case "text/vcard" => Some(ConvertibleFile(path, vCardConverter, stream))
-        case _ =>
-          logger.info("Unsupported MIME type " + mimeType + " for file " + path)
-          None
+    private def retrieveFile(path: Path, mimeType: String, streamClosure: () => InputStream): Option[ConvertibleFile] = {
+      converters.get(mimeType).map {
+        case converter => ConvertibleFile(path, converter, streamClosure())
+      }.orElse {
+        logger.warn(s"Unsupported MIME type $mimeType for $path")
+        None
       }
     }
 
     private def mimeTypeFromFile(path: Path): String = {
-      FilenameUtils.getExtension(path.toString) match {
-        case "eml" => "message/rfc822"
-        case "ics" => "text/calendar"
-        case "vcf" => "text/vcard"
-        case "zip" => "application/zip"
-        case _ => "application/octet-stream"
-      }
+      registeredExtensions(FilenameUtils.getExtension(path.toString))
     }
 
     private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile])

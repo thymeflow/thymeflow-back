@@ -1,6 +1,6 @@
 package thymeflow.text.distances
 
-import breeze.optimize.linear.KuhnMunkres
+import thymeflow.graph.BipartiteMatching
 
 /**
   * @author  David Montoya
@@ -23,7 +23,7 @@ class BipartiteMatchingDistance(distance: (String, String) => Double,
               distance(u, v)
           }
       }
-      val (matching, _) = KuhnMunkres.extractMatching(distanceMatrix)
+      val (matching, _) = BipartiteMatching.extractMatching(distanceMatrix)
       val resultBuilder = Vector.newBuilder[(Seq[Int], Seq[Int], Double)]
       val matchedIndexes1Builder = Vector.newBuilder[Int]
       val matchedIndexes2Builder = Vector.newBuilder[Int]

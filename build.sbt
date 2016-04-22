@@ -24,8 +24,7 @@ val mathematicsProject = Project(
   id = "mathematics",
   base = file("mathematics")
 ).settings(commonSettings: _*).settings(
-  // Breeze is a library for numerical processing
-  libraryDependencies += "org.scalanlp" %% "breeze" % "0.12"
+  libraryDependencies += "org.apache.commons" % "commons-math3" % "3.6.1"
 )
 
 val graphProject = Project(
@@ -79,11 +78,5 @@ val thymeflowProject = Project (
   base=file("thymeflow")
 ).settings(commonSettings:_*).settings(
   libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.3.+",
-    // native libraries are not included by default. add this if you want them (as of 0.7)
-    // native libraries greatly improve performance, but increase jar sizes.
-    // It also packages various blas implementations, which have licenses that may or may not
-    // be compatible with the Apache License. No GPL code, as best I know.
-    // NOTE: This has to be specifically tested if included
-  // "org.scalanlp" %% "breeze-natives" % "0.12"
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 ).dependsOn(coreProject, graphProject, spatialProject)

@@ -36,7 +36,6 @@ trait TimeSequentialClusterEstimator[OBSERVATION, SPACE, TIME, CLUSTER <: Cluste
     logger.debug(s"[$processName] Estimating clusters from $length observations {lambda=$lambda}...")
     TimeExecution.timeProgressStep(processName, length, logger, {
       case reportProgress =>
-        var i = 0
         for (observation <- observations) {
           val time = observationTime(observation)
           var clustersWithinLookupBounds = new scala.collection.mutable.TreeSet[CLUSTER]

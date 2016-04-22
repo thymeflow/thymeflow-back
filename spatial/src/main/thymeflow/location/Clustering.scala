@@ -10,6 +10,7 @@ import thymeflow.mathematics.HellingerDistance
 import thymeflow.spatial.geographic.Point
 import thymeflow.spatial.geographic.metric.models.{WGS84GeographyLinearMetric, WGS84SphereHaversinePointMetric}
 import thymeflow.spatial.metric.Metric
+import thymeflow.utilities.time.Implicits._
 
 /**
   * @author David Montoya

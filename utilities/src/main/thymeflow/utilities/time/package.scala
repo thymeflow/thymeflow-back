@@ -58,19 +58,16 @@ package object time {
 
 
   object Implicits {
-    val durationOrdering = implicitly[Ordering[Duration]]
-    val instantOrdering = implicitly[Ordering[Instant]]
+    val durationOrdering: Ordering[Duration] = implicitly[Ordering[Duration]]
+    val instantOrdering: Ordering[Instant] = implicitly[Ordering[Instant]]
 
     implicit def durationWithToSecondsDouble(d: Duration): DurationWithToSecondsDouble = new DurationWithToSecondsDouble(d)
-
     implicit def doubleWithToDurationAsSeconds(d: Double): DoubleWithToDurationAsSeconds = new DoubleWithToDurationAsSeconds(d)
 
     implicit def durationOrderingOps(lhs: Duration): durationOrdering.Ops = new durationOrdering.Ops(lhs)
-
     implicit def instantOrderingOps(lhs: Instant): instantOrdering.Ops = new instantOrdering.Ops(lhs)
 
     implicit object DurationIsNumeric extends DurationNumeric
-
   }
 
 }

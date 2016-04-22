@@ -13,7 +13,7 @@ import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
 import pkb.sync.converter.Converter
 import pkb.sync.converter.utils.GeoCoordinatesConverter
-import pkb.utilities.ExceptionUtils
+import thymeflow.utilities.ExceptionUtils
 
 /**
   * @author David Montoya

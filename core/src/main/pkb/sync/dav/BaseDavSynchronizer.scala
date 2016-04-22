@@ -12,7 +12,7 @@ import org.openrdf.model.{IRI, Model, ValueFactory}
 import pkb.actors._
 import pkb.rdf.model.document.Document
 import pkb.sync.Synchronizer
-import pkb.utilities.ExceptionUtils
+import thymeflow.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -48,6 +48,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
+    }
+
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
@@ -56,10 +60,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           queue.enqueue(document)
         }
       )
-    }
-
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
     }
   }
 

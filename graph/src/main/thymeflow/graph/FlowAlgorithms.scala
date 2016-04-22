@@ -1,5 +1,7 @@
 package thymeflow.graph
 
+import thymeflow.utilities.pqueue.FiedlerFibonacciHeap
+
 import scala.collection.mutable
 
 /**
@@ -47,22 +49,20 @@ object FlowAlgorithms {
     val neighbors = neighborMap.getOrElse(_: NODE, Vector.empty)
     var totalFlow = 0d
     var totalCost = 0d
-    val ordering = new Ordering[(NODE, Double)] {
-      override def compare(x: (NODE, Double), y: (NODE, Double)): Int = {
-        y._2.compareTo(x._2)
-      }
-    }
-    val q = new mutable.PriorityQueue[(NODE, Double)]()(ordering)
+    val ordering = implicitly[Ordering[Double]].reverse
+    val q = new FiedlerFibonacciHeap[NODE, Double]()(ordering)
     var b = true
     while (b && totalFlow < maxFlow) {
       q.clear()
       priority.clear()
-      q.enqueue((source, 0d))
+      q.insert(source, 0d)
       priority(source) = 0d
       val finished = new mutable.HashSet[NODE]
       currentFlow(source) = INF
       while (!finished.contains(sink) && q.nonEmpty) {
-        val (u, uPriority) = q.dequeue()
+        val min = q.removeMin().get
+        val u = min.data
+        val uPriority = min.key
         if (uPriority == priority(u)) {
           finished += u
           for ((v, capacity, cost) <- neighbors(u) if !finished.contains(v)) {
@@ -73,7 +73,7 @@ object FlowAlgorithms {
               val newPriority = Math.max(uPriority + (cost + (potential(u) - potential(v))), uPriority)
               if (priority(v) > newPriority) {
                 priority(v) = newPriority
-                q.enqueue((v, newPriority))
+                q.insert(v, newPriority)
                 parent(v) = (u, cost)
                 currentFlow(v) = Math.min(currentFlow(u), capacity - f)
               }

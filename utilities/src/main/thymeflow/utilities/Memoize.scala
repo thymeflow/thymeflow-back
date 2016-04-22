@@ -1,8 +1,9 @@
 package thymeflow.utilities
 
 import com.typesafe.scalalogging.StrictLogging
-import scala.collection.mutable
+
 import scala.collection.JavaConverters._
+import scala.collection.mutable
 
 /**
  * A memoized unary function.
@@ -12,15 +13,15 @@ import scala.collection.JavaConverters._
  */
 trait Memoize1[-T, +R] extends (T => R) with StrictLogging {
 
+  // map that stores (argument, result) pairs
+  protected[this] val vals: mutable.Map[T, R]
+
   def f: T => R
 
   // Forgets memoized results
   def clear(): Unit ={
     vals.clear()
   }
-
-  // map that stores (argument, result) pairs
-  protected[this] val vals: mutable.Map[T,R]
 
   // Given an argument x,
   //   If vals contains x return vals(x).
@@ -102,18 +103,12 @@ private class ConcurrentFifoCache[-T, +R](g: T => R, cacheSize: Int) extends Mem
 
 object Memoize {
   /**
-   * Memoize a unary (single-argument) function.
-   *
-   * @param f the unary function to memoize
-   */
-  def memoize[T, R](f: T => R) : Memoize1[T,R] = new PersistentMemoize1(f)
-
-  /**
    * Memoize a unary (single-argument) function with a FIFO-cache
    *
    * @param f the unary function to memoize
    */
   def fifoCache[T, R](cacheSize: Int, f: T => R) : Memoize1[T,R] = new FifoCache(f, cacheSize)
+
   def fifoCache[T1, T2, R](cacheSize: Int, f: (T1,T2) => R) : (T1,T2) => R = Function.untupled(new FifoCache(f.tupled, cacheSize))
 
   /**
@@ -122,6 +117,7 @@ object Memoize {
    * @param f the unary function to memoize
    */
   def concurrentFifoCache[T, R](cacheSize: Int, f: T => R) : Memoize1[T,R] = new ConcurrentFifoCache(f, cacheSize)
+
   def concurrentFifoCache[T1, T2, R](cacheSize: Int, f: (T1,T2) => R) : (T1,T2) => R = Function.untupled(new ConcurrentFifoCache(f.tupled, cacheSize))
 
   /**
@@ -136,6 +132,13 @@ object Memoize {
    */
   def memoize[T1, T2, R](f: (T1, T2) => R) : (T1,T2) => R =
     Function.untupled(memoize(f.tupled))
+
+  /**
+    * Memoize a unary (single-argument) function.
+    *
+    * @param f the unary function to memoize
+    */
+  def memoize[T, R](f: T => R): Memoize1[T, R] = new PersistentMemoize1(f)
 
   /**
    * Memoize a ternary (three-argument) function.

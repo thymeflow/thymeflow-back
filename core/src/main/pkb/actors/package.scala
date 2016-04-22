@@ -3,7 +3,7 @@ package pkb
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import com.typesafe.scalalogging.StrictLogging
-import pkb.utilities.ExceptionUtils
+import thymeflow.utilities.ExceptionUtils
 
 import scala.concurrent.ExecutionContext.Implicits.global
 

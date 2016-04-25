@@ -18,28 +18,6 @@ import pkb.utilities.ExceptionUtils
 /**
   * @author David Montoya
   */
-
-case class Location(timestampMs: String,
-                    latitudeE7: Long,
-                    longitudeE7: Long,
-                    accuracy: Option[Float],
-                    velocity: Option[Float],
-                    altitude: Option[Double],
-                    heading: Option[Float]) {
-  def longitude = longitudeE7 / 1e7
-
-  def latitude = latitudeE7 / 1e7
-
-  def time =
-    try {
-      Some(Instant.ofEpochMilli(timestampMs.toLong))
-    } catch {
-      case e: NumberFormatException => None
-    }
-}
-
-case class LocationHistory(locations: Seq[Location])
-
 class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
@@ -102,5 +80,26 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
       }
     }
   }
+
+  private case class Location(timestampMs: String,
+                      latitudeE7: Long,
+                      longitudeE7: Long,
+                      accuracy: Option[Float],
+                      velocity: Option[Float],
+                      altitude: Option[Double],
+                      heading: Option[Float]) {
+    def longitude = longitudeE7 / 1e7
+
+    def latitude = latitudeE7 / 1e7
+
+    def time =
+      try {
+        Some(Instant.ofEpochMilli(timestampMs.toLong))
+      } catch {
+        case e: NumberFormatException => None
+      }
+  }
+
+  private case class LocationHistory(locations: Seq[Location])
 
 }

@@ -32,7 +32,7 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
   /**
     * Creates a simple geo from a (longitude,latitude,elevation,accuracy) tuple
     */
-  def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Float], model: Model): IRI = {
+  def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Double], model: Model): IRI = {
     val elevationSuffix = elevationOption.map(x => s",${x.toString}").getOrElse("")
     val accuracySuffix = uncertaintyOption.map(x => s";u=${x.toString}").getOrElse("")
     val geoResource = valueFactory.createIRI(s"geo:${latitude.toString},${longitude.toString}$elevationSuffix$accuracySuffix")

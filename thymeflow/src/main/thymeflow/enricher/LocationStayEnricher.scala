@@ -132,8 +132,8 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty
          |WHERE {
-         |  ?location <${SchemaOrg.GEO}> ?geo ;
-         |            a <${Personal.TIME_GEO_LOCATION}> ;
+         |  ?location a <${Personal.TIME_GEO_LOCATION}> ;
+         |            <${SchemaOrg.GEO}> ?geo ;
          |            <${SchemaOrg.DATE_CREATED}> ?time .
          |  ?geo <${SchemaOrg.LATITUDE}> ?latitude ;
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
@@ -184,21 +184,21 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty ?cluster ?clusterLongitude ?clusterLatitude ?clusterFrom ?clusterTo ?clusterUncertainty
          |WHERE {
-         |  ?location <${SchemaOrg.GEO}> ?geo ;
-         |            a <${Personal.TIME_GEO_LOCATION}> ;
+         |  ?location a <${Personal.TIME_GEO_LOCATION}> ;
+         |            <${SchemaOrg.GEO}> ?geo ;
          |            <${SchemaOrg.DATE_CREATED}> ?time .
          |  ?geo <${SchemaOrg.LATITUDE}> ?latitude ;
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
          |       <${Personal.UNCERTAINTY}> ?uncertainty .
          |  OPTIONAL {
          |       ?location <${SchemaOrg.ITEM}> ?cluster .
-         |       ?cluster <${SchemaOrg.GEO}> ?clusterGeo ;
-         |                a <${Personal.CLUSTER_EVENT}> ;
+         |       ?cluster a <${Personal.CLUSTER_EVENT}> ;
+         |                <${SchemaOrg.GEO}> ?clusterGeo ;
          |                <${SchemaOrg.START_DATE}> ?clusterFrom ;
          |                <${SchemaOrg.END_DATE}> ?clusterTo .
          |       ?clusterGeo <${SchemaOrg.LONGITUDE}> ?clusterLongitude ;
          |                   <${SchemaOrg.LATITUDE}> ?clusterLatitude ;
-         |                   <${Personal.UNCERTAINTY}> ?clusterUncertainty ;
+         |                   <${Personal.UNCERTAINTY}> ?clusterUncertainty .
          |  }
          | } ORDER BY ?time
       """.stripMargin

@@ -7,8 +7,7 @@ import thymeflow.graph.ShortestPath
 import thymeflow.spatial.geographic
 import thymeflow.utilities.TimeExecution
 
-import scala.collection.JavaConverters._
-import scala.collection.{Traversable, mutable}
+import scala.collection.Traversable
 
 /**
   * @author David Montoya
@@ -18,15 +17,27 @@ trait StateEstimator extends StrictLogging {
 
   def distance(from: geographic.Point, to: geographic.Point): Double
 
-  def estimate(observations: IndexedSeq[(Observation, Option[ClusterObservation])],
-               clusters: IndexedSeq[ClusterObservation],
-               lookupDuration: Duration) = {
+  def estimate[OBSERVATION <: Observation,
+  CLUSTER_OBSERVATION <: ClusterObservation](observations: IndexedSeq[(OBSERVATION, Option[CLUSTER_OBSERVATION])],
+                                             lookupDuration: Duration) = {
+    val clusterToIndexMap = new scala.collection.mutable.HashMap[CLUSTER_OBSERVATION, Int]
+    val clustersBuilder = IndexedSeq.newBuilder[CLUSTER_OBSERVATION]
+    var clusterIndex = 0
+    observations.foreach {
+      case (_, Some(cluster)) =>
+        if (!clusterToIndexMap.contains(cluster)) {
+          clusterToIndexMap += cluster -> clusterIndex
+          clustersBuilder += cluster
+          clusterIndex += 1
+        }
+      case _ =>
+    }
+    val clusters = clustersBuilder.result()
     implicit val observationDeserializer = (index: Int) => observations(index)._1
     implicit val clusterDeserializer = (index: Int) => clusters(index)
-    implicit val observationSerializer = (observation: Observation) => observation.index
-    implicit val clusterSerializer = (clusterObservation: ClusterObservation) => clusterObservation.index
+    implicit val clusterSeerializer = (cluster: CLUSTER_OBSERVATION) => clusterToIndexMap(cluster)
     val lastIndex = observations.indices.last
-    def outgoingLambda(progress: Long => Unit): ((Int, Long)) => Traversable[(Unit, Double, State)] = {
+    def outgoingLambda(progress: Long => Unit): ((Int, Long)) => Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] = {
       case (stateSerialized@(index: Int, _: Long)) =>
         val fromState = State.deserialize(stateSerialized)
         val nextIndex = index + 1
@@ -38,6 +49,7 @@ trait StateEstimator extends StrictLogging {
           val previousObservationCluster = observations(index)._2
           StateGenerator.generator(fromState,
             previousObservationCluster,
+            nextIndex,
             nextObservation,
             nextObservationCluster,
             distance,
@@ -46,17 +58,8 @@ trait StateEstimator extends StrictLogging {
         }
     }
 
-    val initial = State.serialize(SamePosition(observations.head._1))
-
-    val singleNodes = TimeExecution.timeProgress("state-estimator-simplification", observations.length, logger, {
-      case progress =>
-        val outgoing = outgoingLambda(progress)(_: (Int, Long)).view.map {
-          case (edge, weight, state) => state.serialize
-        }
-        findSingleNodes(initial, outgoing, (x: (Int, Long)) => x._1)
-    })
-
-    val targetNodes = if (singleNodes.last == lastIndex) singleNodes else singleNodes :+ lastIndex
+    val initial = State.serialize(SamePosition[OBSERVATION, CLUSTER_OBSERVATION](0, observations.head._1))
+    val targetNodeIndex = lastIndex
 
     TimeExecution.timeProgress("state-estimator", observations.length, logger, {
       case progress =>
@@ -64,62 +67,79 @@ trait StateEstimator extends StrictLogging {
           case (edge, weight, state) => (edge, weight, state.serialize)
         }
         val sp = ShortestPath.explicit[(Int, Long), Unit, Double](outgoing = outgoing)
-        targetNodes.foldLeft(Some(Vector(initial)): Option[Vector[(Int, Long)]]) {
-          case (Some(pathAccumulator), targetNodeIndex) =>
-            val result = sp.shortestNodePathConditional(Vector(pathAccumulator.last), x => {
-              val isTarget = x._1 == targetNodeIndex
-              (isTarget, isTarget)
-            }).headOption.flatMap(_._2).map {
-              case (p, _) => p.nodes.tail
-            }
-            if (result.isEmpty) {
-              logger.warn(s"Found empty path from ${pathAccumulator.last} to $targetNodeIndex")
-            }
-            result.map(pathAccumulator ++ _)
-          case _ => None
-        }.map(_.map(State.deserialize))
+        val result = sp.shortestNodePathConditional(Vector(initial), x => {
+          val isTarget = x._1 == targetNodeIndex
+          (isTarget, isTarget)
+        }).headOption.flatMap(_._2).map {
+          case (p, _) => p.nodes.tail
+        }
+        if (result.isEmpty) {
+          logger.warn(s"Found empty path to $targetNodeIndex")
+        }
+        result.map(_.map(State.deserialize(_)(observationDeserializer, clusterDeserializer)))
     })
   }
 
-  def findSingleNodes[N](startingNode: N,
-                         neighbors: N => Traversable[N],
-                         exploredCounter: N => Int): Vector[Int] = {
-    val explored = new java.util.HashSet[N]().asScala
-    val toExplore = new mutable.Queue[N]()
-    toExplore += startingNode
-    explored.add(startingNode)
-    var counter = exploredCounter(startingNode)
-    var i = 0
-    val singleNodesBuilder = Vector.newBuilder[Int]
-    while (toExplore.nonEmpty) {
-      val currentNode = toExplore.dequeue()
-      val currentCounter = exploredCounter(currentNode)
-      if (currentCounter > counter) {
-        if (i == 1) {
-          singleNodesBuilder += counter
-        }
-        counter = currentCounter
-        explored --= explored.collect {
-          case c if exploredCounter(c) < counter => c
-        }
-        i = 0
-      }
-      i += 1
-      neighbors(currentNode).foreach {
-        (neighbor) =>
-          if (!explored.contains(neighbor)) {
-            explored.add(neighbor)
-            toExplore += neighbor
-          }
+
+  def findSingleNodes[OBSERVATION <: Observation,
+  CLUSTER_OBSERVATION <: ClusterObservation](lookupDuration: Duration, out: (IndexedSeq[(OBSERVATION, Option[CLUSTER_OBSERVATION])]) => Unit) = {
+    def initial(x: (OBSERVATION, Option[CLUSTER_OBSERVATION])) = SamePosition[OBSERVATION, CLUSTER_OBSERVATION](0, x._1)
+    def neighbors(state: State[OBSERVATION, CLUSTER_OBSERVATION],
+                  previousObservation: (OBSERVATION, Option[CLUSTER_OBSERVATION]),
+                  observation: (OBSERVATION, Option[CLUSTER_OBSERVATION])) = {
+      StateGenerator.generator(state,
+        previousObservation._2,
+        state.observationIndex + 1,
+        observation._1,
+        observation._2,
+        distance,
+        lookupDuration
+      ).map(_._3)
+    }
+    findSingleNodesBase(out, initial, neighbors)
+  }
+
+  private def findSingleNodesBase[OBSERVATION, STATE](out: IndexedSeq[OBSERVATION] => Unit,
+                                                      initial: OBSERVATION => STATE,
+                                                      neighbors: (STATE, OBSERVATION, OBSERVATION) => Traversable[STATE]) = {
+    var inputs: IndexedSeq[OBSERVATION] = IndexedSeq.empty
+    var currentNodes: Set[STATE] = Set()
+    var nodesCounter = 0
+    var singleNodesCounter = 0
+    var maxLengthBetweenSingleNodes = 0
+    def flushNodes() = {
+      if (inputs.nonEmpty) {
+        out(inputs)
+        maxLengthBetweenSingleNodes = Math.max(inputs.size, maxLengthBetweenSingleNodes)
+        inputs = IndexedSeq(inputs.last)
+        singleNodesCounter += 1
       }
     }
-    val singleNodes = singleNodesBuilder.result()
-    logger.info(s"Found ${singleNodes.size} single nodes (counter=$counter), max=${
-      singleNodes.sliding(2).map {
-        case Vector(s1, s2) => s2 - s1
-        case _ => 0
-      }.max
-    }")
-    singleNodes
+    def onInput(input: OBSERVATION) = {
+      inputs.lastOption match {
+        case Some(previousInput) =>
+          if (currentNodes.size == 1) {
+            flushNodes()
+          }
+          currentNodes = currentNodes.flatMap {
+            case node =>
+              neighbors(node, previousInput, input)
+          }
+        case None =>
+          currentNodes = Set(initial(input))
+      }
+      if (currentNodes.isEmpty) {
+        logger.warn(s"Found no nodes at $input")
+        flushNodes()
+      } else {
+        inputs = inputs :+ input
+      }
+      nodesCounter += 1
+    }
+    def onFinish() = {
+      flushNodes()
+      logger.info(s"Found $singleNodesCounter single nodes (totalNodes=$nodesCounter), maxLengthBetweenSingleNodes=$maxLengthBetweenSingleNodes")
+    }
+    (onInput _, onFinish _)
   }
 }

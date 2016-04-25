@@ -37,7 +37,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   extends DelayedEnricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#agentIdentityResolution")
+  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#AgentIdentityResolution")
 
   private val metric = new LevensteinDistance()
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
@@ -531,10 +531,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
   }
 
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
   /**
     * Given a binary relation R over (RESOURCE, VALUE) tuples, computes the RESOURCE equivalence
     * classes imposed by an inverse functionality constraint over R.
@@ -651,6 +647,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (term, terms) => term -> math.log(N / terms.size)
     }
     idfs
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])

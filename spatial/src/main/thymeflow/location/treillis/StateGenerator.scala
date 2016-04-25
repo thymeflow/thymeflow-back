@@ -11,72 +11,73 @@ import thymeflow.utilities.time.Implicits._
   */
 object StateGenerator extends StrictLogging {
 
-  def generator(fromState: State,
-                previousClusterOption: Option[ClusterObservation],
-                observation: Observation,
-                clusterOption: Option[ClusterObservation],
-                distancePoint: (Point, Point) => Double,
-                lookupDuration: Duration): Traversable[(Unit, Double, State)] = {
-    def distance(from: Observation, to: Observation) = {
+  def generator[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation](fromState: State[OBSERVATION, CLUSTER_OBSERVATION],
+                                                                                       previousClusterOption: Option[CLUSTER_OBSERVATION],
+                                                                                       observationIndex: Int,
+                                                                                       observation: OBSERVATION,
+                                                                                       clusterOption: Option[CLUSTER_OBSERVATION],
+                                                                                       distancePoint: (Point, Point) => Double,
+                                                                                       lookupDuration: Duration): Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] = {
+    def distance(from: OBSERVATION, to: OBSERVATION) = {
       distancePoint(from.point, to.point)
     }
-    def distanceCluster(from: ClusterObservation, to: Observation) = {
+    def distanceCluster(from: CLUSTER_OBSERVATION, to: OBSERVATION) = {
       distancePoint(from.point, to.point)
     }
-    def allowedStep(from: Observation, to: Observation) = {
-      (Duration.between(from.time, to.time) <= lookupDuration) || from.index == to.index - 1
+    def allowedStep(fromIndex: Int, from: OBSERVATION, toIndex: Int, to: OBSERVATION) = {
+      (Duration.between(from.time, to.time) <= lookupDuration) || fromIndex == toIndex - 1
     }
-    def allowedClusterStep(cluster: ClusterObservation, to: Observation) = {
+    def allowedClusterStep(cluster: CLUSTER_OBSERVATION, to: OBSERVATION) = {
       cluster.to >= to.time
     }
     fromState match {
-      case MovingPosition(moving, cluster) if allowedStep(moving, observation) =>
-        new Traversable[(Unit, Double, State)] {
-          override def foreach[U](f: ((Unit, Double, State)) => U): Unit = {
+      case MovingPosition(movingIndex, moving: OBSERVATION, cluster: CLUSTER_OBSERVATION) if allowedStep(movingIndex, moving, observationIndex, observation) =>
+        new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
+          override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
             clusterOption.collect {
               case observationCluster if observationCluster == cluster =>
-                val toState = SamePosition(observation)
+                val toState = SamePosition[OBSERVATION, CLUSTER_OBSERVATION](observationIndex = observationIndex, observation = observation)
                 f((), distanceCluster(cluster, toState.observation) + distance(moving, toState.observation), toState)
             }
             if (allowedClusterStep(cluster, observation)) {
-              val toState = MovingPosition(moving = observation, cluster = cluster)
-              f(((), distance(moving, toState.moving), toState))
+              val toState = MovingPosition(observationIndex = observationIndex, observation = observation, cluster = cluster)
+              f(((), distance(moving, toState.observation), toState))
             }
             clusterOption.collect {
               case observationCluster if observationCluster == cluster && allowedClusterStep(observationCluster, observation) =>
-                val toState = StationaryPosition(moving = moving, stationary = observation, cluster = cluster)
+                val toState = StationaryPosition(observationIndex = observationIndex, observation = observation, movingIndex = movingIndex, moving = moving, cluster = cluster)
                 f(((), distanceCluster(cluster, toState.observation), toState))
             }
           }
         }
-      case StationaryPosition(moving, stationary, cluster) if allowedStep(moving, observation) =>
-        new Traversable[(Unit, Double, State)] {
-          override def foreach[U](f: ((Unit, Double, State)) => U): Unit = {
+      case StationaryPosition(stationaryIndex, stationary: OBSERVATION, movingIndex, moving: OBSERVATION, cluster: CLUSTER_OBSERVATION) if allowedStep(movingIndex, moving, observationIndex, observation) =>
+        new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
+          override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
             clusterOption.collect {
               case observationCluster if observationCluster == cluster =>
-                val toState = SamePosition(observation)
+                val toState = SamePosition[OBSERVATION, CLUSTER_OBSERVATION](observationIndex = observationIndex, observation = observation)
                 f(((), distanceCluster(cluster, toState.observation) + distance(moving, toState.observation), toState))
             }
             if (allowedClusterStep(cluster, observation)) {
-              val toState = MovingPosition(moving = observation, cluster = cluster)
-              f(((), distance(moving, toState.moving), toState))
+              val toState = MovingPosition(observationIndex = observationIndex, observation = observation, cluster = cluster)
+              f(((), distance(moving, toState.observation), toState))
             }
             clusterOption.collect {
               case observationCluster if observationCluster == cluster && allowedClusterStep(observationCluster, observation) =>
-                val toState = StationaryPosition(moving = moving, stationary = observation, cluster = cluster)
+                val toState = StationaryPosition(observationIndex = observationIndex, observation = observation, movingIndex = movingIndex, moving = moving, cluster = cluster)
                 f(((), distanceCluster(cluster, toState.observation), toState))
             }
           }
         }
-      case SamePosition(fromObservation: Observation) =>
-        new Traversable[(Unit, Double, State)] {
-          override def foreach[U](f: ((Unit, Double, State)) => U): Unit = {
-            val toState = SamePosition(observation)
+      case SamePosition(index: Int, fromObservation: OBSERVATION) =>
+        new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
+          override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
+            val toState = SamePosition[OBSERVATION, CLUSTER_OBSERVATION](observationIndex = observationIndex, observation = observation)
             f(((), distance(fromObservation, toState.observation), toState))
             previousClusterOption.collect {
               case previousCluster if allowedClusterStep(previousCluster, observation) && previousClusterOption != clusterOption =>
-                val toState = MovingPosition(moving = observation, cluster = previousCluster)
-                f(((), distance(fromObservation, toState.moving) + distanceCluster(previousCluster, fromObservation), toState))
+                val toState = MovingPosition(observationIndex = observationIndex, observation = observation, cluster = previousCluster)
+                f(((), distance(fromObservation, toState.observation) + distanceCluster(previousCluster, fromObservation), toState))
             }
           }
         }

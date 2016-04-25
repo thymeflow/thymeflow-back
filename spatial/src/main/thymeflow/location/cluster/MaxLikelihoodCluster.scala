@@ -19,9 +19,11 @@ class MaxLikelihoodCluster[OBSERVATION, T] private(val cartesianMapping: Surface
                                                    val varianceNormalizer: LogNum,
                                                    val varianceProduct: LogNum,
                                                    val variance: Double,
-                                                   val settings: ClusterSettings[OBSERVATION])
+                                                   val settings: ClusterSettings[OBSERVATION],
+                                                   val index: Int)
   extends PointCluster[OBSERVATION, T] {
 
+  def accuracy = Math.sqrt(variance)
   override def toString = s"MaxLikelihoodCluster($t, $observations, $mean, $variance, $totalWeight)"
 }
 
@@ -29,7 +31,7 @@ object MaxLikelihoodCluster {
 
   def apply[OBSERVATION, T](t: T,
                             observation: OBSERVATION,
-                            settings: ClusterSettings[OBSERVATION]): MaxLikelihoodCluster[OBSERVATION, T] = {
+                            settings: ClusterSettings[OBSERVATION], index: Int): MaxLikelihoodCluster[OBSERVATION, T] = {
 
     apply(t,
       observation,
@@ -40,22 +42,8 @@ object MaxLikelihoodCluster {
       previousVarianceProduct = LogNum.one,
       previousTotalWeight = 0d,
       previousXMeanNumerator = LogNum.zero,
-      previousYMeanNumerator = LogNum.zero)
-  }
-
-  def apply[OBSERVATION, T](cluster: MaxLikelihoodCluster[OBSERVATION, T],
-                            t: T,
-                            observation: OBSERVATION): MaxLikelihoodCluster[OBSERVATION, T] = {
-    apply(t,
-      observation,
-      cluster.settings,
-      cartesianMappingOption = Some(cluster.cartesianMapping),
-      previousObservations = cluster.observations,
-      previousVarianceNormalizer = cluster.varianceNormalizer,
-      previousVarianceProduct = cluster.varianceProduct,
-      previousTotalWeight = cluster.totalWeight,
-      previousXMeanNumerator = cluster.xMeanNumerator,
-      previousYMeanNumerator = cluster.yMeanNumerator)
+      previousYMeanNumerator = LogNum.zero,
+      index = index)
   }
 
   /**
@@ -89,7 +77,8 @@ object MaxLikelihoodCluster {
                             previousXMeanNumerator: LogNum,
                             previousYMeanNumerator: LogNum,
                             previousVarianceNormalizer: LogNum,
-                            previousVarianceProduct: LogNum): MaxLikelihoodCluster[OBSERVATION, T] = {
+                            previousVarianceProduct: LogNum,
+                            index: Int): MaxLikelihoodCluster[OBSERVATION, T] = {
     val observationMean = settings.observationMean(observation)
     val cartesianMapping = cartesianMappingOption.getOrElse(SimpleLocalCartesianProjection(observationMean, settings.metric))
     val observationVariance = settings.observationVariance(observation)
@@ -117,8 +106,25 @@ object MaxLikelihoodCluster {
       varianceNormalizer = varianceNormalizer,
       varianceProduct = varianceProduct,
       variance = newClusterVariance,
-      settings = settings
+      settings = settings,
+      index = index
     )
+  }
+
+  def apply[OBSERVATION, T](cluster: MaxLikelihoodCluster[OBSERVATION, T],
+                            t: T,
+                            observation: OBSERVATION, index: Int): MaxLikelihoodCluster[OBSERVATION, T] = {
+    apply(t,
+      observation,
+      cluster.settings,
+      cartesianMappingOption = Some(cluster.cartesianMapping),
+      previousObservations = cluster.observations,
+      previousVarianceNormalizer = cluster.varianceNormalizer,
+      previousVarianceProduct = cluster.varianceProduct,
+      previousTotalWeight = cluster.totalWeight,
+      previousXMeanNumerator = cluster.xMeanNumerator,
+      previousYMeanNumerator = cluster.yMeanNumerator,
+      index = index)
   }
 
 }

@@ -10,8 +10,6 @@ import thymeflow.spatial.geographic.Point
   */
 
 trait Observation {
-  def index: Int
-
   def point: Point
 
   def time: Instant
@@ -20,8 +18,6 @@ trait Observation {
 }
 
 trait ClusterObservation {
-  def index: Int
-
   def point: Point
 
   def accuracy: Double
@@ -31,11 +27,12 @@ trait ClusterObservation {
   def to: Instant
 }
 
-sealed trait State {
+sealed trait State[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation] {
+  def observationIndex: Int
+
   def observation: Observation
 
-  def serialize(implicit observationSerializer: Observation => Int,
-                clusterObservationSerializer: ClusterObservation => Int) = State.serialize(this)
+  def serialize(implicit clusterObservationSerializer: CLUSTER_OBSERVATION => Int) = State.serialize(this)
 }
 
 object State {
@@ -48,27 +45,29 @@ object State {
     b.getInt
   }
 
-  def serialize(state: State)(implicit observationSerializer: Observation => Int, clusterObservationSerializer: ClusterObservation => Int) = {
+  def serialize[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation]
+  (state: State[OBSERVATION, CLUSTER_OBSERVATION])(implicit clusterObservationToIndex: CLUSTER_OBSERVATION => Int) = {
     val buffer = ByteBuffer.allocate(java.lang.Long.BYTES)
     state match {
-      case samePosition: SamePosition =>
+      case SamePosition(_, _) =>
         buffer.putInt(-1)
         buffer.putInt(-1)
-      case movingPosition: MovingPosition =>
-        buffer.putInt(clusterObservationSerializer(movingPosition.cluster))
+      case MovingPosition(_, _, cluster: CLUSTER_OBSERVATION) =>
+        buffer.putInt(clusterObservationToIndex(cluster))
         buffer.putInt(-1)
-      case stationaryPosition: StationaryPosition =>
-        buffer.putInt(clusterObservationSerializer(stationaryPosition.cluster))
-        buffer.putInt(observationSerializer(stationaryPosition.moving))
+      case StationaryPosition(_, _, movingIndex, _, cluster: CLUSTER_OBSERVATION) =>
+        buffer.putInt(clusterObservationToIndex(cluster))
+        buffer.putInt(movingIndex)
     }
     buffer.position(0)
-    (observationSerializer(state.observation), buffer.getLong)
+    (state.observationIndex, buffer.getLong)
   }
 
-  def deserialize(value: (Int, Long))
-                 (implicit observationDeserializer: Int => Observation,
-                  clusterObservationDeserializer: Int => ClusterObservation): State = {
-    val observation = observationDeserializer(value._1)
+  def deserialize[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation](value: (Int, Long))
+                                                                                        (implicit indexToObservation: Int => OBSERVATION,
+                                                                                         indexToClusterObservation: Int => CLUSTER_OBSERVATION): State[OBSERVATION, CLUSTER_OBSERVATION] = {
+    val observationIndex = value._1
+    val observation = indexToObservation(observationIndex)
     val buffer = ByteBuffer.allocate(java.lang.Long.BYTES)
     buffer.putLong(value._2)
     buffer.flip()
@@ -76,17 +75,15 @@ object State {
     val movingIndex = buffer.getInt
     if (clusterIndex >= 0) {
       if (movingIndex >= 0) {
-        val stationary = observation
-        val cluster = clusterObservationDeserializer(clusterIndex)
-        val moving = observationDeserializer(movingIndex)
-        StationaryPosition(moving = moving, stationary = stationary, cluster = cluster)
+        val cluster = indexToClusterObservation(clusterIndex)
+        val moving = indexToObservation(movingIndex)
+        StationaryPosition(observationIndex = observationIndex, observation = observation, movingIndex = movingIndex, moving = moving, cluster = cluster)
       } else {
-        val moving = observation
-        val cluster = clusterObservationDeserializer(clusterIndex)
-        MovingPosition(moving = moving, cluster = cluster)
+        val cluster = indexToClusterObservation(clusterIndex)
+        MovingPosition(observationIndex = observationIndex, observation = observation, cluster = cluster)
       }
     } else {
-      SamePosition(observation)
+      SamePosition(observationIndex = observationIndex, observation)
     }
   }
 }
@@ -94,32 +91,22 @@ object State {
 /**
   * SamePosition refers to the state where both all measuring devices are travelling together.
   *
-  * @param observation
   */
-case class SamePosition(observation: Observation) extends State
+case class SamePosition[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation](observationIndex: Int, observation: OBSERVATION) extends State[OBSERVATION, CLUSTER_OBSERVATION]
 
 /**
   * NotSamePosition refers to those states where the traveler is not traveling with all of her devices.
   */
-sealed trait NotSamePosition extends State
+sealed trait NotSamePosition[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation] extends State[OBSERVATION, CLUSTER_OBSERVATION]
 
 /**
   * MovingPosition is a NotSamePosition where an observation is triggered by a device carried by the traveler.
   *
-  * @param moving
-  * @param cluster
   */
-case class MovingPosition(moving: Observation, cluster: ClusterObservation) extends NotSamePosition {
-  def observation = moving
-}
+case class MovingPosition[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation](observationIndex: Int, observation: OBSERVATION, cluster: CLUSTER_OBSERVATION) extends NotSamePosition[OBSERVATION, CLUSTER_OBSERVATION]
 
 /**
   * StationaryPosition is a NotSamePosition state where an observation is triggered by a device that is not in the possession of the traveler.
   *
-  * @param moving
-  * @param stationary
-  * @param cluster
   */
-case class StationaryPosition(moving: Observation, stationary: Observation, cluster: ClusterObservation) extends NotSamePosition {
-  def observation = stationary
-}
+case class StationaryPosition[OBSERVATION <: Observation, CLUSTER_OBSERVATION <: ClusterObservation](observationIndex: Int, observation: OBSERVATION, movingIndex: Int, moving: OBSERVATION, cluster: CLUSTER_OBSERVATION) extends NotSamePosition[OBSERVATION, CLUSTER_OBSERVATION]

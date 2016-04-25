@@ -32,4 +32,7 @@ object Personal {
   val VELOCITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "velocity")
   val MAGNITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "magnitude")
   val ANGLE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "angle")
+
+  val STAY_EVENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "StayEvent")
+  val CLUSTER_EVENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ClusterEvent")
 }

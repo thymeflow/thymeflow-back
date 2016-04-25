@@ -4,7 +4,6 @@ import java.time.{Duration, Instant}
 
 import com.typesafe.scalalogging.StrictLogging
 import thymeflow.location.cluster.{ClusterSettings, MaxLikelihoodCluster, TimeSequentialClusterEstimator}
-import thymeflow.location.model._
 import thymeflow.location.treillis.{MovingPosition, SamePosition}
 import thymeflow.mathematics.HellingerDistance
 import thymeflow.spatial.geographic.Point
@@ -16,10 +15,18 @@ import thymeflow.utilities.time.Implicits._
   * @author David Montoya
   */
 
+private case class MovementObservation[OBSERVATION <: treillis.Observation](index: Int, observation: OBSERVATION) extends treillis.Observation {
+
+  override def point: Point = observation.point
+
+  override def time: Instant = observation.time
+
+  override def accuracy: Double = observation.accuracy
+}
 
 trait Clustering extends StrictLogging {
 
-  def observationWindowCountDistribution(observationSequence: Array[Observation]) = {
+  def observationWindowCountDistribution[OBSERVATION <: treillis.Observation](observationSequence: Array[OBSERVATION]) = {
     // compute the distribution of the number of distinct observations over 10-minute periods.
     val period = Duration.ofMinutes(10)
     val uniqObservationSequence = observationSequence.distinct
@@ -72,53 +79,86 @@ trait Clustering extends StrictLogging {
     bSequenceWithA
   }
 
-  def estimateMovement(movementEstimatorDuration: Duration,
-                       movementObservationEstimatorDuration: Duration,
-                       lambda: Double)
-                      (observationsAndStays: IndexedSeq[(Observation, Option[ClusterObservation])],
-                       stays: IndexedSeq[ClusterObservation]) = {
+  def splitMovement[OBSERVATION <: treillis.Observation, CLUSTER_OBSERVATION <: treillis.ClusterObservation](movementEstimatorDuration: Duration,
+                                                                                                             movementObservationEstimatorDuration: Duration,
+                                                                                                             lambda: Double)(out: (IndexedSeq[(OBSERVATION, Option[CLUSTER_OBSERVATION])]) => Unit) = {
+    val movementEstimator = new treillis.StateEstimator {
+      override def distance(from: Point, to: Point): Double = {
+        WGS84SphereHaversinePointMetric.distance(from, to)
+      }
+    }
+    movementEstimator.findSingleNodes(movementEstimatorDuration, out)
+  }
+
+  def estimateMovement[OBSERVATION <: treillis.Observation, CLUSTER_OBSERVATION <: treillis.ClusterObservation]
+  (movementEstimatorDuration: Duration)
+  (observationsAndStays: IndexedSeq[(OBSERVATION, Option[CLUSTER_OBSERVATION])]) = {
     val movementEstimator = new treillis.StateEstimator {
       override def distance(from: Point, to: Point): Double = {
         WGS84SphereHaversinePointMetric.distance(from, to)
       }
     }
 
-    val movementEstimationOption = movementEstimator.estimate(observationsAndStays, stays, movementEstimatorDuration)
-
-    val movementEstimationTravelerClustersAndObservationsOption = movementEstimationOption.map {
+    val movementEstimationOption = movementEstimator.estimate(observationsAndStays, movementEstimatorDuration)
+    movementEstimationOption.map {
       case movementEstimation =>
-        val movementEstimationTravelerObservations = movementEstimation.collect {
-          case m: MovingPosition => m.observation.asInstanceOf[Observation]
-          case same: SamePosition => same.observation.asInstanceOf[Observation]
+        movementEstimation.collect {
+          case MovingPosition(_, observation, _) => observation
+          case SamePosition(_, observation) => observation
         }
-        val movementObservationEstimator = getObservationEstimator(lambda, movementObservationEstimatorDuration, metric)
-        val movementClusters = movementObservationEstimator.estimate(movementEstimationTravelerObservations)
-
-        (movementClusters,
-          flattenGroupSequenceOption(movementEstimationTravelerObservations, movementClusters)(identity, _.observations, _.index).collect {
-            case (a, Some(cluster)) => (a, cluster)
-          })
     }
+  }
 
-    val counts = movementEstimationOption.map {
-      case movementEstimation => (movementEstimation.count(_.isInstanceOf[MovingPosition]), movementEstimation.count(_.isInstanceOf[SamePosition]))
+  def flattenGroupSequenceOption[A, B, X, I](bSequence: IndexedSeq[B],
+                                             aSequenceWithB: IndexedSeq[X])
+                                            (xToA: X => A, xToBs: X => IndexedSeq[B], bIndex: B => I) = {
+    flattenGroupSequenceGeneric(bSequence, aSequenceWithB, xToA, xToBs, bIndex, (indexToAMap: Map[I, A]) => indexToAMap.get)
+  }
+
+  def extractClustersFromObservations[OBSERVATION <: treillis.Observation](minimumStayDuration: Duration,
+                                                                           observationEstimatorDuration: Duration,
+                                                                           lambda: Double)(out: (MaxLikelihoodCluster[OBSERVATION, Instant]) => Unit,
+                                                                                           state: Set[MaxLikelihoodCluster[OBSERVATION, Instant]] = Set[MaxLikelihoodCluster[OBSERVATION, Instant]]()) = {
+    val estimator = getObservationEstimator[OBSERVATION](lambda, observationEstimatorDuration, metric, (state.iterator.map(_.index) ++ Iterator(-1)).max + 1)
+    var i, j = 0
+    val (estimatorOnObservation, estimatorOnFinish, estimatorGetState) = estimator.observationProcessor({
+      case (cluster) =>
+        val to = cluster.observations.last.time
+        val from = cluster.observations.head.time
+        if (Duration.between(from, to).abs.compareTo(minimumStayDuration) >= 0) {
+          out(cluster)
+          j += 1
+        }
+        i += 1
+    }, state)
+    def onObservation(observation: OBSERVATION) = {
+      estimatorOnObservation(observation)
     }
-    logger.info(s"[movement-estimation] Found $counts states {lambda=$lambda,movementEstimatorDuration=$movementEstimatorDuration,movementObservationEstimatorDuration=$movementObservationEstimatorDuration}.")
-
-    movementEstimationTravelerClustersAndObservationsOption
+    def onFinish() = {
+      estimatorOnFinish()
+      logger.info(s"[stay-extraction] Found $j long enough clusters amongst $i candidate clusters {lambda=$lambda,observationEstimatorDuration=$observationEstimatorDuration}.")
+    }
+    def getState = {
+      estimatorGetState()
+    }
+    (onObservation _, onFinish _, getState _)
   }
 
   // metric to compute geographic distances from.
   def metric = WGS84GeographyLinearMetric
 
-  def getObservationEstimator(lambda: Double, lookupDuration: Duration, metric: Metric[Point, Double]) = {
-    getMaxLikelihoodEstimator[Observation](lambda,
+  def getObservationEstimator[OBSERVATION <: treillis.Observation](lambda: Double,
+                                                                   lookupDuration: Duration,
+                                                                   metric: Metric[Point, Double],
+                                                                   nextClusterIndex: Int) = {
+    getMaxLikelihoodEstimator[OBSERVATION](lambda,
       lookupDuration,
       metric,
       _.point,
       _.accuracy,
       x => x.accuracy * x.accuracy, _ => 1,
-      _.time, _.index)
+      _.time,
+      nextClusterIndex)
   }
 
   def getMaxLikelihoodEstimator[OBSERVATION](lambda: Double,
@@ -129,20 +169,21 @@ trait Clustering extends StrictLogging {
                                              observationVariance: (OBSERVATION) => Double,
                                              observationWeight: (OBSERVATION) => Double,
                                              _observationTime: (OBSERVATION) => Instant,
-                                             observationIndex: (OBSERVATION) => Int) = {
+                                             nextClusterIndex: Int = 0) = {
     val _lambda = lambda
     val settings = ClusterSettings(metric = metric,
       observationMean = observationCenter,
       observationAccuracy = observationAccuracy,
       observationVariance = observationVariance,
       observationWeight = observationWeight)
+    var clusterIndex = nextClusterIndex - 1
     new TimeSequentialClusterEstimator[OBSERVATION, Point, Instant, MaxLikelihoodCluster[OBSERVATION, Instant]] {
-      implicit val ordering = new Ordering[MaxLikelihoodCluster[OBSERVATION, Instant]] {
-        override def compare(x: MaxLikelihoodCluster[OBSERVATION, Instant], y: MaxLikelihoodCluster[OBSERVATION, Instant]): Int = {
+      val ordering = new Ordering[MaxLikelihoodCluster[OBSERVATION, Instant]] {
+        override def compare(x: MaxLikelihoodCluster[OBSERVATION, Instant],
+                             y: MaxLikelihoodCluster[OBSERVATION, Instant]): Int = {
           val c = y.t.compareTo(x.t)
           if (c == 0) {
-            val r = observationIndex(y.observations.last) - observationIndex(x.observations.last)
-            r
+            y.index - x.index
           } else {
             c
           }
@@ -163,47 +204,14 @@ trait Clustering extends StrictLogging {
       }
 
       override def clusterWithNewObservation(cluster: MaxLikelihoodCluster[OBSERVATION, Instant], lastTime: Instant, newObservation: OBSERVATION): MaxLikelihoodCluster[OBSERVATION, Instant] = {
-        MaxLikelihoodCluster(cluster, lastTime, newObservation)
+        clusterIndex += 1
+        MaxLikelihoodCluster(cluster, lastTime, newObservation, clusterIndex)
       }
 
       override def newCluster(lastTime: Instant, observation: OBSERVATION): MaxLikelihoodCluster[OBSERVATION, Instant] = {
-        MaxLikelihoodCluster(lastTime, observation, settings)
+        clusterIndex += 1
+        MaxLikelihoodCluster(lastTime, observation, settings, clusterIndex)
       }
     }
-  }
-
-  def flattenGroupSequenceOption[A, B, X, I](bSequence: IndexedSeq[B],
-                                             aSequenceWithB: IndexedSeq[X])
-                                            (xToA: X => A, xToBs: X => IndexedSeq[B], bIndex: B => I) = {
-    flattenGroupSequenceGeneric(bSequence, aSequenceWithB, xToA, xToBs, bIndex, (indexToAMap: Map[I, A]) => indexToAMap.get)
-  }
-
-  def extractStaysFromObservations(minimumStayDuration: Duration,
-                                   observationEstimatorDuration: Duration,
-                                   lambda: Double)(observationSequence: IndexedSeq[Observation]) = {
-
-    val estimator = getObservationEstimator(lambda, observationEstimatorDuration, metric)
-    val candidateStays = estimator.estimate(observationSequence)
-    logger.info(s"[stay-extraction] Found ${candidateStays.size} candidate stays {lambda=$lambda,observationEstimatorDuration=$observationEstimatorDuration}.")
-
-    val longEnoughStays = candidateStays.filter {
-      case cluster =>
-        val to = cluster.observations.last.time
-        val from = cluster.observations.head.time
-        Duration.between(from, to).abs.compareTo(minimumStayDuration) >= 0
-    }
-    logger.info(s"[stay-extraction] Found ${longEnoughStays.size} long enough stays {lambda=$lambda,minimumStayDuration=$minimumStayDuration}.")
-
-    val staysAndObservations = longEnoughStays.zipWithIndex.map {
-      case (cluster, index) =>
-        val to = cluster.observations.last.time
-        val from = cluster.observations.head.time
-        val clusterObservation = ClusterObservation(index = index, point = cluster.mean, from = from, to = to, accuracy = math.sqrt(cluster.variance))
-        (clusterObservation, cluster.observations)
-    }
-
-    val observationsAndStays = flattenGroupSequenceOption(observationSequence, staysAndObservations)(_._1, _._2, _.index)
-    (observationsAndStays, staysAndObservations.map(_._1))
-
   }
 }

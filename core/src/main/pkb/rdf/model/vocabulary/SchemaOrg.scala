@@ -48,6 +48,7 @@ object SchemaOrg {
   val HONORIFIC_SUFFIX: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "honorificSuffix")
   val IMAGE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "image")
   val IN_LANGUAGE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "inLanguage")
+  val ITEM: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "item")
   val JOB_TITLE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "jobTitle")
   val LATITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "latitude")
   val LOCATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "location")

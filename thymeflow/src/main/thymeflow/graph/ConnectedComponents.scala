@@ -1,6 +1,5 @@
 package thymeflow.graph
 
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
@@ -8,13 +7,13 @@ import scala.collection.mutable
   */
 object ConnectedComponents {
   def compute[NODE](nodes: Traversable[NODE], neighbors: NODE => Traversable[NODE]): Seq[Set[NODE]] = {
-    val processed = new java.util.HashSet[NODE].asScala
+    val processed = mutable.HashSet.empty[NODE]
     val components = mutable.Queue.empty[Set[NODE]]
 
 
     // Breadth-first search
     def bfs(start: NODE): Unit = {
-      val component = new java.util.HashSet[NODE].asScala
+      val component = mutable.HashSet.empty[NODE]
       val bfsStack = mutable.Stack[NODE]()
       processed += start
       bfsStack push start

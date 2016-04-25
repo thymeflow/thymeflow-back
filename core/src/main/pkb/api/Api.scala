@@ -64,9 +64,14 @@ trait Api extends App with SparqlService {
             if (fields.get("ssl").contains("true")) {
               props.put("mail.imap.ssl.enable", "true")
             }
-            val store = Session.getInstance(props).getStore("imap")
-            store.connect(fields.get("host").get, fields.get("user").get, fields.get("password").get)
-            pipeline.addSource(EmailSynchronizer.Config(store))
+            try {
+              val store = Session.getInstance(props).getStore("imap")
+              store.connect(fields.get("host").get, fields.get("user").get, fields.get("password").get)
+              pipeline.addSource(EmailSynchronizer.Config(store))
+            } catch {
+              case e: MessagingException => logger.error(e.getLocalizedMessage, e)
+                complete(StatusCodes.InternalServerError, "IMAP error: " + e.getLocalizedMessage)
+            }
             redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
           }
         }
@@ -118,6 +123,7 @@ trait Api extends App with SparqlService {
       pipeline.addSource(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
+        complete(StatusCodes.InternalServerError, "Google IMAP error: " + e.getLocalizedMessage)
     }
   }
 
@@ -133,6 +139,7 @@ trait Api extends App with SparqlService {
       pipeline.addSource(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
+        complete(StatusCodes.InternalServerError, "Microsoft IMAP error: " + e.getLocalizedMessage)
     }
   }
 }

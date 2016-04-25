@@ -56,15 +56,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       addAddresses({
         message.getFrom
       }, messageResource, SchemaOrg.SENDER)
-      addAddresses({
-        message.getRecipients(RecipientType.TO)
-      }, messageResource, Personal.PRIMARY_RECIPIENT, SchemaOrg.RECIPIENT)
-      addAddresses({
-        message.getRecipients(RecipientType.CC)
-      }, messageResource, Personal.COPY_RECIPIENT, SchemaOrg.RECIPIENT)
-      addAddresses({
-        message.getRecipients(RecipientType.BCC)
-      }, messageResource, Personal.BLIND_COPY_RECIPIENT, SchemaOrg.RECIPIENT)
+      addAddresses(message.getRecipients(RecipientType.TO), messageResource, Personal.PRIMARY_RECIPIENT, SchemaOrg.RECIPIENT)
+      addAddresses(message.getRecipients(RecipientType.CC), messageResource, Personal.COPY_RECIPIENT, SchemaOrg.RECIPIENT)
+      addAddresses(message.getRecipients(RecipientType.BCC), messageResource, Personal.BLIND_COPY_RECIPIENT, SchemaOrg.RECIPIENT)
 
       message match {
         case mimeMessage: MimeMessage =>

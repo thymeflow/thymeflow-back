@@ -138,7 +138,9 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private def messageContext(message: Message): IRI = {
       message match {
-        case message: MimeMessage => valueFactory.createIRI(message.getFolder.getURLName.toString + "#", message.getMessageID)
+        case message: MimeMessage => Option(message.getMessageID).map(messageId =>
+          valueFactory.createIRI(message.getFolder.getURLName.toString + "#", messageId)
+        ).orNull
         case _ => null
       }
     }

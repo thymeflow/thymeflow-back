@@ -80,9 +80,10 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     def convert(location: Location): Unit = {
       location.time match {
         case Some(time) =>
-          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy, model)
+          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy.map(_.toDouble), model)
           val timeGeoLocationNode = valueFactory.createBNode()
           model.add(timeGeoLocationNode, RDF.TYPE, Personal.TIME_GEO_LOCATION, context)
+          model.add(timeGeoLocationNode, SchemaOrg.GEO, geoCoordinatesNode, context)
           model.add(timeGeoLocationNode, SchemaOrg.DATE_CREATED, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
 
           // less frequent

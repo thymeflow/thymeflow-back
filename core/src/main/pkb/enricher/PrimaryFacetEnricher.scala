@@ -20,8 +20,8 @@ class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends A
   private val enricherContext = repositoryConnection.getValueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#primaryFacetEnricherOutput")
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
     QueryLanguage.SPARQL,
-    """SELECT ?facet WHERE {
-      ?facet <http://www.w3.org/2002/07/owl#sameAs>* ?startFacet .
+    s"""SELECT ?facet WHERE {
+      ?facet <${OWL.SAMEAS}>* ?startFacet .
       ?facet ?descriptionProperty ?descriptionValue
     } GROUP BY ?facet ORDER BY DESC(COUNT(?descriptionProperty))"""
   )

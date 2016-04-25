@@ -85,13 +85,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val messageFilter =
       s"""
          |  {
-         |    ?msg <${Personal.PRIMARY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${Personal.BLIND_COPY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${Personal.COPY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${SchemaOrg.AUTHOR}> ?agent .
+         |    ?msg <${SchemaOrg.RECIPIENT}> ?agent .
+         |  } UNION {
+         |    ?msg <${SchemaOrg.SENDER}> ?agent .
          |  }
       """.stripMargin
 

@@ -18,7 +18,7 @@ schema:CreativeWork a rdfs:Class ;
     rdfs:subClassOf schema:Thing .
 
 schema:EmailMessage a rdfs:Class ;
-    rdfs:subClassOf personal:Message .
+    rdfs:subClassOf schema:Message .
 
 schema:Event a rdfs:Class ;
     rdfs:subClassOf schema:Thing .
@@ -28,6 +28,9 @@ schema:GeoCoordinates a rdfs:Class ;
 
 schema:ImageObject a rdfs:Class ;
     rdfs:subClassOf schema:Thing .
+
+schema:Message a rdfs:Class ;
+    rdfs:subClassOf schema:CreativeWork .
 
 schema:Organization a rdfs:Class ;
     rdfs:subClassOf personal:Agent .
@@ -79,10 +82,6 @@ schema:attendee a rdf:Property ;
     rdfs:domain schema:Event ;
     rdfs:range schema:Person .
 
-schema:author a rdf:Property ;
-    rdfs:domain schema:CreativeWork ;
-    rdfs:range personal:Agent .
-
 schema:birthDate a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range rdfs:Literal .
@@ -91,12 +90,16 @@ schema:birthPlace a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range schema:Place .
 
-schema:datePublished a rdf:Property ;
+schema:dateCreated a rdf:Property ;
     rdfs:domain schema:CreativeWork ;
     rdfs:range rdfs:Literal .
 
-schema:dateCreated a rdf:Property ;
-    rdfs:domain schema:CreativeWork ;
+schema:dateReceived a rdf:Property ;
+    rdfs:domain schema:Message ;
+    rdfs:range rdfs:Literal .
+
+schema:dateSent a rdf:Property ;
+    rdfs:domain schema:Message ;
     rdfs:range rdfs:Literal .
 
 schema:deathDate a rdf:Property ;
@@ -199,6 +202,14 @@ schema:postalCode a rdf:Property ;
     rdfs:domain schema:PostalAddress ;
     rdfs:range rdfs:Literal .
 
+schema:recipient a rdf:Property ;
+    rdfs:domain schema:Message ;
+    rdfs:range personal:Agent .
+
+schema:sender a rdf:Property ;
+    rdfs:domain schema:Message ;
+    rdfs:range personal:Agent .
+
 schema:startDate a rdf:Property ;
     rdfs:domain schema:Event ;
     rdfs:range rdfs:Literal .
@@ -240,9 +251,6 @@ personal:FaxNumber a rdfs:Class ;
 personal:HomeAddress a rdfs:Class ;
     rdfs:subClassOf personal:Address .
 
-personal:Message a rdfs:Class ;
-     rdfs:subClassOf schema:CreativeWork .
-
 personal:PhoneNumber a rdfs:Class ;
     rdfs:subClassOf personal:Address .
 
@@ -257,15 +265,11 @@ personal:WorkAddress a rdfs:Class ;
 
 # personal properties
 
-personal:recipient a rdf:Property ;
-    rdfs:domain personal:Message ;
-    rdfs:range personal:Agent .
-
 personal:blindCopyRecipient a rdf:Property ;
-    rdfs:subPropertyOf personal:recipient .
+    rdfs:subPropertyOf schema:recipient .
 
 personal:copyRecipient a rdf:Property ;
-    rdfs:subPropertyOf personal:recipient .
+    rdfs:subPropertyOf schema:recipient .
 
 personal:domain a rdf:Property ;
     rdfs:domain personal:EmailAddress ;
@@ -281,8 +285,8 @@ personal:nickname a rdf:Property ;
     rdfs:range rdfs:Literal .
 
 personal:primaryRecipient a rdf:Property ;
-    rdfs:subPropertyOf personal:recipient .
+    rdfs:subPropertyOf schema:recipient .
 
 personal:inReplyTo a rdf:Property ;
-    rdfs:domain personal:Message ;
-    rdfs:range personal:Message .
+    rdfs:domain schema:Message ;
+    rdfs:range schema:Message .

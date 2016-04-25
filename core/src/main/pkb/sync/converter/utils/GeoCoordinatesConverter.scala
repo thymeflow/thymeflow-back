@@ -39,14 +39,12 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))
-    uncertaintyOption.foreach {
-      uncertainty =>
+    uncertaintyOption.foreach(uncertainty =>
         model.add(geoResource, Personal.UNCERTAINTY, valueFactory.createLiteral(uncertainty))
-    }
-    elevationOption.foreach {
-      elevation =>
+    )
+    elevationOption.foreach(elevation =>
         model.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation))
-    }
+    )
     geoResource
   }
 }

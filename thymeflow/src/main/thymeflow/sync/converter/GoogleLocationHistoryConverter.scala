@@ -18,7 +18,8 @@ import thymeflow.utilities.ExceptionUtils
 /**
   * @author David Montoya
   */
-
+// The following classes (Location/LocationHistory) must not be within an object/class scope
+// otherwise Json4s won't be able to parse extract them using Reflection.
 private case class Location(timestampMs: String,
                             latitudeE7: Long,
                             longitudeE7: Long,
@@ -39,6 +40,7 @@ private case class Location(timestampMs: String,
 }
 
 private case class LocationHistory(locations: Seq[Location])
+
 
 class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
@@ -103,5 +105,4 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
       }
     }
   }
-
 }

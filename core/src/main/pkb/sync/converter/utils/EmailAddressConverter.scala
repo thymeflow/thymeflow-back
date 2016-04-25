@@ -13,7 +13,7 @@ import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-object EmailAddressConverter{
+object EmailAddressConverter {
   // RFC2822 matching non aText
   val nonATextPattern = """[^A-Za-z0-9!#\$%&'*+\-/=?\^_`{|}~.]""".r
 

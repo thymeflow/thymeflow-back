@@ -10,7 +10,7 @@ import org.apache.james.mime4j.codec.{DecodeMonitor, DecoderUtil}
 import org.apache.james.mime4j.dom.address.{Group, Mailbox}
 import org.apache.james.mime4j.field.AddressListFieldImpl
 import org.apache.james.mime4j.stream._
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import pkb.rdf.model.SimpleHashModel
 import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -121,26 +121,27 @@ class Mime4JEmailMessageConverter(valueFactory: ValueFactory) extends Converter 
       val messageResource = resourceForMessage(message)
 
       model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+      /* TODO: migrate dates to schema:dateReceived and schema:dateSent
       message.date.foreach(date =>
         model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date.toString, XMLSchema.DATETIME), context)
-      )
+      )*/
       message.subject.foreach(subject =>
         model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
       )
 
-      addAddresses(message.from, messageResource, SchemaOrg.AUTHOR)
-      addAddresses(message.to, messageResource, Personal.PRIMARY_RECIPIENT)
-      addAddresses(message.cc, messageResource, Personal.COPY_RECIPIENT)
-      addAddresses(message.bcc, messageResource, Personal.BLIND_COPY_RECIPIENT)
+      addAddresses(message.from, messageResource, SchemaOrg.SENDER)
+      addAddresses(message.to, messageResource, Personal.PRIMARY_RECIPIENT, SchemaOrg.RECIPIENT)
+      addAddresses(message.cc, messageResource, Personal.COPY_RECIPIENT, SchemaOrg.RECIPIENT)
+      addAddresses(message.bcc, messageResource, Personal.BLIND_COPY_RECIPIENT, SchemaOrg.RECIPIENT)
 
       messageResource
     }
 
-    private def addAddresses(addresses: Traversable[EmailAddress], messageResource: Resource, relation: IRI): Unit = {
+    private def addAddresses(addresses: Traversable[EmailAddress], messageResource: Resource, relations: IRI*): Unit = {
       addresses.foreach(address => {
         convert(address).foreach {
           personResource =>
-            model.add(messageResource, relation, personResource, context)
+            relations.foreach(relation => model.add(messageResource, relation, personResource, context))
         }
       })
     }

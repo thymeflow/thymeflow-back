@@ -27,10 +27,6 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     convert(new MimeMessage(null, stream), context)
   }
 
-  override def convert(str: String, context: IRI): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
-  }
-
   def convert(message: Message, context: IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
@@ -38,14 +34,20 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
     model
   }
 
+  override def convert(str: String, context: IRI): Model = {
+    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
+  }
+
   private class ToModelConverter(model: Model, context: IRI) {
     def convert(message: Message): Resource = {
       val messageResource = resourceForMessage(message)
       model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
 
-      // use sent date as published date. If sent date is invalid, use received date.
-      Option(message.getSentDate).orElse(Option(message.getReceivedDate)).foreach(date =>
-        model.add(messageResource, SchemaOrg.DATE_PUBLISHED, valueFactory.createLiteral(date), context)
+      Option(message.getSentDate).foreach(date =>
+        model.add(messageResource, SchemaOrg.DATE_SENT, valueFactory.createLiteral(date), context)
+      )
+      Option(message.getReceivedDate).foreach(date =>
+        model.add(messageResource, SchemaOrg.DATE_RECEIVED, valueFactory.createLiteral(date), context)
       )
       Option(message.getSubject).foreach(subject =>
         model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
@@ -53,16 +55,16 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
 
       addAddresses({
         message.getFrom
-      }, messageResource, SchemaOrg.AUTHOR)
+      }, messageResource, SchemaOrg.SENDER)
       addAddresses({
         message.getRecipients(RecipientType.TO)
-      }, messageResource, Personal.PRIMARY_RECIPIENT)
+      }, messageResource, Personal.PRIMARY_RECIPIENT, SchemaOrg.RECIPIENT)
       addAddresses({
         message.getRecipients(RecipientType.CC)
-      }, messageResource, Personal.COPY_RECIPIENT)
+      }, messageResource, Personal.COPY_RECIPIENT, SchemaOrg.RECIPIENT)
       addAddresses({
         message.getRecipients(RecipientType.BCC)
-      }, messageResource, Personal.BLIND_COPY_RECIPIENT)
+      }, messageResource, Personal.BLIND_COPY_RECIPIENT, SchemaOrg.RECIPIENT)
 
       message match {
         case mimeMessage: MimeMessage =>
@@ -73,12 +75,14 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       messageResource
     }
 
-    private def addAddresses(addresses: => Array[Address], messageResource: Resource, relation: IRI): Unit = {
+    private def addAddresses(addresses: => Array[Address], messageResource: Resource, relations: IRI*): Unit = {
       try {
         // addresses() can return null
         Option(addresses).foreach(addresses =>
           addresses.foreach(address =>
-            convert(address).foreach(personResource => model.add(messageResource, relation, personResource, context))
+            relations.foreach(relation =>
+              convert(address).foreach(personResource => model.add(messageResource, relation, personResource, context))
+            )
           )
         )
       } catch {

@@ -77,13 +77,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     val messageFilter =
       s"""
          |  {
-         |    ?msg <${Personal.PRIMARY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${Personal.BLIND_COPY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${Personal.COPY_RECIPIENT}> ?agent .
-         |  }UNION{
-         |    ?msg <${SchemaOrg.AUTHOR}> ?agent .
+         |    ?msg <${SchemaOrg.RECIPIENT}> ?agent .
+         |  } UNION {
+         |    ?msg <${SchemaOrg.SENDER}> ?agent .
          |  }
       """.stripMargin
 
@@ -479,6 +475,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   /**
     * Given a binary relation R over (RESOURCE, VALUE) tuples, computes the RESOURCE equivalence
     * classes imposed by an inverse functionality constraint over R.
@@ -612,10 +612,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /** *

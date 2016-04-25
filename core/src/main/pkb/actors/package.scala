@@ -15,15 +15,15 @@ package object actors extends StrictLogging {
 
   implicit lazy val system = ActorSystem("pkb")
 
-  lazy val decider: Supervision.Decider = {
-    case throwable =>
-      logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
-      Supervision.Stop
+  lazy val decider: Supervision.Decider = throwable => {
+    logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+    Supervision.Stop
   }
 
   implicit lazy val executor = global
 
   implicit lazy val materializer = ActorMaterializer(
-    ActorMaterializerSettings(system).withSupervisionStrategy(decider))
+    ActorMaterializerSettings(system).withSupervisionStrategy(decider)
+  )
 
 }

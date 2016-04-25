@@ -100,9 +100,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         val personResource = uuidConverter.createIRI(address)
         model.add(personResource, RDF.TYPE, Personal.AGENT)
         Option(address.getPersonal).foreach(name =>
-          emailAddressNameConverter.convert(name, address.getAddress).foreach{
-            case x => model.add(personResource, SchemaOrg.NAME, x)
-          }
+          emailAddressNameConverter.convert(name, address.getAddress).foreach(name =>
+            model.add(personResource, SchemaOrg.NAME, name)
+          )
         )
         model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
         personResource

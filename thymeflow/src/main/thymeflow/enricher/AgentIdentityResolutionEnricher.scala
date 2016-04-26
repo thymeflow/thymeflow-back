@@ -10,16 +10,16 @@ import org.openrdf.model.vocabulary.{OWL, RDF}
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
-import pkb.actors._
-import pkb.rdf.Converters._
-import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.utilities.text.Normalization
+import thymeflow.actors._
 import thymeflow.graph.ConnectedComponents
+import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.Alignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
 import thymeflow.text.search.{FullTextSearchPartialTextMatcher, PartialTextMatcher}
 import thymeflow.utilities.Memoize
+import thymeflow.utilities.text.Normalization
 
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
@@ -645,10 +645,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     idfs
   }
 
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
                                    clearDuplicateNestedResults: Boolean = false)(value1: String) = {
@@ -664,6 +660,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   /** *

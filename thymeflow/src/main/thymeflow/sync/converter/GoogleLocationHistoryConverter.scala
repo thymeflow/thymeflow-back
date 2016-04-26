@@ -9,10 +9,9 @@ import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.rdf.model.SimpleHashModel
-import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.Converter
-import pkb.sync.converter.utils.GeoCoordinatesConverter
+import thymeflow.rdf.model.SimpleHashModel
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.sync.converter.utils.GeoCoordinatesConverter
 import thymeflow.utilities.ExceptionUtils
 
 /**

@@ -11,14 +11,14 @@ import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
-import pkb.actors._
-import pkb.rdf.Converters._
-import pkb.rdf.model.SimpleHashModel
-import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.utils.GeoCoordinatesConverter
+import thymeflow.actors._
 import thymeflow.location.Clustering
 import thymeflow.location.cluster.MaxLikelihoodCluster
+import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.SimpleHashModel
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.geographic.{Geography, Point}
+import thymeflow.sync.converter.utils.GeoCoordinatesConverter
 
 import scala.concurrent.Future
 

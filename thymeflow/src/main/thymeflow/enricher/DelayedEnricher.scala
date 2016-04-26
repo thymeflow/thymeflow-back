@@ -1,9 +1,8 @@
 package thymeflow.enricher
 
 import akka.actor.{Actor, Props}
-import pkb.actors._
-import pkb.enricher.Enricher
-import pkb.rdf.model.ModelDiff
+import thymeflow.actors._
+import thymeflow.rdf.model.ModelDiff
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -12,7 +11,7 @@ import scala.language.postfixOps
   * @author David Montoya
   */
 trait DelayedEnricher extends Enricher {
-  private val tickActor = pkb.actors.system.actorOf(Props(new Actor {
+  private val tickActor = thymeflow.actors.system.actorOf(Props(new Actor {
     var previousDiffTimeOption: Option[Long] = None
     var previousEnrichmentOption: Option[Long] = None
 
@@ -51,7 +50,8 @@ trait DelayedEnricher extends Enricher {
   override def enrich(diff: ModelDiff): Unit = {
     tickActor ! Diff
   }
-  pkb.actors.system.scheduler.schedule(1 second, 10 seconds, tickActor, Tick)
+
+  thymeflow.actors.system.scheduler.schedule(1 second, 10 seconds, tickActor, Tick)
 
   private object Tick
   private object Diff

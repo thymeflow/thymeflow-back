@@ -2,10 +2,9 @@ package thymeflow.api
 
 
 import org.openrdf.IsolationLevels
-import pkb.Pipeline
-import pkb.rdf.RepositoryFactory
-import thymeflow.Thymeflow
-import thymeflow.enricher.AgentIdentityResolutionEnricher
+import thymeflow.{Pipeline, Thymeflow}
+import thymeflow.enricher.{AgentIdentityResolutionEnricher, LocationStayEnricher}
+import thymeflow.rdf.RepositoryFactory
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -13,7 +12,7 @@ import scala.language.postfixOps
 /**
   * @author David Montoya
   */
-object MainApi extends pkb.api.Api {
+object MainApi extends thymeflow.api.Api {
 
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     snapshotCleanupStore = false,
@@ -23,7 +22,9 @@ object MainApi extends pkb.api.Api {
 
   override protected val pipeline = {
     Thymeflow.setupSynchronizers()
-    new Pipeline(repository.getConnection, List(new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)))
+    new Pipeline(repository.getConnection, List(
+      new LocationStayEnricher(repository.getConnection, 10 seconds),
+      new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)))
   }
 
 }

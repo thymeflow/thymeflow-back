@@ -10,16 +10,16 @@ import org.openrdf.model.vocabulary.{OWL, RDF}
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
-import pkb.actors._
-import pkb.rdf.Converters._
-import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.utilities.text.Normalization
+import thymeflow.actors._
 import thymeflow.graph.ConnectedComponents
+import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.Alignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
 import thymeflow.text.search.{FullTextSearchPartialTextMatcher, PartialTextMatcher}
 import thymeflow.utilities.Memoize
+import thymeflow.utilities.text.Normalization
 
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
@@ -27,11 +27,17 @@ import scala.concurrent.duration.Duration
 /**
   * @author David Montoya
   */
+sealed trait NamePart
+
+case class TextNamePart(content: String) extends NamePart
+
+case class VariableNamePart(id: Int) extends NamePart
+
 class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
   extends DelayedEnricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#agentIdentityResolution")
+  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#AgentIdentityResolution")
 
   private val metric = new LevensteinDistance()
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
@@ -69,7 +75,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
     val agentEmailAddresses = agentFacetEmailAddresses.map {
       case (agent, emailAddress) => (agentFacetRepresentativeMap(agent), emailAddress)
-    }.groupBy(_._1).mapValues(_.map(_._2))
+    }.groupBy(_._1).map {
+      case (agentRepresentative, g) => (agentRepresentative, g.map(_._2).distinct)
+    }
 
     val agentFacetRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
     val agentFacetRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
@@ -274,40 +282,68 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
           case emailAddress =>
             val (localPart, domain) = emailAddressesDecomposition(emailAddress)
             val (cost, alignment) = Alignment.alignment(names, normalizeTerm(localPart), filter)(_._2)
-            var anonymousPropertyCount = 0
-            val aligned = alignment.flatMap {
+            var variableId = 0
+            val variableMap = scala.collection.immutable.HashMap.newBuilder[VariableNamePart, Either[(String, Option[String]), (String, String, Set[IRI])]]
+            def newVariable() = {
+              variableId += 1
+              VariableNamePart(variableId)
+            }
+            def splitTextPart(content: String) = {
+              entitySplitParts(content).map {
+                case Right(textPart) => TextNamePart(textPart)
+                case Left(variablePart) =>
+                  val variable = newVariable()
+                  variableMap += variable -> Left((variablePart, None))
+                  variable
+              }
+            }
+            val nameParts = alignment.flatMap {
               case (query, matches) =>
                 matches.map((query, _))
-            }.sortBy(_._2._2).foldLeft((Vector.empty[String], 0)) {
-              case ((s, index), ((property, _), (text, from, to))) =>
-                val propertyName = if (property.nonEmpty) property.map(_.getLocalName).mkString("|")
-                else {
-                  anonymousPropertyCount += 1
-                  s"P$anonymousPropertyCount"
-                }
-                (s ++ (if (index != from) {
-                  Some(localPart.substring(index, from))
+            }.sortBy(_._2._2).foldLeft((Vector.empty[NamePart], 0)) {
+              case ((s, index), ((properties, nameMatch), (text, from, to))) =>
+                val previous =
+                  if (index != from) {
+                    splitTextPart(localPart.substring(index, from))
+                  } else {
+                    Vector.empty
+                  }
+                val variable = newVariable()
+                if (properties.nonEmpty) {
+                  variableMap += variable -> Right((text, nameMatch, properties))
                 } else {
-                  None
-                }) :+ s"<$propertyName>", to + 1)
+                  variableMap += variable -> Left((text, Some(nameMatch)))
+                }
+                (s ++ (previous :+ variable), to + 1)
             } match {
               case (s, index) =>
                 if (index != localPart.length) {
-                  s :+ localPart.substring(index, localPart.length)
+                  s ++ splitTextPart(localPart.substring(index, localPart.length))
                 } else {
                   s
                 }
             }
-            (emailAddress, localPart, domain, aligned.mkString(""), cost, names)
+            (localPart, domain, nameParts, variableMap.result(), cost, names)
         }
     }
-    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._3).map {
+    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._2).map {
       case (domain, g) =>
-        val m = g.groupBy(_._4).map {
-          case (aligned, h) => aligned ->(h.size, h.map(_._5).sum / h.size.toDouble, h)
-        }
-        domain ->(m.values.map(_._1).sum, m.values.map(_._2).sum / m.size.toDouble, m)
-    }.toIndexedSeq.sortBy(_._2._1)
+        val m = g.groupBy(_._3).map {
+          case (nameParts, h) =>
+            nameParts ->(h.size, h.map(_._5).sum / h.size.toDouble, h.groupBy(_._4.collect {
+              case (k, Right((_, _, properties))) => k -> properties
+            }).map {
+              case (variablePropertyMap, i) =>
+                variablePropertyMap ->(i.size, i.map(_._5).sum / i.size.toDouble, i.groupBy(_._4.collect {
+                  case (k, Left((_, Some(namePart)))) => k
+                }.toSet).map {
+                  case (matchedNameParts, j) =>
+                    matchedNameParts ->(j.size, j.map(_._5).sum / j.size.toDouble, j)
+                }.toIndexedSeq.sortBy(_._2._1).reverse)
+            }.toIndexedSeq.sortBy(_._2._1).reverse)
+        }.toIndexedSeq.sortBy(_._2._1).reverse
+        domain ->(g.size, g.map(_._5).sum / g.size.toDouble, m)
+    }.toIndexedSeq.sortBy(_._2._1).reverse
     byDomain
   }
 
@@ -432,6 +468,22 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.toVector
   }
 
+  private def entitySplitParts(content: String) = {
+    var index = 0
+    val parts = Vector.newBuilder[Either[String, String]]
+    for (m <- tokenSeparator.findAllMatchIn(content)) {
+      if (index != m.start) {
+        parts += Left(content.substring(index, m.start))
+      }
+      parts += Right(m.matched)
+      index = m.end
+    }
+    if (index != content.length) {
+      parts += Left(content.substring(index, content.length))
+    }
+    parts.result()
+  }
+
   private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
                                            nameStatements: (RESOURCE) => Traversable[(String, Long)],
                                            termIDFs: Map[String, Double],
@@ -473,10 +525,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (terms1, terms2, distance) =>
         terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**
@@ -612,6 +660,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   /** *

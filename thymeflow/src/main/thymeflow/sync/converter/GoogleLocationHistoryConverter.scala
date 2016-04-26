@@ -9,15 +9,38 @@ import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Model, ValueFactory}
-import pkb.rdf.model.SimpleHashModel
-import pkb.rdf.model.vocabulary.{Personal, SchemaOrg}
-import pkb.sync.converter.Converter
-import pkb.sync.converter.utils.GeoCoordinatesConverter
-import pkb.utilities.ExceptionUtils
+import thymeflow.rdf.model.SimpleHashModel
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.sync.converter.utils.GeoCoordinatesConverter
+import thymeflow.utilities.ExceptionUtils
 
 /**
   * @author David Montoya
   */
+// The following classes (Location/LocationHistory) must not be within an object/class scope
+// otherwise Json4s won't be able to parse extract them using Reflection.
+private case class Location(timestampMs: String,
+                            latitudeE7: Long,
+                            longitudeE7: Long,
+                            accuracy: Option[Float],
+                            velocity: Option[Float],
+                            altitude: Option[Double],
+                            heading: Option[Float]) {
+  def longitude = longitudeE7 / 1e7
+
+  def latitude = latitudeE7 / 1e7
+
+  def time =
+    try {
+      Some(Instant.ofEpochMilli(timestampMs.toLong))
+    } catch {
+      case e: NumberFormatException => None
+    }
+}
+
+private case class LocationHistory(locations: Seq[Location])
+
+
 class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
@@ -58,9 +81,10 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     def convert(location: Location): Unit = {
       location.time match {
         case Some(time) =>
-          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy, model)
+          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy.map(_.toDouble), model)
           val timeGeoLocationNode = valueFactory.createBNode()
           model.add(timeGeoLocationNode, RDF.TYPE, Personal.TIME_GEO_LOCATION, context)
+          model.add(timeGeoLocationNode, SchemaOrg.GEO, geoCoordinatesNode, context)
           model.add(timeGeoLocationNode, SchemaOrg.DATE_CREATED, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
 
           // less frequent
@@ -80,26 +104,4 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
       }
     }
   }
-
-  private case class Location(timestampMs: String,
-                      latitudeE7: Long,
-                      longitudeE7: Long,
-                      accuracy: Option[Float],
-                      velocity: Option[Float],
-                      altitude: Option[Double],
-                      heading: Option[Float]) {
-    def longitude = longitudeE7 / 1e7
-
-    def latitude = latitudeE7 / 1e7
-
-    def time =
-      try {
-        Some(Instant.ofEpochMilli(timestampMs.toLong))
-      } catch {
-        case e: NumberFormatException => None
-      }
-  }
-
-  private case class LocationHistory(locations: Seq[Location])
-
 }

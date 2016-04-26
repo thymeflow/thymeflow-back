@@ -14,6 +14,33 @@ val commonSettings = Seq(
   javaSource in Test := baseDirectory.value / "src/test"
 )
 
+val utilitiesProject = Project(
+  id = "utilities",
+  base = file("utilities")
+).settings(commonSettings: _*).settings(
+)
+
+val mathematicsProject = Project(
+  id = "mathematics",
+  base = file("mathematics")
+).settings(commonSettings: _*).settings(
+  libraryDependencies += "org.apache.commons" % "commons-math3" % "3.6.1"
+)
+
+val graphProject = Project(
+  id = "graph",
+  base = file("graph")
+).settings(commonSettings: _*).settings(
+)
+
+val spatialProject = Project(
+  id = "spatial",
+  base = file("spatial")
+).settings(commonSettings: _*).settings(
+  // Very fast and accurate geodesic computations
+  libraryDependencies += "net.sf.geographiclib" % "GeographicLib-Java" % "1.43"
+).dependsOn(utilitiesProject, graphProject, mathematicsProject)
+
 val coreProject = Project(
   id = "core",
   base = file("core")
@@ -44,20 +71,12 @@ val coreProject = Project(
   libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
   libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
   libraryDependencies += "org.apache.lucene" % "lucene-suggest" % "4.+"
-)
+).dependsOn(utilitiesProject)
 
 val thymeflowProject = Project (
   id="thymeflow",
   base=file("thymeflow")
 ).settings(commonSettings:_*).settings(
   libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.3.+",
-  // Breeze is a library for numerical processing
-  libraryDependencies += "org.scalanlp" %% "breeze" % "0.12",
-    // native libraries are not included by default. add this if you want them (as of 0.7)
-    // native libraries greatly improve performance, but increase jar sizes.
-    // It also packages various blas implementations, which have licenses that may or may not
-    // be compatible with the Apache License. No GPL code, as best I know.
-    // NOTE: This has to be specifically tested if included
-  // "org.scalanlp" %% "breeze-natives" % "0.12"
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
-).dependsOn(coreProject)
+).dependsOn(coreProject, graphProject, spatialProject)

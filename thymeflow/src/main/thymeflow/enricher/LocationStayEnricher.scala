@@ -19,9 +19,10 @@ import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
-import thymeflow.utilities.TimeExecution
+import thymeflow.utilities.{ExceptionUtils, TimeExecution}
 
 import scala.concurrent.Future
+import scala.util.Failure
 
 private case class Location(resource: Resource,
                             time: Instant,
@@ -118,7 +119,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
                   case (cluster, locations) =>
                     createStay(cluster, locations)
                 }.recover {
-                  case _ => Done
+                  case throwable =>
+                    logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+                    Done
                 }.flatMap {
                   case _ =>
                     // clean-up clusters
@@ -129,6 +132,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
           case _ =>
             logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
         }
+    }.andThen {
+      case Failure(throwable) =>
+        logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
     }
   }
 

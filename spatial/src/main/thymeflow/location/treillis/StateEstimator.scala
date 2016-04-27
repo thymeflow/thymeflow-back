@@ -71,7 +71,7 @@ trait StateEstimator extends StrictLogging {
       case (p, _) => p.nodes.tail
     }
     if (result.isEmpty) {
-      logger.warn(s"Found empty path to $targetNodeIndex")
+      logger.warn(s"[location-single-nodes] - Found empty path to $targetNodeIndex")
     }
     result.map(_.map(State.deserialize(_)(observationDeserializer, clusterDeserializer)))
   }
@@ -125,7 +125,7 @@ trait StateEstimator extends StrictLogging {
           currentNodes = Set(initial(input))
       }
       if (currentNodes.isEmpty) {
-        logger.warn(s"Found no nodes at $input")
+        logger.warn(s"[location-single-nodes] - found no nodes at $input")
         flushNodes()
       } else {
         inputs = inputs :+ input
@@ -134,7 +134,7 @@ trait StateEstimator extends StrictLogging {
     }
     def onFinish() = {
       flushNodes()
-      logger.info(s"Found $singleNodesCounter single nodes (totalNodes=$nodesCounter), maxLengthBetweenSingleNodes=$maxLengthBetweenSingleNodes")
+      logger.debug(s"[location-single-nodes] - Found $singleNodesCounter single nodes {totalNodes=$nodesCounter, maxLengthBetweenSingleNodes=$maxLengthBetweenSingleNodes}.")
     }
     (onInput _, onFinish _)
   }

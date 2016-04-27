@@ -64,14 +64,14 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     val observationEstimatorDuration = Duration.ofMinutes(60)
     val movementEstimatorDuration = Duration.ofMinutes(120)
     val lambda = 0.95
-    logger.info(s"Extracting Location StayEvents {minimumStayDuration=$minimumStayDuration,observationEstimatorDuration=$observationEstimatorDuration,movementEstimatorDuration=$movementEstimatorDuration}.")
+    logger.info(s"[location-stay-enricher] - Extracting StayEvents {minimumStayDuration=$minimumStayDuration,observationEstimatorDuration=$observationEstimatorDuration,movementEstimatorDuration=$movementEstimatorDuration}.")
     deleteStays().flatMap {
       _ =>
         countLocations.flatMap {
           locationCount =>
             val stage1 = new BufferedProcessorStage(
               (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-                val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
+                val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
                 (onObservation, onFinish)
               }
             )
@@ -83,11 +83,11 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             )
             val stage3 = new BufferedProcessorStage(
               (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-                val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
+                val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
                 (onObservation, onFinish)
               }
             )
-            getLocations.via(new TimeStage("location-extraction-stage1", locationCount)).via(stage1).map {
+            getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
               case cluster =>
                 (ClusterObservation(resource = valueFactory.createBNode(),
                   from = cluster.observations.head.time,
@@ -101,7 +101,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
                 createCluster(cluster, locations)
             }.flatMap {
               _ =>
-                getLocationsWithCluster.via(new TimeStage("location-extraction-stage2", locationCount)).via(stage2).mapConcat {
+                getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
                   case (observationsAndClusters) =>
                     clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
                 }.sliding(2).collect {
@@ -127,7 +127,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             }
         }.map {
           case _ =>
-            logger.info("Done extracting Location StayEvents.")
+            logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
         }
     }
   }
@@ -280,9 +280,10 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
 
   private class TimeStage[T](processName: String, target: Long, step: Long = 1) extends GraphStage[FlowShape[T, T]] {
 
-    override val shape = FlowShape.of(in, out)
     val in = Inlet[T]("Time.in")
     val out = Outlet[T]("Time.out")
+    val shape = FlowShape.of(in, out)
+
     private val progress = TimeExecution.timeProgress(processName, target, logger, identity)
     private var counter = 0L
 
@@ -306,9 +307,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
 
   private class BufferedProcessorStage[A, B](processor: (B => Unit) => (A => Unit, () => Unit)) extends GraphStage[FlowShape[A, B]] {
 
-    override val shape = FlowShape.of(in, out)
     val in = Inlet[A]("BufferedStage.in")
     val out = Outlet[B]("BufferedStage.out")
+    val shape = FlowShape.of(in, out)
 
     override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = {
       val buffer = new scala.collection.mutable.Queue[B]()

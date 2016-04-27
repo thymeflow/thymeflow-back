@@ -20,8 +20,6 @@ import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
 
-import scala.concurrent.Future
-
 case class Location(resource: Resource,
                     time: Instant,
                     accuracy: Double,
@@ -98,7 +96,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             saveCluster(cluster, locations)
         }.flatMap {
           _ =>
-            getClusters.via(stage2).mapConcat {
+            getLocationsWithCluster.via(stage2).mapConcat {
               case (observationsAndClusters) =>
                 clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
             }.sliding(2).collect {
@@ -129,15 +127,32 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  def deleteClusters(): Future[Unit] = {
-    Future {
-
-    }
+  def deleteStays() = {
+    deleteClusters(Personal.STAY_EVENT)
   }
 
-  def deleteStays(): Future[Unit] = {
-    Future {
-
+  def deleteClusters(`type`: IRI = Personal.CLUSTER_EVENT) = {
+    val clustersQuery =
+      s"""
+         |SELECT ?cluster ?clusterGeo
+         |WHERE {
+         |  ?cluster a <${`type`}> ;
+         |             <${SchemaOrg.GEO}> ?clusterGeo .
+         |} ORDER BY ?time
+    """.stripMargin
+    Source.fromIterator(() => repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, clustersQuery).evaluate()).runForeach {
+      case bindingSet =>
+        repositoryConnection.begin()
+        Option(bindingSet.getValue("cluster").asInstanceOf[Resource]).foreach {
+          case cluster =>
+            repositoryConnection.remove(cluster, null, null, inferencerContext)
+            repositoryConnection.remove(null: Resource, null: IRI, cluster, inferencerContext)
+        }
+        Option(bindingSet.getValue("clusterGeo").asInstanceOf[Resource]).foreach {
+          case clusterGeo =>
+            repositoryConnection.remove(clusterGeo, null, null, inferencerContext)
+        }
+        repositoryConnection.commit()
     }
   }
 
@@ -193,7 +208,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     repositoryConnection.commit()
   }
 
-  def getClusters: Source[(Location, Option[ClusterObservation]), NotUsed] = {
+  def getLocationsWithCluster: Source[(Location, Option[ClusterObservation]), NotUsed] = {
     val locationsQuery =
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty ?cluster ?clusterLongitude ?clusterLatitude ?clusterFrom ?clusterTo ?clusterUncertainty

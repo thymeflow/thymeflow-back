@@ -104,14 +104,14 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
               case Seq(a) => a
             }.via(stage3).map {
               case cluster =>
-                new ClusterObservation(resource = valueFactory.createBNode(),
+                (new ClusterObservation(resource = valueFactory.createBNode(),
                   from = cluster.observations.head.time,
                   to = cluster.observations.last.time,
                   accuracy = cluster.accuracy,
-                  point = cluster.mean)
+                  point = cluster.mean), cluster.observations)
             }.runForeach {
-              case (cluster) =>
-                saveStay(cluster)
+              case (cluster, locations) =>
+                saveStay(cluster, locations)
             }
         }.map {
           case _ =>
@@ -159,8 +159,8 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  def saveStay(stay: ClusterObservation) = {
-    saveCluster(stay, Traversable.empty, Personal.STAY_EVENT)
+  def saveStay(stay: ClusterObservation, locations: Traversable[Location]) = {
+    saveCluster(stay, locations, Personal.STAY_EVENT)
   }
 
   def saveCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI = Personal.CLUSTER_EVENT) = {

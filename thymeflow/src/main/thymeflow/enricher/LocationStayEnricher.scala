@@ -20,16 +20,16 @@ import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
 
-case class Location(resource: Resource,
-                    time: Instant,
-                    accuracy: Double,
-                    point: Point) extends thymeflow.location.treillis.Observation
+private case class Location(resource: Resource,
+                            time: Instant,
+                            accuracy: Double,
+                            point: Point) extends thymeflow.location.treillis.Observation
 
-class ClusterObservation(val resource: Resource,
-                         val from: Instant,
-                         val to: Instant,
-                         val accuracy: Double,
-                         val point: Point) extends thymeflow.location.treillis.ClusterObservation {
+private case class ClusterObservation(val resource: Resource,
+                                      val from: Instant,
+                                      val to: Instant,
+                                      val accuracy: Double,
+                                      val point: Point) extends thymeflow.location.treillis.ClusterObservation {
   override def equals(obj: scala.Any): Boolean = {
     obj match {
       case other: ClusterObservation if other.isInstanceOf[ClusterObservation] =>
@@ -84,7 +84,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
         )
         getLocations.via(stage1).map {
           case cluster =>
-            (new ClusterObservation(resource = valueFactory.createBNode(),
+            (ClusterObservation(resource = valueFactory.createBNode(),
               from = cluster.observations.head.time,
               to = cluster.observations.last.time,
               accuracy = cluster.accuracy,
@@ -93,7 +93,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
           case (cluster, locations) =>
             // clusters are temporary
             // TODO: save them in some temporary storage
-            saveCluster(cluster, locations)
+            createCluster(cluster, locations)
         }.flatMap {
           _ =>
             getLocationsWithCluster.via(stage2).mapConcat {
@@ -104,14 +104,14 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
               case Seq(a) => a
             }.via(stage3).map {
               case cluster =>
-                (new ClusterObservation(resource = valueFactory.createBNode(),
+                (ClusterObservation(resource = valueFactory.createBNode(),
                   from = cluster.observations.head.time,
                   to = cluster.observations.last.time,
                   accuracy = cluster.accuracy,
                   point = cluster.mean), cluster.observations)
             }.runForeach {
               case (cluster, locations) =>
-                saveStay(cluster, locations)
+                createStay(cluster, locations)
             }.recover {
               case _ => Done
             }.flatMap {
@@ -127,11 +127,11 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  def deleteStays() = {
+  private def deleteStays() = {
     deleteClusters(Personal.STAY_EVENT)
   }
 
-  def deleteClusters(`type`: IRI = Personal.CLUSTER_EVENT) = {
+  private def deleteClusters(`type`: IRI = Personal.CLUSTER_EVENT) = {
     val clustersQuery =
       s"""
          |SELECT ?cluster ?clusterGeo
@@ -156,7 +156,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  def getLocations: Source[Location, NotUsed] = {
+  private def getLocations: Source[Location, NotUsed] = {
     val locationsQuery =
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty
@@ -188,11 +188,11 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  def saveStay(stay: ClusterObservation, locations: Traversable[Location]) = {
-    saveCluster(stay, locations, Personal.STAY_EVENT)
+  private def createStay(stay: ClusterObservation, locations: Traversable[Location]) = {
+    createCluster(stay, locations, Personal.STAY_EVENT)
   }
 
-  def saveCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI = Personal.CLUSTER_EVENT) = {
+  private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI = Personal.CLUSTER_EVENT) = {
     repositoryConnection.begin()
     val model = new SimpleHashModel()
     val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
@@ -208,7 +208,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     repositoryConnection.commit()
   }
 
-  def getLocationsWithCluster: Source[(Location, Option[ClusterObservation]), NotUsed] = {
+  private def getLocationsWithCluster: Source[(Location, Option[ClusterObservation]), NotUsed] = {
     val locationsQuery =
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty ?cluster ?clusterLongitude ?clusterLatitude ?clusterFrom ?clusterTo ?clusterUncertainty
@@ -243,7 +243,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             point = point,
             accuracy = bindingSet.getValue("uncertainty").asInstanceOf[Literal].doubleValue()),
             Option(bindingSet.getValue("cluster").asInstanceOf[Resource]).map {
-              case cluster => new ClusterObservation(resource = cluster,
+              case cluster => ClusterObservation(resource = cluster,
                 from = Instant.parse(bindingSet.getValue("clusterFrom").stringValue()),
                 to = Instant.parse(bindingSet.getValue("clusterTo").stringValue()),
                 point = Geography.point(bindingSet.getValue("clusterLongitude").asInstanceOf[Literal].doubleValue(), bindingSet.getValue("clusterLatitude").asInstanceOf[Literal].doubleValue()),
@@ -258,7 +258,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
-  class BufferedProcessorStage[A, B](processor: (B => Unit) => (A => Unit, () => Unit)) extends GraphStage[FlowShape[A, B]] {
+  private class BufferedProcessorStage[A, B](processor: (B => Unit) => (A => Unit, () => Unit)) extends GraphStage[FlowShape[A, B]] {
 
     val in = Inlet[A]("BufferedStage.in")
     val out = Outlet[B]("BufferedStage.out")

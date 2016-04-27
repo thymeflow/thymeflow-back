@@ -31,7 +31,7 @@ object StateGenerator extends StrictLogging {
       cluster.to >= to.time
     }
     fromState match {
-      case MovingPosition(movingIndex, moving: OBSERVATION, cluster: CLUSTER_OBSERVATION) if allowedStep(movingIndex, moving, observationIndex, observation) =>
+      case MovingPosition(movingIndex, moving, cluster) if allowedStep(movingIndex, moving, observationIndex, observation) =>
         new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
           override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
             clusterOption.collect {
@@ -50,7 +50,7 @@ object StateGenerator extends StrictLogging {
             }
           }
         }
-      case StationaryPosition(stationaryIndex, stationary: OBSERVATION, movingIndex, moving: OBSERVATION, cluster: CLUSTER_OBSERVATION) if allowedStep(movingIndex, moving, observationIndex, observation) =>
+      case StationaryPosition(stationaryIndex, stationary, movingIndex, moving, cluster) if allowedStep(movingIndex, moving, observationIndex, observation) =>
         new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
           override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
             clusterOption.collect {
@@ -69,7 +69,7 @@ object StateGenerator extends StrictLogging {
             }
           }
         }
-      case SamePosition(index: Int, fromObservation: OBSERVATION) =>
+      case SamePosition(index, fromObservation) =>
         new Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] {
           override def foreach[U](f: ((Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])) => U): Unit = {
             val toState = SamePosition[OBSERVATION, CLUSTER_OBSERVATION](observationIndex = observationIndex, observation = observation)

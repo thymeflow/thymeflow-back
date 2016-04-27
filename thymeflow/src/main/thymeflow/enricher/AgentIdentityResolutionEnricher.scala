@@ -41,7 +41,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   extends DelayedEnricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#AgentIdentityResolution")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
 
   private val metric = new LevensteinDistance()
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
@@ -60,7 +60,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?sameAs WHERE {
       ?agent a <${Personal.AGENT}> .
-      GRAPH <http://thomas.pellissier-tanon.fr/personal#inverseFunctionalInferencerOutput> {
+      GRAPH <${Personal.NAMESPACE}inverseFunctionalInferencerOutput> {
         ?agent <${OWL.SAMEAS}> ?sameAs .
       }
     }"""

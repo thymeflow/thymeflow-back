@@ -2,10 +2,10 @@ package thymeflow.enricher
 
 import java.time.{Duration, Instant}
 
-import akka.NotUsed
 import akka.stream.scaladsl.Source
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import akka.stream.{Attributes, FlowShape, Inlet, Outlet}
+import akka.{Done, NotUsed}
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Literal, Resource}
@@ -62,9 +62,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     val minimumStayDuration = Duration.ofMinutes(15)
     val observationEstimatorDuration = Duration.ofMinutes(60)
     val movementEstimatorDuration = Duration.ofMinutes(120)
-    val movementObservationEstimatorDuration = Duration.ofMinutes(0)
     val lambda = 0.95
-    deleteStays().map {
+    logger.info(s"Extracting Location StayEvents {minimumStayDuration=$minimumStayDuration,observationEstimatorDuration=$observationEstimatorDuration,movementEstimatorDuration=$movementEstimatorDuration}.")
+    deleteStays().flatMap {
       _ =>
         val stage1 = new BufferedProcessorStage(
           (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
@@ -74,13 +74,13 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
         )
         val stage2 = new BufferedProcessorStage(
           (out: IndexedSeq[(Location, Option[ClusterObservation])] => Unit) => {
-            val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, movementObservationEstimatorDuration, lambda)(out)
+            val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, lambda)(out)
             (onObservation, onFinish)
           }
         )
         val stage3 = new BufferedProcessorStage(
           (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-            val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(Duration.ZERO, movementObservationEstimatorDuration, lambda)(out)
+            val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
             (onObservation, onFinish)
           }
         )
@@ -93,6 +93,8 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
               point = cluster.mean), cluster.observations)
         }.runForeach {
           case (cluster, locations) =>
+            // clusters are temporary
+            // TODO: save them in some temporary storage
             saveCluster(cluster, locations)
         }.flatMap {
           _ =>
@@ -112,11 +114,23 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             }.runForeach {
               case (cluster, locations) =>
                 saveStay(cluster, locations)
+            }.recover {
+              case _ => Done
+            }.flatMap {
+              case _ =>
+                // clean-up clusters
+                deleteClusters()
             }
         }.map {
           case _ =>
             logger.info("Done extracting Location StayEvents.")
         }
+
+    }
+  }
+
+  def deleteClusters(): Future[Unit] = {
+    Future {
 
     }
   }

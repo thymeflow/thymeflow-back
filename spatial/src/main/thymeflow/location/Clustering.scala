@@ -57,30 +57,7 @@ trait Clustering extends StrictLogging {
     flattenGroupSequenceGeneric(bSequence, aSequenceWithB, xToA, xToBs, bIndex, (indexToAMap: Map[I, A]) => indexToAMap.apply)
   }
 
-  def flattenGroupSequenceGeneric[A, B, X, I, T](bSequence: IndexedSeq[B],
-                                                 aSequenceWithB: IndexedSeq[X],
-                                                 xToA: X => A,
-                                                 xToBs: X => IndexedSeq[B],
-                                                 bIndex: B => I,
-                                                 aRetrieve: (Map[I, A]) => I => T) = {
-    val bIndexToAMap = aSequenceWithB.flatMap {
-      case (x) =>
-        xToBs(x).map {
-          case b =>
-            bIndex(b) -> xToA(x)
-        }
-    }.toMap
-
-    val retrieve = aRetrieve(bIndexToAMap)
-
-    val bSequenceWithA = bSequence.map {
-      case b => (b, retrieve(bIndex(b)))
-    }
-    bSequenceWithA
-  }
-
   def splitMovement[OBSERVATION <: treillis.Observation, CLUSTER_OBSERVATION <: treillis.ClusterObservation](movementEstimatorDuration: Duration,
-                                                                                                             movementObservationEstimatorDuration: Duration,
                                                                                                              lambda: Double)(out: (IndexedSeq[(OBSERVATION, Option[CLUSTER_OBSERVATION])]) => Unit) = {
     val movementEstimator = new treillis.StateEstimator {
       override def distance(from: Point, to: Point): Double = {
@@ -113,6 +90,28 @@ trait Clustering extends StrictLogging {
                                              aSequenceWithB: IndexedSeq[X])
                                             (xToA: X => A, xToBs: X => IndexedSeq[B], bIndex: B => I) = {
     flattenGroupSequenceGeneric(bSequence, aSequenceWithB, xToA, xToBs, bIndex, (indexToAMap: Map[I, A]) => indexToAMap.get)
+  }
+
+  def flattenGroupSequenceGeneric[A, B, X, I, T](bSequence: IndexedSeq[B],
+                                                 aSequenceWithB: IndexedSeq[X],
+                                                 xToA: X => A,
+                                                 xToBs: X => IndexedSeq[B],
+                                                 bIndex: B => I,
+                                                 aRetrieve: (Map[I, A]) => I => T) = {
+    val bIndexToAMap = aSequenceWithB.flatMap {
+      case (x) =>
+        xToBs(x).map {
+          case b =>
+            bIndex(b) -> xToA(x)
+        }
+    }.toMap
+
+    val retrieve = aRetrieve(bIndexToAMap)
+
+    val bSequenceWithA = bSequence.map {
+      case b => (b, retrieve(bIndex(b)))
+    }
+    bSequenceWithA
   }
 
   def extractClustersFromObservations[OBSERVATION <: treillis.Observation](minimumStayDuration: Duration,

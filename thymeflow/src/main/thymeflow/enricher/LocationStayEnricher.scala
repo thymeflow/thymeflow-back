@@ -19,17 +19,20 @@ import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
+import thymeflow.utilities.TimeExecution
+
+import scala.concurrent.Future
 
 private case class Location(resource: Resource,
                             time: Instant,
                             accuracy: Double,
                             point: Point) extends thymeflow.location.treillis.Observation
 
-private case class ClusterObservation(val resource: Resource,
-                                      val from: Instant,
-                                      val to: Instant,
-                                      val accuracy: Double,
-                                      val point: Point) extends thymeflow.location.treillis.ClusterObservation {
+private case class ClusterObservation(resource: Resource,
+                                      from: Instant,
+                                      to: Instant,
+                                      accuracy: Double,
+                                      point: Point) extends thymeflow.location.treillis.ClusterObservation {
   override def equals(obj: scala.Any): Boolean = {
     obj match {
       case other: ClusterObservation if other.isInstanceOf[ClusterObservation] =>
@@ -64,45 +67,27 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     logger.info(s"Extracting Location StayEvents {minimumStayDuration=$minimumStayDuration,observationEstimatorDuration=$observationEstimatorDuration,movementEstimatorDuration=$movementEstimatorDuration}.")
     deleteStays().flatMap {
       _ =>
-        val stage1 = new BufferedProcessorStage(
-          (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-            val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
-            (onObservation, onFinish)
-          }
-        )
-        val stage2 = new BufferedProcessorStage(
-          (out: IndexedSeq[(Location, Option[ClusterObservation])] => Unit) => {
-            val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, lambda)(out)
-            (onObservation, onFinish)
-          }
-        )
-        val stage3 = new BufferedProcessorStage(
-          (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-            val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
-            (onObservation, onFinish)
-          }
-        )
-        getLocations.via(stage1).map {
-          case cluster =>
-            (ClusterObservation(resource = valueFactory.createBNode(),
-              from = cluster.observations.head.time,
-              to = cluster.observations.last.time,
-              accuracy = cluster.accuracy,
-              point = cluster.mean), cluster.observations)
-        }.runForeach {
-          case (cluster, locations) =>
-            // clusters are temporary
-            // TODO: save them in some temporary storage
-            createCluster(cluster, locations)
-        }.flatMap {
-          _ =>
-            getLocationsWithCluster.via(stage2).mapConcat {
-              case (observationsAndClusters) =>
-                clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
-            }.sliding(2).collect {
-              case Seq(a, b) if a.resource != b.resource => a
-              case Seq(a) => a
-            }.via(stage3).map {
+        countLocations.flatMap {
+          locationCount =>
+            val stage1 = new BufferedProcessorStage(
+              (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
+                val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
+                (onObservation, onFinish)
+              }
+            )
+            val stage2 = new BufferedProcessorStage(
+              (out: IndexedSeq[(Location, Option[ClusterObservation])] => Unit) => {
+                val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, lambda)(out)
+                (onObservation, onFinish)
+              }
+            )
+            val stage3 = new BufferedProcessorStage(
+              (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
+                val (onObservation, onFinish, _) = clustering.extractClustersFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
+                (onObservation, onFinish)
+              }
+            )
+            getLocations.via(new TimeStage("location-extraction-stage1", locationCount)).via(stage1).map {
               case cluster =>
                 (ClusterObservation(resource = valueFactory.createBNode(),
                   from = cluster.observations.head.time,
@@ -111,19 +96,39 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
                   point = cluster.mean), cluster.observations)
             }.runForeach {
               case (cluster, locations) =>
-                createStay(cluster, locations)
-            }.recover {
-              case _ => Done
+                // clusters are temporary
+                // TODO: save them in some temporary storage
+                createCluster(cluster, locations)
             }.flatMap {
-              case _ =>
-                // clean-up clusters
-                deleteClusters()
+              _ =>
+                getLocationsWithCluster.via(new TimeStage("location-extraction-stage2", locationCount)).via(stage2).mapConcat {
+                  case (observationsAndClusters) =>
+                    clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
+                }.sliding(2).collect {
+                  case Seq(a, b) if a.resource != b.resource => a
+                  case Seq(a) => a
+                }.via(stage3).map {
+                  case cluster =>
+                    (ClusterObservation(resource = valueFactory.createBNode(),
+                      from = cluster.observations.head.time,
+                      to = cluster.observations.last.time,
+                      accuracy = cluster.accuracy,
+                      point = cluster.mean), cluster.observations)
+                }.runForeach {
+                  case (cluster, locations) =>
+                    createStay(cluster, locations)
+                }.recover {
+                  case _ => Done
+                }.flatMap {
+                  case _ =>
+                    // clean-up clusters
+                    deleteClusters()
+                }
             }
         }.map {
           case _ =>
             logger.info("Done extracting Location StayEvents.")
         }
-
     }
   }
 
@@ -153,6 +158,21 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
             repositoryConnection.remove(clusterGeo, null, null, inferencerContext)
         }
         repositoryConnection.commit()
+    }
+  }
+
+  private def countLocations: Future[Long] = {
+    Future {
+      val countLocationsQuery =
+        s"""
+           |SELECT (count(?location) as ?count)
+           |WHERE {
+           |  ?location a <${Personal.TIME_GEO_LOCATION}> .
+           | }
+      """.stripMargin
+      repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, countLocationsQuery).evaluate().map {
+        case bindingSet => bindingSet.getValue("count").asInstanceOf[Literal].longValue()
+      }.toVector.head
     }
   }
 
@@ -258,12 +278,37 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
+  private class TimeStage[T](processName: String, target: Long, step: Long = 1) extends GraphStage[FlowShape[T, T]] {
+
+    override val shape = FlowShape.of(in, out)
+    val in = Inlet[T]("Time.in")
+    val out = Outlet[T]("Time.out")
+    private val progress = TimeExecution.timeProgress(processName, target, logger, identity)
+    private var counter = 0L
+
+    override def createLogic(attr: Attributes): GraphStageLogic =
+      new GraphStageLogic(shape) {
+        setHandler(in, new InHandler {
+          override def onPush(): Unit = {
+            val elem = grab(in)
+            push(out, elem)
+            counter += step
+            progress(counter)
+          }
+        })
+        setHandler(out, new OutHandler {
+          override def onPull(): Unit = {
+            pull(in)
+          }
+        })
+      }
+  }
+
   private class BufferedProcessorStage[A, B](processor: (B => Unit) => (A => Unit, () => Unit)) extends GraphStage[FlowShape[A, B]] {
 
+    override val shape = FlowShape.of(in, out)
     val in = Inlet[A]("BufferedStage.in")
     val out = Outlet[B]("BufferedStage.out")
-
-    val shape = FlowShape.of(in, out)
 
     override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = {
       val buffer = new scala.collection.mutable.Queue[B]()

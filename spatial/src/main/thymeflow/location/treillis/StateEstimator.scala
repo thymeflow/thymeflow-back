@@ -5,7 +5,6 @@ import java.time.Duration
 import com.typesafe.scalalogging.StrictLogging
 import thymeflow.graph.ShortestPath
 import thymeflow.spatial.geographic
-import thymeflow.utilities.TimeExecution
 
 import scala.collection.Traversable
 
@@ -37,47 +36,44 @@ trait StateEstimator extends StrictLogging {
     implicit val clusterDeserializer = (index: Int) => clusters(index)
     implicit val clusterSeerializer = (cluster: CLUSTER_OBSERVATION) => clusterToIndexMap(cluster)
     val lastIndex = observations.indices.last
-    def outgoingLambda(progress: Long => Unit): ((Int, Long)) => Traversable[(Unit, Double, State[OBSERVATION, CLUSTER_OBSERVATION])] = {
-      case (stateSerialized@(index: Int, _: Long)) =>
-        val fromState = State.deserialize(stateSerialized)
-        val nextIndex = index + 1
-        progress(nextIndex)
-        if (nextIndex > lastIndex) {
-          Vector.empty
-        } else {
-          val (nextObservation, nextObservationCluster) = observations(nextIndex)
-          val previousObservationCluster = observations(index)._2
-          StateGenerator.generator(fromState,
-            previousObservationCluster,
-            nextIndex,
-            nextObservation,
-            nextObservationCluster,
-            distance,
-            lookupDuration
-          )
-        }
+    val outgoingLambda = (stateSerialized: (Int, Long)) => {
+      val fromState = State.deserialize(stateSerialized)
+      val index = fromState.observationIndex
+      val nextIndex = index + 1
+      if (nextIndex > lastIndex) {
+        Traversable.empty
+      } else {
+        val (nextObservation, nextObservationCluster) = observations(nextIndex)
+        val previousObservationCluster = observations(index)._2
+        StateGenerator.generator(fromState,
+          previousObservationCluster,
+          nextIndex,
+          nextObservation,
+          nextObservationCluster,
+          distance,
+          lookupDuration
+        )
+      }
     }
 
     val initial = State.serialize(SamePosition[OBSERVATION, CLUSTER_OBSERVATION](0, observations.head._1))
     val targetNodeIndex = lastIndex
 
-    TimeExecution.timeProgress("state-estimator", observations.length, logger, {
-      case progress =>
-        val outgoing = outgoingLambda(progress)(_: (Int, Long)).view.map {
-          case (edge, weight, state) => (edge, weight, state.serialize)
-        }
-        val sp = ShortestPath.explicit[(Int, Long), Unit, Double](outgoing = outgoing)
-        val result = sp.shortestNodePathConditional(Vector(initial), x => {
-          val isTarget = x._1 == targetNodeIndex
-          (isTarget, isTarget)
-        }).headOption.flatMap(_._2).map {
-          case (p, _) => p.nodes.tail
-        }
-        if (result.isEmpty) {
-          logger.warn(s"Found empty path to $targetNodeIndex")
-        }
-        result.map(_.map(State.deserialize(_)(observationDeserializer, clusterDeserializer)))
-    })
+
+    val outgoing = outgoingLambda(_: (Int, Long)).view.map {
+      case (edge, weight, state) => (edge, weight, state.serialize)
+    }
+    val sp = ShortestPath.explicit[(Int, Long), Unit, Double](outgoing = outgoing)
+    val result = sp.shortestNodePathConditional(Vector(initial), x => {
+      val isTarget = x._1 == targetNodeIndex
+      (isTarget, isTarget)
+    }).headOption.flatMap(_._2).map {
+      case (p, _) => p.nodes.tail
+    }
+    if (result.isEmpty) {
+      logger.warn(s"Found empty path to $targetNodeIndex")
+    }
+    result.map(_.map(State.deserialize(_)(observationDeserializer, clusterDeserializer)))
   }
 
 

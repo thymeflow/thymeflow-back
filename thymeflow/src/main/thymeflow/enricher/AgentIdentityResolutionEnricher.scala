@@ -6,7 +6,7 @@ import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.lucene.search.spell.LevensteinDistance
 import org.openrdf.model.impl.SimpleLiteral
-import org.openrdf.model.vocabulary.{OWL, RDF}
+import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
@@ -33,6 +33,10 @@ case class TextNamePart(content: String) extends NamePart
 
 case class VariableNamePart(id: Int) extends NamePart
 
+/**
+  *
+  * Depends on InverseFunctionalPropertyInferencer
+  */
 class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
   extends DelayedEnricher with StrictLogging {
 
@@ -53,85 +57,78 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val tokenSeparator =
     """[\p{Punct}\s\u2022]+""".r
 
-  def runEnrichments() = {
+  private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?sameAs WHERE {
+      ?agent a <${Personal.AGENT}> .
+      GRAPH <http://thomas.pellissier-tanon.fr/personal#inverseFunctionalInferencerOutput> {
+        ?agent <${OWL.SAMEAS}> ?sameAs .
+      }
+    }"""
+  )
+  private val agentEmailAddressesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?emailAddress WHERE {
+       ?agent a <${Personal.AGENT}> ;
+              <${SchemaOrg.EMAIL}>/<${SchemaOrg.NAME}> ?emailAddress .
+    }"""
+  )
+  private val numberOfMessagesByAgentNameQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?name (COUNT(?msg) as ?msgCount) WHERE {
+      ?agent a <${Personal.AGENT}> ;
+             <${SchemaOrg.NAME}> ?name .
+      OPTIONAL {
+        {
+          ?msg <${SchemaOrg.RECIPIENT}> ?agent .
+        } UNION {
+          ?msg <${SchemaOrg.SENDER}> ?agent .
+        }
+      }
+    } GROUP BY ?agent ?name"""
+  )
+  private val emailAddressesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?emailAddressName ?domain ?localPart WHERE {
+      ?emailAddress <${Personal.DOMAIN}> ?domain ;
+                    <${Personal.LOCAL_PART}> ?localPart ;
+                    <${SchemaOrg.NAME}> ?emailAddressName .
+    }"""
+  )
+  private val agentNamesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?nameProperty ?name WHERE {
+      ?agent a <${Personal.AGENT}> ;
+             ?nameProperty ?name .
+      FILTER( ?nameProperty = <${SchemaOrg.GIVEN_NAME}> || ?nameProperty = <${SchemaOrg.FAMILY_NAME}> )
+    }"""
+  )
 
-    val agentEmailAddressesQuery =
-      s"""
-         |SELECT ?agent ?emailAddress
-         |WHERE {
-         |  ?agent <${SchemaOrg.EMAIL}> ?x .
-         |  ?x <${SchemaOrg.NAME}> ?emailAddress .
-         | }
-      """.stripMargin
+  override protected def runEnrichments() = {
+    val agentFacetRepresentativeMap = getSharedIdRepresentativeByAgent
 
-    val agentFacetEmailAddresses = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentEmailAddressesQuery).evaluate().toIterator.map {
-      bindingSet =>
-        (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
-    }.collect {
-      case (Some(agent), Some(emailAddress)) => (agent, emailAddress)
-    }.toVector
-
-    val agentFacetRepresentativeMap = getResourceRepresentatives(agentFacetEmailAddresses)
-
-    val agentEmailAddresses = agentFacetEmailAddresses.map {
-      case (agent, emailAddress) => (agentFacetRepresentativeMap(agent), emailAddress)
-    }.groupBy(_._1).map {
-      case (agentRepresentative, g) => (agentRepresentative, g.map(_._2).distinct)
+    val agentEmailAddresses = agentEmailAddressesQuery.evaluate().toIterator.map(bindingSet =>
+      (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
+    ).collect {
+      case (Some(agent), Some(emailAddress)) => (agentFacetRepresentativeMap.getOrElse(agent, agent), emailAddress)
+    }.toTraversable.groupBy(_._1).map {
+      case (agentRepresentative, g) => (agentRepresentative, g.map(_._2))
     }
 
     val agentFacetRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
     val agentFacetRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
 
-    val messageFilter =
-      s"""
-         |  {
-         |    ?msg <${SchemaOrg.RECIPIENT}> ?agent .
-         |  } UNION {
-         |    ?msg <${SchemaOrg.SENDER}> ?agent .
-         |  }
-      """.stripMargin
-
-    val agentNamesInMessagesQuery =
-      s"""
-         |SELECT ?agent ?name (COUNT(?msg) as ?msgCount)
-         |WHERE {
-         |  ?agent <${SchemaOrg.NAME}> ?name .
-         |  ?agent <${RDF.TYPE}> <${Personal.AGENT}> .
-         |  $messageFilter
-         | } GROUP BY ?agent ?name
-      """.stripMargin
-
-    repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesInMessagesQuery).evaluate().foreach {
-      bindingSet =>
-        val (agentOption, nameOption, msgCountOption) = (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("name")).map(_.stringValue()), Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral]))
-        (agentOption, nameOption, msgCountOption) match {
-          case (Some(agent), Some(name), Some(msgCount)) =>
-            val agentRepresentative = agentFacetRepresentativeMap.getOrElse(agent, agent)
-            agentFacetRepresentativeMessageNamesBuilder += ((agentRepresentative, name, msgCount.longValue()))
-          case _ =>
-        }
-    }
-
-    val agentNamesNotInMessagesQuery =
-      s"""
-         |SELECT ?agent ?name
-         |WHERE {
-         |  ?agent <${SchemaOrg.NAME}> ?name .
-         |  ?agent <${RDF.TYPE}> <${Personal.AGENT}> .
-         |  FILTER NOT EXISTS { $messageFilter }
-         | }
-      """.stripMargin
-
-    repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesNotInMessagesQuery).evaluate().foreach {
-      bindingSet =>
-        val (agentOption, nameOption) = (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("name")).map(_.stringValue()))
-        (agentOption, nameOption) match {
-          case (Some(agent), Some(name)) =>
-            val agentRepresentative = agentFacetRepresentativeMap.getOrElse(agent, agent)
+    numberOfMessagesByAgentNameQuery.evaluate().foreach(bindingSet => {
+      (
+        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+        Option(bindingSet.getValue("name")).map(_.stringValue()),
+        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral].longValue())
+        ) match {
+        case (Some(agent), Some(name), Some(msgCount)) =>
+          val agentRepresentative = agentFacetRepresentativeMap.getOrElse(agent, agent)
+          if (msgCount == 0) {
             agentFacetRepresentativeContactNamesBuilder += ((agentRepresentative, name, 1))
-          case _ =>
-        }
-    }
+          } else {
+            agentFacetRepresentativeMessageNamesBuilder += ((agentRepresentative, name, msgCount))
+          }
+        case _ =>
+      }
+    })
     val agentFacetRepresentativeContactNames = agentFacetRepresentativeContactNamesBuilder.result()
     val agentFacetRepresentativeMessageNames = agentFacetRepresentativeMessageNamesBuilder.result()
 
@@ -148,7 +145,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
       }
 
-    val agentStringValueToAgent = (agentFacetEmailAddresses.map(_._1) ++ agentFacetRepresentativeNames.keys).map {
+    val agentStringValueToAgent = (agentFacetRepresentativeNames.keys ++ agentEmailAddresses.keys).map {
       case (agent) => (agent.stringValue(), agent)
     }(scala.collection.breakOut): Map[String, Resource]
 
@@ -220,17 +217,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   def agentNames(agentFacetRepresentativeMessageNames: Map[Resource, Map[String, Long]],
                  agentEmailAddressMap: Map[Resource, Traversable[String]],
                  agentRepresentativeMap: Map[Resource, Resource]) = {
-    val emailAddressesQuery =
-      s"""
-         |SELECT ?emailAddressName ?domain ?localPart
-         |WHERE {
-         |  ?emailAddress <${Personal.DOMAIN}> ?domain .
-         |  ?emailAddress <${Personal.LOCAL_PART}> ?localPart .
-         |  ?emailAddress <${SchemaOrg.NAME}> ?emailAddressName .
-         |}
-      """.stripMargin
-
-    val emailAddressesDecomposition = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, emailAddressesQuery).evaluate().toIterator.map {
+    val emailAddressesDecomposition = emailAddressesQuery.evaluate().toIterator.map {
       bindingSet =>
         (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
           Option(bindingSet.getValue("localPart")).map(_.stringValue()),
@@ -239,16 +226,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
     }.toMap
 
-    val agentNamesQuery =
-      s"""
-         |SELECT ?agent ?nameProperty ?name
-         |WHERE {
-         |  ?agent ?nameProperty ?name .
-         |  FILTER( ?nameProperty = <${SchemaOrg.GIVEN_NAME}> || ?nameProperty = <${SchemaOrg.FAMILY_NAME}> )
-         |}
-      """.stripMargin
-
-    val agentNameParts = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, agentNamesQuery).evaluate().toIterator.map {
+    val agentNameParts = agentNamesQuery.evaluate().toIterator.map {
       bindingSet =>
         (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
           Option(bindingSet.getValue("nameProperty").asInstanceOf[IRI]),
@@ -528,42 +506,28 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   }
 
   /**
-    * Given a binary relation R over (RESOURCE, VALUE) tuples, computes the RESOURCE equivalence
-    * classes imposed by an inverse functionality constraint over R.
-    *
-    * @param resourceValues the set (RESOURCE, VALUE) tuples of relation R.
-    * @tparam RESOURCE the RESOURCE type
-    * @tparam VALUE    the VALUE type
-    * @return a RESOURCE -> RESOURCE map assigning to each RESOURCE its equivalence class representative
+    * @return a map that gives for each agent its equivalent class representative with the "shared id" (email, url...)
+    *         equivalence relation
     */
-  private def getResourceRepresentatives[RESOURCE, VALUE](resourceValues: Traversable[(RESOURCE, VALUE)]) = {
-    val resourceValuesByValue = resourceValues.groupBy(_._2).map { case (value, g) => value -> g.map(_._1) }
-    val resourceValuesByResource = resourceValues.groupBy(_._1).map { case (resource, g) => resource -> g.map(_._2) }
+  private def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
+    val sameIdAgents = getSameIdAgents
+    ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
+      .flatMap(connectedComponent => connectedComponent.map(_ -> connectedComponent.head))
+      .toMap
+  }
 
-    val resourceComponents = ConnectedComponents.compute[Either[RESOURCE, VALUE]](resourceValuesByValue.keys.map(Right(_)), {
-      case Left(agent) => resourceValuesByResource.getOrElse(agent, Vector.empty).map(Right.apply)
-      case Right(emailAddress) => resourceValuesByValue.getOrElse(emailAddress, Vector.empty).map(Left.apply)
-    }).map {
-      case component =>
-        val resources = component.collect {
-          case Left(agent) => agent
-        }
-        val values = component.collect {
-          case Right(emailAddress) => emailAddress
-        }
-        val representative = resources.head
-        (representative, resources, values)
+  private def getSameIdAgents: Map[Resource, Traversable[Resource]] = {
+    sameAgentAsQuery.evaluate().flatMap(bindingSet =>
+      (
+        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+        Option(bindingSet.getValue("sameAs").asInstanceOf[Resource])
+        ) match {
+        case (Some(agent), Some(sameAs)) => Some(agent, sameAs)
+        case _ => None
+      }
+    ).toTraversable.groupBy(_._1).map {
+      case (agent1, g) => agent1 -> g.map(_._2)
     }
-
-    val resourceRepresentativeMap = resourceComponents.flatMap {
-      case (representative, agentFacets, _) =>
-        agentFacets.map {
-          case (agentFacet) =>
-            (agentFacet, representative)
-        }
-    }.toMap
-
-    resourceRepresentativeMap
   }
 
   /**
@@ -645,6 +609,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     idfs
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
                                    clearDuplicateNestedResults: Boolean = false)(value1: String) = {
@@ -660,10 +628,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /** *

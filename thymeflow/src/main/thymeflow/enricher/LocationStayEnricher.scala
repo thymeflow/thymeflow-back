@@ -24,6 +24,9 @@ import thymeflow.utilities.{ExceptionUtils, TimeExecution}
 import scala.concurrent.Future
 import scala.util.Failure
 
+/**
+  * @author David Montoya
+  */
 private case class Location(resource: Resource,
                             time: Instant,
                             accuracy: Double,
@@ -45,10 +48,6 @@ private case class ClusterObservation(resource: Resource,
   override def hashCode(): Int = resource.hashCode()
 }
 
-
-/**
-  * @author David Montoya
-  */
 class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay: scala.concurrent.duration.Duration)
   extends DelayedEnricher with StrictLogging {
 

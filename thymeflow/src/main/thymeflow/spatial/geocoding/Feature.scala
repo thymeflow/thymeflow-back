@@ -6,7 +6,7 @@ import thymeflow.spatial.geographic.Point
   * @author David Montoya
   */
 trait Feature {
-  def source: Source
+  def source: FeatureSource
 
   def point: Point
 

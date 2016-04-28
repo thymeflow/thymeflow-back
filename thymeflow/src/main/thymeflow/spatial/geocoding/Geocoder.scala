@@ -20,7 +20,26 @@ trait Geocoder {
 
 
 object Geocoder {
+  /**
+    * Geocoder client for Photon (http://photon.komoot.de/)
+    *
+    * @param serviceUri the Photon geocoder's URI
+    * @return a PhotonGeocoder
+    */
   def photon(serviceUri: Uri) = geocoding.photon.Geocoder(serviceUri)
 
-  def google() = throw new NotImplementedError()
+  /**
+    * Wraps the geocoder's responses within some persistent cache
+    *
+    * @param geocoder the geocoder to cache
+    * @return a Geocoder that caches responses
+    */
+  def cached(geocoder: Geocoder) = throw new NotImplementedError()
+
+  /**
+    * Geocoder client for Google Maps API
+    *
+    * @return a GoogleMapsGeocoder
+    */
+  def googleMaps() = throw new NotImplementedError()
 }

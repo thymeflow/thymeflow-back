@@ -52,6 +52,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val entityMatchIndices = matchingDistance.matchIndices _
   private val parallelism = 1
   private val sameAsThreshold = 0.7d
+  // contactRelativeWeight must be between 0 and 1 or None
+  private val contactRelativeWeight = Option(0.5)
   private val persistenceThreshold = 0.9d
   // \u2022 is the bullet character
   private val tokenSeparator =
@@ -74,7 +76,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   private val numberOfMessagesByAgentNameQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?name (COUNT(?msg) as ?msgCount) WHERE {
       ?agent a <${Personal.AGENT}> ;
-             <${SchemaOrg.NAME}> ?name .
+               <${SchemaOrg.NAME}> ?name .
       OPTIONAL {
         {
           ?msg <${SchemaOrg.RECIPIENT}> ?agent .
@@ -100,68 +102,35 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   )
 
   override protected def runEnrichments() = {
-    val agentFacetRepresentativeMap = getSharedIdRepresentativeByAgent
+    // get a map assigning to each agent facet its representative in the "shared id" equivalence class
+    val agentRepresentativeMap = getSharedIdRepresentativeByAgent
+    // get the list email addresses for each agent
+    val agentRepresentativeEmailAddresses = getAgentEmails(agentRepresentativeMap.apply)
+    // the name counts for each agent
+    val (agentRepresentativeContactNames, agentRepresentativeMessageNames) = getAgentNameCounts(agentRepresentativeMap.apply)
 
-    val agentEmailAddresses = agentEmailAddressesQuery.evaluate().toIterator.map(bindingSet =>
-      (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
-    ).collect {
-      case (Some(agent), Some(emailAddress)) => (agentFacetRepresentativeMap.getOrElse(agent, agent), emailAddress)
-    }.toTraversable.groupBy(_._1).map {
-      case (agentRepresentative, g) => (agentRepresentative, g.map(_._2))
-    }
+    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses, agentRepresentativeMap)
 
-    val agentFacetRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
-    val agentFacetRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
+    val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
 
-    numberOfMessagesByAgentNameQuery.evaluate().foreach(bindingSet => {
-      (
-        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
-        Option(bindingSet.getValue("name")).map(_.stringValue()),
-        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral].longValue())
-        ) match {
-        case (Some(agent), Some(name), Some(msgCount)) =>
-          val agentRepresentative = agentFacetRepresentativeMap.getOrElse(agent, agent)
-          if (msgCount == 0) {
-            agentFacetRepresentativeContactNamesBuilder += ((agentRepresentative, name, 1))
-          } else {
-            agentFacetRepresentativeMessageNamesBuilder += ((agentRepresentative, name, msgCount))
-          }
-        case _ =>
-      }
-    })
-    val agentFacetRepresentativeContactNames = agentFacetRepresentativeContactNamesBuilder.result()
-    val agentFacetRepresentativeMessageNames = agentFacetRepresentativeMessageNamesBuilder.result()
-
-    agentNames(agentFacetRepresentativeMessageNames, agentEmailAddresses, agentFacetRepresentativeMap)
-
-    val contactWeight = 1.0
-    val agentFacetRepresentativeNames = (agentFacetRepresentativeContactNames.map((_, contactWeight)) ++ agentFacetRepresentativeMessageNames.map((_, 1.0)))
-      .groupBy(_._1._1).map {
-      case (agent, g) =>
-        val nameWithWeights = g.flatMap(x => x._1._2.map((_, x._2)))
-        agent -> nameWithWeights.groupBy(_._1._1).map {
-          case (name, h) =>
-            name -> h.map(x => (x._2 * x._1._2).toLong).sum
-        }
-      }
-
-    val agentStringValueToAgent = (agentFacetRepresentativeNames.keys ++ agentEmailAddresses.keys).map {
+    val agentRepresentativeIRIToResourceMap = (agentRepresentativeNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
       case (agent) => (agent.stringValue(), agent)
     }(scala.collection.breakOut): Map[String, Resource]
 
-    val agentFacetAndNames = agentFacetRepresentativeNames.flatMap {
-      case (agentFacet, nameCounts) =>
+    // compute a (Agent, Name) list
+    val agentAndNames = agentRepresentativeNames.flatMap {
+      case (agent, nameCounts) =>
         nameCounts.keys.map {
-          case name => (agentFacet, name)
+          case name => (agent, name)
         }
     }(scala.collection.breakOut): Vector[(Resource, String)]
 
-    val termIDFs = computeTermIDFs(agentFacetAndNames.view.map(_._2))
-    val textMatch = entityMatchingScore(entityMatchingWeightCombine(termIDFs), entityMatchingWeight) _
+    val termIDFs = computeTermIDFs(agentAndNames.view.map(_._2))
+    val textMatchScore = entityMatchingScore(entityMatchingWeightCombine(termIDFs), entityMatchingWeight) _
 
-    FullTextSearchServer[Resource](agentStringValueToAgent.apply)(_.stringValue()).flatMap {
+    FullTextSearchServer[Resource](agentRepresentativeIRIToResourceMap.apply)(_.stringValue()).flatMap {
       case textSearchServer =>
-        textSearchServer.add(agentFacetAndNames).flatMap {
+        textSearchServer.add(agentAndNames).flatMap {
           case _ =>
             textSearchServer.refreshIndex()
         }.map {
@@ -174,7 +143,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         implicit val orderedValues = (thisValue: Resource) => new Ordered[Resource] {
           override def compare(that: Resource): Int = thisValue.stringValue().compare(that.stringValue())
         }
-        val source = Source.fromIterator(() => agentFacetAndNames.iterator).mapAsync(parallelism) {
+        val source = Source.fromIterator(() => agentAndNames.iterator).mapAsync(parallelism) {
           case (agent1, name1) =>
             recognizeEntities(entityRecognizer)(Int.MaxValue, clearDuplicateNestedResults = true)(name1).map {
               _.collect({
@@ -183,7 +152,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }.mapConcat(_.toVector).map {
           case (s1, s2, text1, text2, matchText1) =>
-            textMatch(text1, text2).map {
+            textMatchScore(text1, text2).map {
               case t => (s1, s2, matchText1, t)
             }
         }.collect {
@@ -193,13 +162,13 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
           case equalities =>
             // Filter candidate equalities over a certain threshold in both inclusions
             val sameAsCandidates: Vector[(Resource, Resource)] = equalities.collect {
-              case ((i1, i2), (w1, w2)) if w1 >= sameAsThreshold && w2 >= sameAsThreshold => (i1, i2)
+              case ((agent1, agent2), (leftInclusionWeight, rightInclusionWeight)) if leftInclusionWeight >= sameAsThreshold && rightInclusionWeight >= sameAsThreshold => (agent1, agent2)
             }(scala.collection.breakOut)
             val ordering = implicitly[Ordering[Double]].reverse
-            def nameStatements(instance: Resource) = agentFacetRepresentativeNames.get(instance).map(_.toIterable).getOrElse(Iterable.empty)
+            def nameStatements(instance: Resource) = agentRepresentativeNames.get(instance).map(_.toIterable).getOrElse(Iterable.empty)
             // Compute final equality weights
             val equalityWeights = getEqualityWeights(sameAsCandidates, nameStatements, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
-            // Save equalities as owl:sameAs relations in the Repository
+            // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalityWeights.foreach {
               case (instance1, _, instance2, _, weight) if weight >= persistenceThreshold =>
@@ -214,7 +183,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
-  def agentNames(agentFacetRepresentativeMessageNames: Map[Resource, Map[String, Long]],
+  def agentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
                  agentEmailAddressMap: Map[Resource, Traversable[String]],
                  agentRepresentativeMap: Map[Resource, Resource]) = {
     val emailAddressesDecomposition = emailAddressesQuery.evaluate().toIterator.map {
@@ -242,9 +211,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         }
     }
 
-    val agentWithAllNames = (agentFacetRepresentativeMessageNames.keySet ++ entityPreferredNames.keySet).view.map {
+    val agentWithAllNames = (agentRepresentativeMessageNames.keySet ++ entityPreferredNames.keySet).view.map {
       case agent =>
-        agent ->(agentFacetRepresentativeMessageNames.getOrElse(agent, Traversable.empty), entityPreferredNames.getOrElse(agent, Vector.empty))
+        agent ->(agentRepresentativeMessageNames.getOrElse(agent, Traversable.empty), entityPreferredNames.getOrElse(agent, Vector.empty))
     }.toVector
 
     val reconciledAgentNames = reconcileEntityNames(agentWithAllNames, entityMatchIndices)
@@ -463,7 +432,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   }
 
   private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
-                                           nameStatements: (RESOURCE) => Traversable[(String, Long)],
+                                           nameStatements: (RESOURCE) => Traversable[(String, Double)],
                                            termIDFs: Map[String, Double],
                                            entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
     equalityCandidates.map {
@@ -484,8 +453,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
                     case (s1, s2, w) => (s2, s1, w)
                   }
                   val maxWeight = scala.math.max(entityMatchingWeightCombine(termIDFs)(split1, split2, weight1), entityMatchingWeightCombine(termIDFs)(split2, split1, weight2))
-                  weight += (count1 * count2).toDouble * maxWeight
-                  normalization += (count1 * count2).toDouble
+                  weight += (count1 * count2) * maxWeight
+                  normalization += (count1 * count2)
                 }
             }
         }
@@ -505,17 +474,27 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   /**
-    * @return a map that gives for each agent its equivalent class representative with the "shared id" (email, url...)
+    * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
     *         equivalence relation
+    *         by default, an unknown agent is represented by itself
     */
   private def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
     val sameIdAgents = getSameIdAgents
     ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
       .flatMap(connectedComponent => connectedComponent.map(_ -> connectedComponent.head))
       .toMap
+      .withDefault(identity)
   }
 
+  /**
+    *
+    * @return a map that assigns for each agent its equivalent resources under the "shared id" equivalence relation
+    */
   private def getSameIdAgents: Map[Resource, Traversable[Resource]] = {
     sameAgentAsQuery.evaluate().flatMap(bindingSet =>
       (
@@ -528,6 +507,101 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     ).toTraversable.groupBy(_._1).map {
       case (agent1, g) => agent1 -> g.map(_._2)
     }
+  }
+
+  /**
+    * For each agent, assign weights to each name, by considering the relative weight contact names have versus messages
+    * A priori, contact names are more important and the weight of contact names will sum to at least contactRelativeWeight
+    * or more if contact names are already more important. If contactRelativeWeight is not set, this procedure simply computes name weights by considering
+    * contact name ocurrences just as important as message name ocurrences
+    *
+    * @param agentRepresentativeContactNames
+    * @param agentRepresentativeMessageNames
+    * @return a map assigning to each agent a list of names and their weights.
+    *         for each agent, all weights sum up to 1.0
+    */
+  private def getAgentNameWeights(agentRepresentativeContactNames: Map[Resource, Map[String, Long]],
+                                  agentRepresentativeMessageNames: Map[Resource, Map[String, Long]]) = {
+    (agentRepresentativeContactNames.map((_, true)).view ++ agentRepresentativeMessageNames.map((_, false)).view).toIndexedSeq
+      .groupBy(_._1._1).map {
+      case (agent, g) =>
+        val namesForAgent = g.flatMap {
+          case ((_, names), isContactAgent) => names.map {
+            case (name, count) => (name, count, isContactAgent)
+          }
+        }
+        val (totalNameCountsForContact, totalNameCountsForMessages) = namesForAgent.view.collect {
+          case (_, count, true) => (count, 0L)
+          case (_, count, false) => (0L, count)
+        }.foldLeft((0L, 0L)) {
+          case ((x1, y1), (x2, y2)) => (x1 + x2, y1 + y2)
+        }
+        assert(totalNameCountsForContact + totalNameCountsForMessages != 0L)
+        val s = (totalNameCountsForMessages + totalNameCountsForContact).toDouble
+        val (contactMultiplier, messageMultiplier) = contactRelativeWeight match {
+          case Some(relativeWeight) =>
+            val currentContactWeight = totalNameCountsForContact.toDouble / s
+            if (currentContactWeight >= relativeWeight) {
+              (1 / s, 1 / s)
+            } else {
+              (relativeWeight / totalNameCountsForContact.toDouble, (1d - relativeWeight) / totalNameCountsForMessages.toDouble)
+            }
+          case None =>
+            (1 / s, 1 / s)
+        }
+        agent -> namesForAgent.groupBy(_._1).map {
+          case (name, h) =>
+            name -> h.collect {
+              case (_, count, true) => count.toDouble * contactMultiplier
+              case (_, count, false) => count.toDouble
+            }.sum
+        }
+    }
+  }
+
+  /**
+    *
+    * @param getAgentRepresentative a function that assigns to each agent its equivalent class representative
+    * @return
+    */
+  private def getAgentEmails(getAgentRepresentative: Resource => Resource) = {
+    agentEmailAddressesQuery.evaluate().toIterator.map(bindingSet =>
+      (Option(bindingSet.getValue("agent").asInstanceOf[Resource]), Option(bindingSet.getValue("emailAddress")).map(_.stringValue()))
+    ).collect {
+      case (Some(agent), Some(emailAddress)) => (getAgentRepresentative(agent), emailAddress)
+    }.toTraversable.groupBy(_._1).map {
+      case (agentRepresentative, g) => (agentRepresentative, g.map(_._2))
+    }
+  }
+
+  /**
+    *
+    * @param getAgentRepresentative function that assigns to each agent its equivalent class representative
+    * @return two maps assigning to each agent a list of names with their ocurrence, for contact cards and message, respectively
+    */
+  private def getAgentNameCounts(getAgentRepresentative: Resource => Resource) = {
+    val agentRepresentativeMessageNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
+    val agentRepresentativeContactNamesBuilder = resourceValueOccurrenceCounter[Resource, String]()
+
+    numberOfMessagesByAgentNameQuery.evaluate().foreach(bindingSet => {
+      (
+        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+        Option(bindingSet.getValue("name")).map(_.stringValue()),
+        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral].longValue())
+        ) match {
+        case (Some(agent), Some(name), Some(msgCount)) =>
+          val agentRepresentative = getAgentRepresentative(agent)
+          if (msgCount == 0) {
+            agentRepresentativeContactNamesBuilder += ((agentRepresentative, name, 1))
+          } else {
+            agentRepresentativeMessageNamesBuilder += ((agentRepresentative, name, msgCount))
+          }
+        case _ =>
+      }
+    })
+    val agentRepresentativeContactNames = agentRepresentativeContactNamesBuilder.result()
+    val agentRepresentativeMessageNames = agentRepresentativeMessageNamesBuilder.result()
+    (agentRepresentativeContactNames, agentRepresentativeMessageNames)
   }
 
   /**
@@ -607,10 +681,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (term, terms) => term -> math.log(N / terms.size)
     }
     idfs
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])

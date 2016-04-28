@@ -10,7 +10,8 @@ class FlowAlgorithmsSpec extends FlatSpec with Matchers {
   "minCostMaxFlow" should "solve min-cost max-flow in a simple trellis" in {
     val edges = Vector(
       (0, 1, 1.0, 0.0),
-      (1, 2, 1.0, 4.0), (1, 3, 1.0, 10.0),
+      (1, 2, 1.0, 4.0),
+      (1, 3, 1.0, 10.0),
       (2, 4, 1.0, 1.0),
       (3, 4, 1.0, 3.0)
     )

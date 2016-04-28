@@ -27,27 +27,6 @@ import scala.util.Failure
 /**
   * @author David Montoya
   */
-private case class Location(resource: Resource,
-                            time: Instant,
-                            accuracy: Double,
-                            point: Point) extends thymeflow.location.treillis.Observation
-
-private case class ClusterObservation(resource: Resource,
-                                      from: Instant,
-                                      to: Instant,
-                                      accuracy: Double,
-                                      point: Point) extends thymeflow.location.treillis.ClusterObservation {
-  override def equals(obj: scala.Any): Boolean = {
-    obj match {
-      case other: ClusterObservation if other.isInstanceOf[ClusterObservation] =>
-        other.resource == resource
-      case _ => false
-    }
-  }
-
-  override def hashCode(): Int = resource.hashCode()
-}
-
 class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay: scala.concurrent.duration.Duration)
   extends DelayedEnricher with StrictLogging {
 
@@ -142,6 +121,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
   }
 
   private def deleteClusters(`type`: IRI = Personal.CLUSTER_EVENT) = {
+    //TODO: use SPARQL REMOVE
     val clustersQuery =
       s"""
          |SELECT ?cluster ?clusterGeo
@@ -354,4 +334,23 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
+  private case class Location(resource: Resource,
+                              time: Instant,
+                              accuracy: Double,
+                              point: Point) extends thymeflow.location.treillis.Observation
+
+  private case class ClusterObservation(resource: Resource,
+                                        from: Instant,
+                                        to: Instant,
+                                        accuracy: Double,
+                                        point: Point) extends thymeflow.location.treillis.ClusterObservation {
+    override def equals(obj: scala.Any): Boolean = {
+      obj match {
+        case other: ClusterObservation => other.resource == resource
+        case _ => false
+      }
+    }
+
+    override def hashCode(): Int = resource.hashCode()
+  }
 }

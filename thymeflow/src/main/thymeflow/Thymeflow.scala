@@ -3,7 +3,7 @@ package thymeflow
 import java.io.File
 
 import com.typesafe.scalalogging.StrictLogging
-import thymeflow.enricher.{AgentIdentityResolutionEnricher, InverseFunctionalPropertyInferencer, LocationStayEnricher, PrimaryFacetEnricher}
+import thymeflow.enricher._
 import thymeflow.rdf.RepositoryFactory
 import thymeflow.sync.FileSynchronizer
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
@@ -23,8 +23,8 @@ object Thymeflow extends StrictLogging {
     val pipeline = new Pipeline(repository.getConnection, List(
       new InverseFunctionalPropertyInferencer(repository.getConnection),
       new LocationStayEnricher(repository.getConnection, 10 seconds),
-      new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds),
-      new PrimaryFacetEnricher(repository.getConnection)
+      new LocationEventEnricher(repository.getConnection, 240 seconds),
+      new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)
     ))
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)

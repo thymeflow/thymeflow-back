@@ -56,7 +56,14 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
       .flatMap(Unmarshal(_).to[Traversable[geocoding.Feature]])
   }
 
+  /**
+    * Parse the geocoder's JSON response
+    *
+    * @param data the raw geocoder's response
+    * @return a Traversable of Features
+    */
   protected def parseResponse(data: InputStream): Traversable[geocoding.Feature] = {
+    // TODO: Use spray/akka.json instead of json4s here
     val featureCollection = parse(data)
     val featureBuilder = Array.newBuilder[Feature]
     featureCollection \ "features" match {

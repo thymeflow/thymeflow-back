@@ -93,11 +93,11 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
                     <${SchemaOrg.NAME}> ?emailAddressName .
     }"""
   )
-  private val agentNamesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
-    s"""SELECT ?agent ?nameProperty ?name WHERE {
+  private val agentNamePartsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?namePartType ?namePart WHERE {
       ?agent a <${Personal.AGENT}> ;
-             ?nameProperty ?name .
-      FILTER( ?nameProperty = <${SchemaOrg.GIVEN_NAME}> || ?nameProperty = <${SchemaOrg.FAMILY_NAME}> )
+             ?namePartType ?namePart .
+      FILTER( ?namePartType = <${SchemaOrg.GIVEN_NAME}> || ?namePartType = <${SchemaOrg.FAMILY_NAME}> )
     }"""
   )
 
@@ -109,7 +109,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     // the name counts for each agent
     val (agentRepresentativeContactNames, agentRepresentativeMessageNames) = getAgentNameCounts(agentRepresentativeMap.apply)
 
-    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses, agentRepresentativeMap)
+    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses, agentRepresentativeMap.apply)
 
     val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
 
@@ -185,38 +185,11 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
   def agentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
                  agentEmailAddressMap: Map[Resource, Traversable[String]],
-                 agentRepresentativeMap: Map[Resource, Resource]) = {
-    val emailAddressesDecomposition = emailAddressesQuery.evaluate().toIterator.map {
-      bindingSet =>
-        (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
-          Option(bindingSet.getValue("localPart")).map(_.stringValue()),
-          Option(bindingSet.getValue("domain")).map(_.stringValue()))
-    }.collect {
-      case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
-    }.toMap
+                 getAgentRepresentative: Resource => Resource) = {
 
-    val agentNameParts = agentNamesQuery.evaluate().toIterator.map {
-      bindingSet =>
-        (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
-          Option(bindingSet.getValue("nameProperty").asInstanceOf[IRI]),
-          Option(bindingSet.getValue("name")).map(_.stringValue()))
-    }.collect {
-      case (Some(agent), Some(nameProperty), Some(name)) => (agentRepresentativeMap.getOrElse(agent, agent), nameProperty, name)
-    }.toVector
-
-    val entityPreferredNames = agentNameParts.groupBy(_._1).map {
-      case (agent, g) =>
-        agent -> g.map {
-          case (_, nameProperty, name) => (name, nameProperty)
-        }
-    }
-
-    val agentWithAllNames = (agentRepresentativeMessageNames.keySet ++ entityPreferredNames.keySet).view.map {
-      case agent =>
-        agent ->(agentRepresentativeMessageNames.getOrElse(agent, Traversable.empty), entityPreferredNames.getOrElse(agent, Vector.empty))
-    }.toVector
-
-    val reconciledAgentNames = reconcileEntityNames(agentWithAllNames, entityMatchIndices)
+    val emailAddressToPartsMap = getAgentEmailAddressParts
+    val agentNameParts = getAgentNameParts(getAgentRepresentative)
+    val reconciledAgentNames = reconcileAgentNames(agentRepresentativeMessageNames, agentNameParts)
 
     def filter(score: Double, matches: Int, mismatches: Int) = {
       matches.toDouble / (matches + mismatches).toDouble >= 0.7
@@ -227,7 +200,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         val names = g.map(x => (x._2._2.toSet, normalizeTerm(x._1)))
         emailAddresses.map {
           case emailAddress =>
-            val (localPart, domain) = emailAddressesDecomposition(emailAddress)
+            val (localPart, domain) = emailAddressToPartsMap(emailAddress)
             val (cost, alignment) = Alignment.alignment(names, normalizeTerm(localPart), filter)(_._2)
             var variableId = 0
             val variableMap = scala.collection.immutable.HashMap.newBuilder[VariableNamePart, Either[(String, Option[String]), (String, String, Set[IRI])]]
@@ -292,6 +265,16 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         domain ->(g.size, g.map(_._5).sum / g.size.toDouble, m)
     }.toIndexedSeq.sortBy(_._2._1).reverse
     byDomain
+  }
+
+  private def reconcileAgentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
+                                  agentNameParts: Map[Resource, Traversable[(String, IRI)]]) = {
+    val agentAndNames = (agentRepresentativeMessageNames.keySet ++ agentNameParts.keySet).view.map {
+      case agent =>
+        agent ->(agentRepresentativeMessageNames.get(agent).map(_.toIndexedSeq).getOrElse(IndexedSeq.empty), agentNameParts.getOrElse(agent, IndexedSeq.empty))
+    }.toIndexedSeq
+
+    reconcileEntityNames(agentAndNames, entityMatchIndices)
   }
 
   private def reconcileEntityNames[ENTITY, TERM_PART](entityNames: Traversable[(ENTITY, (Traversable[(String, Long)], Traversable[(String, TERM_PART)]))],
@@ -429,6 +412,41 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       parts += Left(content.substring(index, content.length))
     }
     parts.result()
+  }
+
+  /**
+    *
+    * @return a map [emailAddress -> (localPart, domain)]
+    */
+  private def getAgentEmailAddressParts = {
+    emailAddressesQuery.evaluate().toIterator.map {
+      bindingSet =>
+        (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
+          Option(bindingSet.getValue("localPart")).map(_.stringValue()),
+          Option(bindingSet.getValue("domain")).map(_.stringValue()))
+    }.collect {
+      case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
+    }.toMap
+  }
+
+  /**
+    * Gets a map of agent name parts, for instance:
+    * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
+    *
+    * @param getAgentRepresentative a function that assigns to each agent its equivalent class representative
+    * @return a map assigning to each Agent a list of (NamePart, NamePartType)
+    */
+  private def getAgentNameParts(getAgentRepresentative: Resource => Resource) = {
+    agentNamePartsQuery.evaluate().toTraversable.map {
+      bindingSet =>
+        (Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+          Option(bindingSet.getValue("namePartType").asInstanceOf[IRI]),
+          Option(bindingSet.getValue("namePart")).map(_.stringValue()))
+    }.collect {
+      case (Some(agent), Some(namePartType), Some(namePart)) => (getAgentRepresentative(agent), (namePart, namePartType))
+    }.groupBy(_._1).map {
+      case (agent, g) => agent -> g.map(_._2).toIndexedSeq
+    }
   }
 
   private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],

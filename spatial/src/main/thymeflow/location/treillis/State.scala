@@ -52,10 +52,10 @@ object State {
       case SamePosition(_, _) =>
         buffer.putInt(-1)
         buffer.putInt(-1)
-      case MovingPosition(_, _, cluster: CLUSTER_OBSERVATION) =>
+      case MovingPosition(_, _, cluster) =>
         buffer.putInt(clusterObservationToIndex(cluster))
         buffer.putInt(-1)
-      case StationaryPosition(_, _, movingIndex, _, cluster: CLUSTER_OBSERVATION) =>
+      case StationaryPosition(_, _, movingIndex, _, cluster) =>
         buffer.putInt(clusterObservationToIndex(cluster))
         buffer.putInt(movingIndex)
     }

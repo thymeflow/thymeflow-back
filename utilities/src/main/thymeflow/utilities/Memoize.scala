@@ -19,7 +19,7 @@ trait Memoize1[-T, +R] extends (T => R) with StrictLogging {
   def f: T => R
 
   // Forgets memoized results
-  def clear(): Unit ={
+  def clear(): Unit = {
     vals.clear()
   }
 
@@ -134,21 +134,12 @@ object Memoize {
     Function.untupled(memoize(f.tupled))
 
   /**
-    * Memoize a unary (single-argument) function.
-    *
-    * @param f the unary function to memoize
-    */
-  def memoize[T, R](f: T => R): Memoize1[T, R] = new PersistentMemoize1(f)
-
-  /**
    * Memoize a ternary (three-argument) function.
    *
    * @param f the ternary function to memoize
    */
   def memoize[T1, T2, T3, R](f: (T1, T2, T3) => R): (T1,T2,T3) => R =
     Function.untupled(memoize(f.tupled))
-
-  // ... more memoize methods for higher-arity functions ...
 
   /**
    * Fixed-point combinator (for memoizing recursive functions).
@@ -157,4 +148,13 @@ object Memoize {
     lazy val yf: (T => R) = memoize(f(yf)(_))
     yf
   }
+
+  // ... more memoize methods for higher-arity functions ...
+
+  /**
+    * Memoize a unary (single-argument) function.
+    *
+    * @param f the unary function to memoize
+    */
+  def memoize[T, R](f: T => R): Memoize1[T, R] = new PersistentMemoize1(f)
 }

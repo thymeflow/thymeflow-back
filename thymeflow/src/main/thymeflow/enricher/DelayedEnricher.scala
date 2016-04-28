@@ -37,19 +37,19 @@ trait DelayedEnricher extends Enricher {
     }
   }))
 
+  override def enrich(diff: ModelDiff): Unit = {
+    tickActor ! Diff
+  }
+
   /**
     * @return duration to wait for before running the Enricher
     */
-  def delay: Duration
+  protected def delay: Duration
 
   /**
     * Run the enrichments defined by this Enricher
     */
-  def runEnrichments(): Unit
-
-  override def enrich(diff: ModelDiff): Unit = {
-    tickActor ! Diff
-  }
+  protected def runEnrichments(): Unit
 
   thymeflow.actors.system.scheduler.schedule(1 second, 10 seconds, tickActor, Tick)
 

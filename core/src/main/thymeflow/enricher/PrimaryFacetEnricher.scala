@@ -17,7 +17,7 @@ import scala.collection.JavaConverters._
   */
 class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
 
-  private val enricherContext = repositoryConnection.getValueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#primaryFacetEnricherOutput")
+  private val enricherContext = repositoryConnection.getValueFactory.createIRI(Personal.NAMESPACE, "primaryFacetEnricherOutput")
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
     QueryLanguage.SPARQL,
     s"""SELECT ?facet WHERE {

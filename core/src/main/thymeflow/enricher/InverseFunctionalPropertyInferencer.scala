@@ -5,7 +5,7 @@ import org.openrdf.model.{Model, Statement}
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
-import thymeflow.rdf.model.vocabulary.SchemaOrg
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 
 import scala.collection.JavaConverters._
 
@@ -21,7 +21,7 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
 
   private val valueFactory = repositoryConnection.getValueFactory
 
-  private val inferencerContext = valueFactory.createIRI("http://thomas.pellissier-tanon.fr/personal#inverseFunctionalInferencerOutput")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "inverseFunctionalInferencerOutput")
 
   override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()

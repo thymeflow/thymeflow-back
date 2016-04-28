@@ -56,7 +56,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
       .flatMap(Unmarshal(_).to[Traversable[geocoding.Feature]])
   }
 
-  protected def parseResponse(data: InputStream): Traversable[Feature] = {
+  protected def parseResponse(data: InputStream): Traversable[geocoding.Feature] = {
     val featureCollection = parse(data)
     val featureBuilder = Array.newBuilder[Feature]
     featureCollection \ "features" match {

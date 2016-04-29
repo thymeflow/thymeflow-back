@@ -11,6 +11,7 @@ import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
+import thymeflow.enricher.AgentIdentityResolutionEnricher.{NamePart, TextNamePart, VariableNamePart}
 import thymeflow.graph.ConnectedComponents
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -27,11 +28,16 @@ import scala.concurrent.duration.Duration
 /**
   * @author David Montoya
   */
-sealed trait NamePart
 
-case class TextNamePart(content: String) extends NamePart
+object AgentIdentityResolutionEnricher {
 
-case class VariableNamePart(id: Int) extends NamePart
+  sealed trait NamePart
+
+  case class TextNamePart(content: String) extends NamePart
+
+  case class VariableNamePart(id: Int) extends NamePart
+
+}
 
 /**
   *
@@ -398,6 +404,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.toVector
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   private def entitySplitParts(content: String) = {
     var index = 0
     val parts = Vector.newBuilder[Either[String, String]]
@@ -490,10 +500,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (terms1, terms2, distance) =>
         terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
     }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

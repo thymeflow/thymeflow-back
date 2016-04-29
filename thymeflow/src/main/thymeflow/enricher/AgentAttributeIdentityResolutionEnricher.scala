@@ -12,7 +12,7 @@ import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.AgentIdentityResolutionEnricher._
+import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.rdf.Converters._
@@ -31,7 +31,7 @@ import scala.concurrent.duration.Duration
   * @author David Montoya
   */
 
-object AgentIdentityResolutionEnricher {
+object AgentAttributeIdentityResolutionEnricher {
 
   sealed trait NamePart
 
@@ -68,7 +68,7 @@ object AgentIdentityResolutionEnricher {
   *
   * Depends on InverseFunctionalPropertyInferencer
   */
-class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
+class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
   extends DelayedEnricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
@@ -911,6 +911,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     idfs
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
                                    clearDuplicateNestedResults: Boolean = false)(value1: String) = {
@@ -926,10 +930,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

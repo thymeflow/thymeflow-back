@@ -2,9 +2,9 @@ package thymeflow.api
 
 
 import org.openrdf.IsolationLevels
-import thymeflow.{Pipeline, Thymeflow}
-import thymeflow.enricher.{AgentIdentityResolutionEnricher, LocationStayEnricher}
+import thymeflow.enricher.{AgentAttributeIdentityResolutionEnricher, LocationStayEnricher}
 import thymeflow.rdf.RepositoryFactory
+import thymeflow.{Pipeline, Thymeflow}
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -24,7 +24,7 @@ object MainApi extends thymeflow.api.Api {
     Thymeflow.setupSynchronizers()
     new Pipeline(repository.getConnection, List(
       new LocationStayEnricher(repository.getConnection, 10 seconds),
-      new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)))
+      new AgentAttributeIdentityResolutionEnricher(repository.getConnection, 10 seconds)))
   }
 
 }

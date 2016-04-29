@@ -68,12 +68,15 @@ object AgentAttributeIdentityResolutionEnricher {
   *
   * Depends on InverseFunctionalPropertyInferencer
   */
-class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
+class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
+                                               val delay: Duration,
+                                               solveDuplicateNameParts: Boolean = false,
+                                               solveNamePartTypes: Boolean = false,
+                                               debug: Boolean = false)
   extends DelayedEnricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
-
   private val metric = new LevensteinDistance()
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
   private val matchingDistance = new BipartiteMatchingDistance(
@@ -139,21 +142,45 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     val agentRepresentativeEmailAddresses = getAgentEmails(agentRepresentativeMap.apply)
     // the name counts for each agent
     val (agentRepresentativeContactNames, agentRepresentativeMessageNames) = getAgentNameCounts(agentRepresentativeMap.apply)
-
-    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses.apply, agentRepresentativeMap.apply)
-
     val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
+    val agentNameParts = getAgentNameParts(agentRepresentativeMap.apply)
+    val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
 
-    val agentRepresentativeIRIToResourceMap = (agentRepresentativeNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
+    val agentRepresentativeMatchNames = if (solveDuplicateNameParts) {
+      if (solveNamePartTypes) {
+        val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
+        reconciledAgentNames.map {
+          case (agent, primaryNames, _) =>
+            agent -> primaryNames.map {
+              case (primaryName, (weight, _)) => (primaryName, weight, namePartTypeInference((agent, primaryName)))
+            }
+        }.toMap
+      } else {
+        reconciledAgentNames.map {
+          case (agent, primaryNames, _) =>
+            agent -> primaryNames.map {
+              case (primaryName, (weight, namePartTypes)) => (primaryName, weight, namePartTypes.toSet)
+            }
+        }.toMap
+      }
+    } else {
+      agentRepresentativeNames.map {
+        case (agent, names) => agent -> names.toIndexedSeq.map {
+          case (name, weight) => (name, weight, Set.empty[IRI])
+        }
+      }
+    }.withDefaultValue(IndexedSeq.empty)
+
+    val agentRepresentativeIRIToResourceMap = (agentRepresentativeMatchNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
       case (agent) => (agent.stringValue(), agent)
     }(scala.collection.breakOut): Map[String, Resource]
 
     // compute a (Agent, Name) list
-    val agentAndNames = agentRepresentativeNames.flatMap {
+    val agentAndNames = agentRepresentativeMatchNames.flatMap {
       case (agent, nameCounts) =>
-        nameCounts.keys.map {
-          case name => (agent, name)
-        }
+        nameCounts.map {
+          case (name, _, _) => (agent, name)
+        }.distinct
     }(scala.collection.breakOut): Vector[(Resource, String)]
 
     val termIDFs = computeTermIDFs(agentAndNames.view.map(_._2))
@@ -189,16 +216,16 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }.collect {
           case Some((agent1, agent2, _, (_, similarity))) => (agent1, agent2, similarity)
         }
-        buidInclusionRelation(source.filter(_._3 >= sameAsThreshold)).map {
+        buildInclusionRelationSimilarities(source.filter(_._3 >= sameAsThreshold)).map {
           case equalities =>
             // Filter candidate equalities over a certain threshold in both inclusions
             val sameAsCandidates: Vector[(Resource, Resource)] = equalities.collect {
               case ((agent1, agent2), (leftInclusionWeight, rightInclusionWeight)) if leftInclusionWeight >= sameAsThreshold && rightInclusionWeight >= sameAsThreshold => (agent1, agent2)
             }(scala.collection.breakOut)
             val ordering = implicitly[Ordering[Double]].reverse
-            def nameStatements(instance: Resource) = agentRepresentativeNames.get(instance).map(_.toIterable).getOrElse(Iterable.empty)
+            def occurringNames(instance: Resource) = agentRepresentativeMatchNames(instance)
             // Compute final equality weights
-            val equalityWeights = getEqualityWeights(sameAsCandidates, nameStatements, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
+            val equalityWeights = getEqualityProbability(sameAsCandidates, occurringNames, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalityWeights.foreach {
@@ -214,18 +241,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
-  def agentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
-                 agentEmailAddresses: Resource => Traversable[String],
-                 getAgentRepresentative: Resource => Resource) = {
-
-    val agentNameParts = getAgentNameParts(getAgentRepresentative)
-    val reconciledAgentNames = reconcileAgentNames(agentRepresentativeMessageNames, agentNameParts)
+  private def inferNamePartTypes[NUMERIC: Numeric](reconciledAgentNames: Vector[(Resource, Vector[(String, (NUMERIC, Vector[IRI]))], Vector[Vector[(Seq[String], (NUMERIC, Vector[IRI]))]])],
+                                                   agentEmailAddresses: Resource => Traversable[String]) = {
     val agentEmailAddressLocalPartNamePartsAlignment = matchEmailAddressLocalPartWithAgentNames(agentEmailAddresses,
       getAgentEmailAddressParts,
       reconciledAgentNames)
-    groupNamePartsByDomain(agentEmailAddressLocalPartNamePartsAlignment)
-
-    resolveNamePartTypes(agentEmailAddressLocalPartNamePartsAlignment)
+    if (debug) {
+      groupNamePartsByDomain(agentEmailAddressLocalPartNamePartsAlignment)
+    }
+    resolveNamePartTypes(agentEmailAddressLocalPartNamePartsAlignment).apply _
   }
 
   private def resolveNamePartTypes(agentEmailAddressLocalPartNamePartsAlignment: IndexedSeq[(Resource, String, String, IndexedSeq[NamePart], Map[VariableNamePart, NamePartMatch], Double, IndexedSeq[(String, Set[IRI])])]) = {
@@ -310,13 +334,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }
         if (namePartTypeForNode.nonEmpty) {
           val M = namePartTypeForNode.maxBy(_._2)(pairOrdering)._2
-          (resource, namePart) -> namePartTypeForNode.view.filter(_._2 == M).map(_._1).toIndexedSeq
+          (resource, namePart) -> namePartTypeForNode.view.filter(_._2 == M).map(_._1).toSet
         } else {
-          (resource, namePart) -> IndexedSeq.empty
+          (resource, namePart) -> Set.empty[IRI]
         }
-    }.toMap.withDefaultValue(IndexedSeq.empty)
+    }.toMap.withDefaultValue(Set.empty[IRI])
     // serialize graph with results (debug only)
-    serializeAgentNamePartGraph(nodes, domainToAgentNamePartEdges ++ agentNamePartToNamePartEdges, nodeToNodeIdMap.apply, agentNamePartToNamePartTypes.apply)
+    if (debug) {
+      serializeAgentNamePartGraph(nodes, domainToAgentNamePartEdges ++ agentNamePartToNamePartEdges, nodeToNodeIdMap.apply, agentNamePartToNamePartTypes.apply)
+    }
     agentNamePartToNamePartTypes
   }
 
@@ -409,9 +435,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     byDomain
   }
 
-  private def matchEmailAddressLocalPartWithAgentNames(getAgentEmailAddresses: Resource => Traversable[String],
-                                                       getEmailAddressParts: String => (String, String),
-                                                       reconciledAgentNames: Vector[(Resource, Vector[(String, (Long, Vector[IRI]))], Vector[Vector[(Seq[String], (Long, Vector[IRI]))]])]) = {
+  private def matchEmailAddressLocalPartWithAgentNames[NUMERIC](getAgentEmailAddresses: Resource => Traversable[String],
+                                                                getEmailAddressParts: String => (String, String),
+                                                                reconciledAgentNames: Vector[(Resource, Vector[(String, (NUMERIC, Vector[IRI]))], Vector[Vector[(Seq[String], (NUMERIC, Vector[IRI]))]])]) = {
     def filter(score: Double, matches: Int, mismatches: Int) = {
       matches.toDouble / (matches + mismatches).toDouble >= 0.7
     }
@@ -493,7 +519,22 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     parts.result()
   }
 
-  private def reconcileAgentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
+  /**
+    *
+    * @return a map [emailAddress -> (localPart, domain)]
+    */
+  private def getAgentEmailAddressParts = {
+    emailAddressesQuery.evaluate().toIterator.map {
+      bindingSet =>
+        (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
+          Option(bindingSet.getValue("localPart")).map(_.stringValue()),
+          Option(bindingSet.getValue("domain")).map(_.stringValue()))
+    }.collect {
+      case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
+    }.toMap
+  }
+
+  private def reconcileAgentNames[NUMERIC: Numeric](agentRepresentativeMessageNames: Map[Resource, Map[String, NUMERIC]],
                                   agentNameParts: Map[Resource, Traversable[(String, IRI)]]) = {
     val agentAndNames = (agentRepresentativeMessageNames.keySet ++ agentNameParts.keySet).view.map {
       case agent =>
@@ -503,26 +544,27 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     reconcileEntityNames(agentAndNames, entityMatchIndices)
   }
 
-  private def reconcileEntityNames[ENTITY, TERM_PART](entityNames: Traversable[(ENTITY, (Traversable[(String, Long)], Traversable[(String, TERM_PART)]))],
-                                                      equivalenceMatching: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
-    val ordering = new Ordering[(Long, Vector[TERM_PART])] {
-      override def compare(x: (Long, Vector[TERM_PART]), y: (Long, Vector[TERM_PART])): Int = {
+  private def reconcileEntityNames[ENTITY, TERM_PART, NUMERIC: Numeric](entityNames: Traversable[(ENTITY, (Traversable[(String, NUMERIC)], Traversable[(String, TERM_PART)]))],
+                                                                        equivalenceMatching: (Seq[String], Seq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
+    val numeric = implicitly[Numeric[NUMERIC]]
+    val ordering = new Ordering[(NUMERIC, Vector[TERM_PART])] {
+      override def compare(x: (NUMERIC, Vector[TERM_PART]), y: (NUMERIC, Vector[TERM_PART])): Int = {
         val (xCount, xTs) = x
         val (yCount, yTs) = y
         val c = yTs.size.compareTo(xTs.size)
-        if (c == 0) yCount.compareTo(xCount) else c
+        if (c == 0) numeric.compare(yCount, xCount) else c
       }
     }
-    def map(s: Seq[Either[Long, TERM_PART]]) = {
+    def map(s: Seq[Either[NUMERIC, TERM_PART]]) = {
       s.map {
         case Left(count) => (count, Vector.empty)
-        case Right(t) => (0L, Vector(t))
+        case Right(t) => (numeric.zero, Vector(t))
       }
     }
-    def reduce(s: Seq[(Long, Vector[TERM_PART])]) = {
-      s.foldLeft((0L, Vector.empty[TERM_PART])) {
+    def reduce(s: Seq[(NUMERIC, Vector[TERM_PART])]) = {
+      s.foldLeft((numeric.zero, Vector.empty[TERM_PART])) {
         case ((count1, ts1), (count2, ts2)) =>
-          (count1 + count2, ts1 ++ ts2)
+          (numeric.plus(count1, count2), ts1 ++ ts2)
       }
     }
     entityNames.map {
@@ -625,21 +667,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    *
-    * @return a map [emailAddress -> (localPart, domain)]
-    */
-  private def getAgentEmailAddressParts = {
-    emailAddressesQuery.evaluate().toIterator.map {
-      bindingSet =>
-        (Option(bindingSet.getValue("emailAddressName")).map(_.stringValue()),
-          Option(bindingSet.getValue("localPart")).map(_.stringValue()),
-          Option(bindingSet.getValue("domain")).map(_.stringValue()))
-    }.collect {
-      case (Some(emailAddress), Some(localPart), Some(domain)) => emailAddress ->(localPart, domain)
-    }.toMap
-  }
-
-  /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
     *
@@ -659,10 +686,10 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
-  private def getEqualityWeights[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
-                                           nameStatements: (RESOURCE) => Traversable[(String, Double)],
-                                           termIDFs: Map[String, Double],
-                                           entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
+  private def getEqualityProbability[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
+                                               nameStatements: (RESOURCE) => Traversable[(String, Double, Set[IRI])],
+                                               termIDFs: Map[String, Double],
+                                               entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
     equalityCandidates.map {
       case (instance1, instance2) =>
         var weight = 0d
@@ -670,9 +697,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         val nameStatements1 = nameStatements(instance1)
         val nameStatements2 = nameStatements(instance2)
         nameStatements1.foreach {
-          case (name1, count1) =>
+          case (name1, count1, _) =>
             nameStatements2.foreach {
-              case (name2, count2) =>
+              case (name2, count2, _) =>
                 val split1 = entitySplit(name1)
                 val split2 = entitySplit(name2)
                 if (split1.nonEmpty && split2.nonEmpty) {
@@ -879,8 +906,8 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     * @tparam Mat    the stream's materialization value
     * @return a map assigning to each(entity1, entity2) a leftSimilarityValue and a rightSimilarityValue
     */
-  private def buidInclusionRelation[ENTITY, Mat](matching: Source[(ENTITY, ENTITY, Double), Mat])
-                                                (implicit ordered: ENTITY => Ordered[ENTITY]) = {
+  private def buildInclusionRelationSimilarities[ENTITY, Mat](matching: Source[(ENTITY, ENTITY, Double), Mat])
+                                                             (implicit ordered: ENTITY => Ordered[ENTITY]) = {
     val equalityMapBuilder = new scala.collection.mutable.HashMap[(ENTITY, ENTITY), (Double, Double)]
     matching.runForeach {
       case (entity1, entity2, similarity) =>
@@ -911,10 +938,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     idfs
   }
 
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
                                    clearDuplicateNestedResults: Boolean = false)(value1: String) = {
@@ -930,6 +953,10 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }
         }
     }
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

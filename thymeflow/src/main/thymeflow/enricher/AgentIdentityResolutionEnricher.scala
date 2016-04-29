@@ -17,7 +17,7 @@ import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import thymeflow.text.alignment.Alignment
+import thymeflow.text.alignment.TextAlignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
 import thymeflow.text.search.{FullTextSearchPartialTextMatcher, PartialTextMatcher}
@@ -424,7 +424,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
         agentEmailAddresses.map {
           case emailAddress =>
             val (localPart, domain) = getEmailAddressParts(emailAddress)
-            val (cost, localPartNamePartsAlignment) = Alignment.alignment(normalizedNameParts, normalizeTerm(localPart), filter)(_._1)
+            val (cost, localPartNamePartsAlignment) = TextAlignment.alignment(normalizedNameParts, normalizeTerm(localPart), filter)(_._1)
             var variableId = 0
             val matchedNamePartsPropertiesMapBuilder = scala.collection.immutable.HashMap.newBuilder[VariableNamePart, NamePartMatch]
             def newVariable() = {

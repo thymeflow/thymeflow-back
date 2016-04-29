@@ -1,5 +1,6 @@
 package thymeflow.enricher
 
+import java.nio.file.Paths
 import java.util.Locale
 
 import akka.stream.scaladsl.Source
@@ -11,8 +12,9 @@ import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.AgentIdentityResolutionEnricher.{NamePart, TextNamePart, VariableNamePart}
-import thymeflow.graph.ConnectedComponents
+import thymeflow.enricher.AgentIdentityResolutionEnricher._
+import thymeflow.graph.serialization.GraphML
+import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.Alignment
@@ -33,10 +35,33 @@ object AgentIdentityResolutionEnricher {
 
   sealed trait NamePart
 
+  sealed trait NamePartGraphNode
+
+  sealed trait NamePartMatch
+
+  sealed trait AgentNamePartNode extends NamePartGraphNode {
+    def agent: Resource
+
+    def namePart: String
+  }
+
+  case class NamePartNoMatch(namePart: String) extends NamePartMatch
+
+  case class NamePartUnqualifiedMatch(namePart: String, matchedNamedPart: String) extends NamePartMatch
+
+  case class NamePartQualifiedMatch(namePart: String, matchedNamePart: String, namePartTypes: Set[IRI]) extends NamePartMatch
+
   case class TextNamePart(content: String) extends NamePart
 
   case class VariableNamePart(id: Int) extends NamePart
 
+  case class NamePartNode(content: String) extends NamePartGraphNode
+
+  case class DomainNamePartPatternNamePartNode(domain: String, namePartPattern: IndexedSeq[NamePart], variableNamePart: VariableNamePart) extends NamePartGraphNode
+
+  case class AgentUnqualifiedNamePartNode(agent: Resource, namePart: String) extends AgentNamePartNode
+
+  case class AgentQualifiedNamePartNode(agent: Resource, namePart: String, namePartTypes: Set[IRI]) extends AgentNamePartNode
 }
 
 /**
@@ -115,7 +140,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     // the name counts for each agent
     val (agentRepresentativeContactNames, agentRepresentativeMessageNames) = getAgentNameCounts(agentRepresentativeMap.apply)
 
-    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses, agentRepresentativeMap.apply)
+    agentNames(agentRepresentativeMessageNames, agentRepresentativeEmailAddresses.apply, agentRepresentativeMap.apply)
 
     val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
 
@@ -190,26 +215,218 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
   }
 
   def agentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
-                 agentEmailAddressMap: Map[Resource, Traversable[String]],
+                 agentEmailAddresses: Resource => Traversable[String],
                  getAgentRepresentative: Resource => Resource) = {
 
-    val emailAddressToPartsMap = getAgentEmailAddressParts
     val agentNameParts = getAgentNameParts(getAgentRepresentative)
     val reconciledAgentNames = reconcileAgentNames(agentRepresentativeMessageNames, agentNameParts)
+    val agentEmailAddressLocalPartNamePartsAlignment = matchEmailAddressLocalPartWithAgentNames(agentEmailAddresses,
+      getAgentEmailAddressParts,
+      reconciledAgentNames)
+    groupNamePartsByDomain(agentEmailAddressLocalPartNamePartsAlignment)
 
+    resolveNamePartTypes(agentEmailAddressLocalPartNamePartsAlignment)
+  }
+
+  private def resolveNamePartTypes(agentEmailAddressLocalPartNamePartsAlignment: IndexedSeq[(Resource, String, String, IndexedSeq[NamePart], Map[VariableNamePart, NamePartMatch], Double, IndexedSeq[(String, Set[IRI])])]) = {
+    // build the NamePartGraph
+    val domainToAgentNamePartEdges = agentEmailAddressLocalPartNamePartsAlignment.groupBy(x => (x._3.toLowerCase(Locale.ROOT), x._4)).toIndexedSeq.flatMap {
+      case ((domain, nameParts), g) =>
+        nameParts.flatMap {
+          case variableNamePart: VariableNamePart =>
+            g.map {
+              case (agentRepresentative, _, _, _, variableMap, _, _) =>
+                DomainNamePartPatternNamePartNode(domain, nameParts, variableNamePart) ->
+                  (variableMap(variableNamePart) match {
+                    case NamePartUnqualifiedMatch(_, matchedNamePart) => AgentUnqualifiedNamePartNode(agentRepresentative, matchedNamePart)
+                    case NamePartQualifiedMatch(_, matchedNamePart, namePartTypes) => AgentQualifiedNamePartNode(agentRepresentative, matchedNamePart, namePartTypes)
+                    case NamePartNoMatch(namePart) => AgentUnqualifiedNamePartNode(agentRepresentative, namePart)
+                  })
+            }
+          case _ =>
+            IndexedSeq.empty
+        }
+    }.toSet
+    val agentNamePartToNamePartEdges = domainToAgentNamePartEdges.map(_._2).map {
+      node => node -> NamePartNode(node.namePart)
+    }
+    var id = 0
+    val nodes = (domainToAgentNamePartEdges.map(_._1): Set[NamePartGraphNode]) ++ (domainToAgentNamePartEdges.map(_._2): Set[NamePartGraphNode]) ++ (agentNamePartToNamePartEdges.map(_._2): Set[NamePartGraphNode])
+    val nodeToNodeIdMap = nodes.map {
+      case node =>
+        id += 1
+        node -> id
+    }.toMap
+    val nodeIdToNodeMap = nodeToNodeIdMap.map(x => (x._2, x._1))
+    val nodeNeighborsMap = (
+      domainToAgentNamePartEdges.toIndexedSeq
+        ++ domainToAgentNamePartEdges.toIndexedSeq.map(x => (x._2, x._1))
+        ++ agentNamePartToNamePartEdges.toIndexedSeq
+        ++ agentNamePartToNamePartEdges.toIndexedSeq.map(x => (x._2, x._1))
+      ).groupBy(_._1).map {
+      case (k, g) => nodeToNodeIdMap(k) -> g.map(x => nodeToNodeIdMap(x._2))
+    }.withDefaultValue(IndexedSeq.empty)
+    // graph built: (nodes, nodeNeighborsMap, nodeIdToNodeMap, nodeToNodeIdMap)
+    // infer name part types
+    val agentNamePartsForWhichToInferType = nodes.toIndexedSeq.collect {
+      case node: AgentUnqualifiedNamePartNode => node
+    }
+    val shortestPaths = ShortestPath.allPairsShortestPaths(agentNamePartsForWhichToInferType.map(nodeToNodeIdMap.apply))(node => nodeNeighborsMap(node).map(x => (x, 1)))(from => {
+      var bestOption = None: Option[Int]
+      (to, w, settled, distanceMap, parent) => {
+        bestOption match {
+          case Some(best) if w > best => true
+          case None =>
+            nodeIdToNodeMap(to) match {
+              case AgentQualifiedNamePartNode(_, _, namePartTypes) if namePartTypes.nonEmpty =>
+                bestOption = Some(w)
+                false
+              case _ => false
+            }
+          case _ => false
+        }
+      }
+    })
+    val pairOrdering = new Ordering[(Int, Int)] {
+      override def compare(x: (Int, Int), y: (Int, Int)): Int = {
+        val c = x._1.compareTo(y._1)
+        if (c == 0) {
+          x._2.compareTo(y._2)
+        } else {
+          c
+        }
+      }
+    }
+    val agentNamePartToNamePartTypes = shortestPaths.collect {
+      case (nodeId, (distanceToNodes, _)) =>
+        val AgentUnqualifiedNamePartNode(resource, namePart) = nodeIdToNodeMap(nodeId)
+        val namePartTypeForNode = distanceToNodes.toIndexedSeq.map(x => (nodeIdToNodeMap(x._1), x._2)).collect {
+          case (AgentQualifiedNamePartNode(_, _, namePartTypes), distance) if namePartTypes.nonEmpty =>
+            namePartTypes.toIndexedSeq.map((_, distance))
+        }.flatten.groupBy(_._1).map {
+          case (namePartType, g) =>
+            val (_, d) = g.minBy(_._2)
+            namePartType ->(-d, g.count(_._2 == d))
+        }
+        if (namePartTypeForNode.nonEmpty) {
+          val M = namePartTypeForNode.maxBy(_._2)(pairOrdering)._2
+          (resource, namePart) -> namePartTypeForNode.view.filter(_._2 == M).map(_._1).toIndexedSeq
+        } else {
+          (resource, namePart) -> IndexedSeq.empty
+        }
+    }.toMap.withDefaultValue(IndexedSeq.empty)
+    // serialize graph with results (debug only)
+    serializeAgentNamePartGraph(nodes, domainToAgentNamePartEdges ++ agentNamePartToNamePartEdges, nodeToNodeIdMap.apply, agentNamePartToNamePartTypes.apply)
+    agentNamePartToNamePartTypes
+  }
+
+  private def serializeAgentNamePartGraph[T](nodes: Set[NamePartGraphNode],
+                                             edges: Set[(NamePartGraphNode, NamePartGraphNode)],
+                                             nodeId: NamePartGraphNode => Int,
+                                             resourceNamePartToNamePartTypes: ((Resource, String)) => Traversable[IRI]) = {
+    val nodeIdString = (x: NamePartGraphNode) => s"n${nodeId(x)}"
+    var edgeId = 0
+    val serializedEdges = edges.toIndexedSeq.map {
+      case (from, to) =>
+        edgeId += 1
+        GraphML.edge(s"e$edgeId", nodeIdString(from), nodeIdString(to))
+    }
+    val serializedNodes = nodes.toIndexedSeq.map {
+      case node@DomainNamePartPatternNamePartNode(domain, nameParts, variableNamePart) =>
+        val namePartsSerialization = nameParts.map {
+          case v: VariableNamePart => s"<${v.id}>"
+          case v: TextNamePart => v.content
+        }
+        GraphML.node(nodeIdString(node),
+          Vector(
+            ("type", "domainPattern"),
+            ("domain", domain),
+            ("nameParts", namePartsSerialization.mkString("")),
+            ("variable", variableNamePart.id.toString)
+          ))
+      case node@AgentUnqualifiedNamePartNode(resource, namePart) =>
+        val propertiesSerialization = resourceNamePartToNamePartTypes((resource, namePart)).map(_.getLocalName).toIndexedSeq.sorted.mkString("|")
+        GraphML.node(nodeIdString(node),
+          Vector(
+            ("type", "agentNamePart"),
+            ("resource", resource.toString),
+            ("namePart", namePart),
+            ("properties", s"INF($propertiesSerialization)")
+          ))
+      case node@AgentQualifiedNamePartNode(resource, namePart, namePartTypes) =>
+        val propertiesSerialization = namePartTypes.map(_.getLocalName).toIndexedSeq.sorted.mkString("|")
+        GraphML.node(nodeIdString(node),
+          Vector(
+            ("type", "agentNamePart"),
+            ("resource", resource.toString),
+            ("namePart", namePart),
+            ("properties", propertiesSerialization)
+          ))
+      case n@NamePartNode(namePart: String) =>
+        GraphML.node(nodeIdString(n),
+          Vector(
+            ("type", "namePart"),
+            ("content", namePart)
+          ))
+    }
+    val keys = GraphML.nodeKeys(Vector(
+      ("type", "type", "string"),
+      ("domain", "domain", "string"),
+      ("nameParts", "nameParts", "string"),
+      ("variable", "variable", "int"),
+      ("resource", "resource", "string"),
+      ("namePart", "namePart", "string"),
+      ("properties", "properties", "string"),
+      ("content", "content", "string")
+    ))
+
+    GraphML.write(Paths.get("data/nameParts.graphml"),
+      GraphML.graph("nameParts", directed = false, keys, serializedNodes, serializedEdges))
+  }
+
+  private def groupNamePartsByDomain(agentEmailAddressLocalPartNamePartsAlignment: IndexedSeq[(Resource, String, String, IndexedSeq[NamePart], Map[VariableNamePart, NamePartMatch], Double, IndexedSeq[(String, Set[IRI])])]) = {
+    val intReverseOrdering = implicitly[Ordering[Int]].reverse
+    // group by domain (normalized)
+    val byDomain = agentEmailAddressLocalPartNamePartsAlignment.groupBy(_._3.toLowerCase(Locale.ROOT)).map {
+      case (domain, g) =>
+        // group by namePart pattern
+        val m = g.groupBy(_._4).map {
+          case (nameParts, h) =>
+            nameParts ->(h.size, h.map(_._6).sum / h.size.toDouble, h.groupBy(_._5.collect {
+              case (k, NamePartQualifiedMatch(_, _, namePartTypes)) => k -> namePartTypes
+            }).map {
+              case (variablePropertyMap, i) =>
+                variablePropertyMap ->(i.size, i.map(_._6).sum / i.size.toDouble, i.groupBy(_._5.collect {
+                  case (k, NamePartUnqualifiedMatch(_, _)) => k
+                }.toSet).map {
+                  case (matchedNameParts, j) =>
+                    matchedNameParts ->(j.size, j.map(_._6).sum / j.size.toDouble, j)
+                }.toIndexedSeq.sortBy(_._2._1)(intReverseOrdering))
+            }.toIndexedSeq.sortBy(_._2._1)(intReverseOrdering))
+        }.toIndexedSeq.sortBy(_._2._1)(intReverseOrdering)
+        domain ->(g.size, g.map(_._6).sum / g.size.toDouble, m)
+    }.toIndexedSeq.sortBy(_._2._1)(intReverseOrdering)
+    byDomain
+  }
+
+  private def matchEmailAddressLocalPartWithAgentNames(getAgentEmailAddresses: Resource => Traversable[String],
+                                                       getEmailAddressParts: String => (String, String),
+                                                       reconciledAgentNames: Vector[(Resource, Vector[(String, (Long, Vector[IRI]))], Vector[Vector[(Seq[String], (Long, Vector[IRI]))]])]) = {
     def filter(score: Double, matches: Int, mismatches: Int) = {
       matches.toDouble / (matches + mismatches).toDouble >= 0.7
     }
-    val agentNameEmailAddressAlignment = reconciledAgentNames.map {
-      case (agentRepresentative, g, _) =>
-        val emailAddresses = agentEmailAddressMap.getOrElse(agentRepresentative, Vector.empty)
-        val names = g.map(x => (x._2._2.toSet, normalizeTerm(x._1)))
-        emailAddresses.map {
+    reconciledAgentNames.flatMap {
+      case (agentRepresentative, primaryNameParts, _) =>
+        val agentEmailAddresses = getAgentEmailAddresses(agentRepresentative)
+        val normalizedNameParts = primaryNameParts.map {
+          case (namePart, (_, namePartTypes)) => (normalizeTerm(namePart), namePartTypes.toSet)
+        }
+        agentEmailAddresses.map {
           case emailAddress =>
-            val (localPart, domain) = emailAddressToPartsMap(emailAddress)
-            val (cost, alignment) = Alignment.alignment(names, normalizeTerm(localPart), filter)(_._2)
+            val (localPart, domain) = getEmailAddressParts(emailAddress)
+            val (cost, localPartNamePartsAlignment) = Alignment.alignment(normalizedNameParts, normalizeTerm(localPart), filter)(_._1)
             var variableId = 0
-            val variableMap = scala.collection.immutable.HashMap.newBuilder[VariableNamePart, Either[(String, Option[String]), (String, String, Set[IRI])]]
+            val matchedNamePartsPropertiesMapBuilder = scala.collection.immutable.HashMap.newBuilder[VariableNamePart, NamePartMatch]
             def newVariable() = {
               variableId += 1
               VariableNamePart(variableId)
@@ -219,15 +436,15 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
                 case Right(textPart) => TextNamePart(textPart)
                 case Left(variablePart) =>
                   val variable = newVariable()
-                  variableMap += variable -> Left((variablePart, None))
+                  matchedNamePartsPropertiesMapBuilder += variable -> NamePartNoMatch(variablePart)
                   variable
               }
             }
-            val nameParts = alignment.flatMap {
+            val matchedNameParts = localPartNamePartsAlignment.flatMap {
               case (query, matches) =>
                 matches.map((query, _))
             }.sortBy(_._2._2).foldLeft((Vector.empty[NamePart], 0)) {
-              case ((s, index), ((properties, nameMatch), (text, from, to))) =>
+              case ((s, index), ((nameMatch, properties), (text, from, to))) =>
                 val previous =
                   if (index != from) {
                     splitTextPart(localPart.substring(index, from))
@@ -236,9 +453,9 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
                   }
                 val variable = newVariable()
                 if (properties.nonEmpty) {
-                  variableMap += variable -> Right((text, nameMatch, properties))
+                  matchedNamePartsPropertiesMapBuilder += variable -> NamePartQualifiedMatch(text, nameMatch, properties)
                 } else {
-                  variableMap += variable -> Left((text, Some(nameMatch)))
+                  matchedNamePartsPropertiesMapBuilder += variable -> NamePartUnqualifiedMatch(text, nameMatch)
                 }
                 (s ++ (previous :+ variable), to + 1)
             } match {
@@ -249,28 +466,31 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
                   s
                 }
             }
-            (localPart, domain, nameParts, variableMap.result(), cost, names)
+            (agentRepresentative,
+              localPart,
+              domain,
+              matchedNameParts: IndexedSeq[NamePart],
+              matchedNamePartsPropertiesMapBuilder.result(): Map[VariableNamePart, NamePartMatch],
+              cost,
+              normalizedNameParts: IndexedSeq[(String, Set[IRI])])
         }
     }
-    val byDomain = agentNameEmailAddressAlignment.flatten.groupBy(_._2).map {
-      case (domain, g) =>
-        val m = g.groupBy(_._3).map {
-          case (nameParts, h) =>
-            nameParts ->(h.size, h.map(_._5).sum / h.size.toDouble, h.groupBy(_._4.collect {
-              case (k, Right((_, _, properties))) => k -> properties
-            }).map {
-              case (variablePropertyMap, i) =>
-                variablePropertyMap ->(i.size, i.map(_._5).sum / i.size.toDouble, i.groupBy(_._4.collect {
-                  case (k, Left((_, Some(namePart)))) => k
-                }.toSet).map {
-                  case (matchedNameParts, j) =>
-                    matchedNameParts ->(j.size, j.map(_._5).sum / j.size.toDouble, j)
-                }.toIndexedSeq.sortBy(_._2._1).reverse)
-            }.toIndexedSeq.sortBy(_._2._1).reverse)
-        }.toIndexedSeq.sortBy(_._2._1).reverse
-        domain ->(g.size, g.map(_._5).sum / g.size.toDouble, m)
-    }.toIndexedSeq.sortBy(_._2._1).reverse
-    byDomain
+  }
+
+  private def entitySplitParts(content: String) = {
+    var index = 0
+    val parts = Vector.newBuilder[Either[String, String]]
+    for (m <- tokenSeparator.findAllMatchIn(content)) {
+      if (index != m.start) {
+        parts += Left(content.substring(index, m.start))
+      }
+      parts += Right(m.matched)
+      index = m.end
+    }
+    if (index != content.length) {
+      parts += Left(content.substring(index, content.length))
+    }
+    parts.result()
   }
 
   private def reconcileAgentNames(agentRepresentativeMessageNames: Map[Resource, Map[String, Long]],
@@ -406,22 +626,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
 
   private def entitySplit(content: String) = {
     tokenSeparator.split(content).toIndexedSeq
-  }
-
-  private def entitySplitParts(content: String) = {
-    var index = 0
-    val parts = Vector.newBuilder[Either[String, String]]
-    for (m <- tokenSeparator.findAllMatchIn(content)) {
-      if (index != m.start) {
-        parts += Left(content.substring(index, m.start))
-      }
-      parts += Right(m.matched)
-      index = m.end
-    }
-    if (index != content.length) {
-      parts += Left(content.substring(index, content.length))
-    }
-    parts.result()
   }
 
   /**
@@ -595,7 +799,7 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
       case (Some(agent), Some(emailAddress)) => (getAgentRepresentative(agent), emailAddress)
     }.toTraversable.groupBy(_._1).map {
       case (agentRepresentative, g) => (agentRepresentative, g.map(_._2))
-    }
+    }.withDefaultValue(Vector.empty)
   }
 
   /**
@@ -722,6 +926,26 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
+  }
+
+  /**
+    *
+    * @param resourceNamePartTypes
+    * @return the name part type distribution for each name part, as in
+    *         [
+    *         ("John",10,[(givenName,9),(familyName,1)]),
+    *         ("Doe",8,[(givenName,1),(familyName,7)])
+    *         ]
+    */
+  private def namePartTypeDistribution(resourceNamePartTypes: Traversable[((Resource, String), Traversable[IRI])]) = {
+    val ordering = implicitly[Ordering[Int]].reverse
+    resourceNamePartTypes.groupBy(_._1._2).map {
+      case (namePart, g) =>
+        val x = g.flatMap(_._2).groupBy(identity).map {
+          case (property, h) => property -> h.size
+        }.toIndexedSeq.sortBy(_._2)(ordering)
+        (namePart, x.map(_._2).sum, x)
+    }.toIndexedSeq.sortBy(_._2)(ordering)
   }
 
   /** *

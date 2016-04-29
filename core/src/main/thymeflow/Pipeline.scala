@@ -91,9 +91,14 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
   }
 
   private def buildInferenceSystem(): Flow[ModelDiff, ModelDiff, NotUsed] = {
+    val batcher = Flow[ModelDiff].batch(Int.MaxValue, diff => diff)((diff1, diff2) => {
+      diff1.apply(diff2)
+      diff1
+    })
+
     var flow = Flow[ModelDiff]
     for (enricher <- enrichers) {
-      flow = flow.map(diff => {
+      flow = flow.via(batcher).map(diff => {
         enricher.enrich(diff)
         diff
       })

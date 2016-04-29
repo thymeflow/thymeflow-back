@@ -178,18 +178,18 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
           case (agent1, name1) =>
             recognizeEntities(entityRecognizer)(Int.MaxValue, clearDuplicateNestedResults = true)(name1).map {
               _.collect({
-                case (agent2, name2, name1Split, name2Split, nameMatch) if agent1 != agent2 => ((agent1, name2), (agent2, name2), name1Split, name2Split, nameMatch)
+                case (agent2, name2, name1Split, name2Split, nameMatch) if agent1 != agent2 => (agent1, agent2, name1Split, name2Split, nameMatch)
               })
             }
         }.mapConcat(_.toVector).map {
-          case (s1, s2, text1, text2, matchText1) =>
+          case (agent1, agent2, text1, text2, matchText1) =>
             textMatchScore(text1, text2).map {
-              case t => (s1, s2, matchText1, t)
+              case t => (agent1, agent2, matchText1, t)
             }
         }.collect {
-          case Some(((agent1, _), (agent2, _), _, (_, similarity))) => (agent1, agent2, similarity)
+          case Some((agent1, agent2, _, (_, similarity))) => (agent1, agent2, similarity)
         }
-        equalityBuild(source, _ >= sameAsThreshold).map {
+        buidInclusionRelation(source.filter(_._3 >= sameAsThreshold)).map {
           case equalities =>
             // Filter candidate equalities over a certain threshold in both inclusions
             val sameAsCandidates: Vector[(Resource, Resource)] = equalities.collect {
@@ -624,10 +624,6 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }.toVector
   }
 
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
   /**
     *
     * @return a map [emailAddress -> (localPart, domain)]
@@ -875,22 +871,26 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }
   }
 
-  private def equalityBuild[ENTITY, Mat](matching: Source[(ENTITY, ENTITY, Double), Mat],
-                                         weightFilter: Double => Boolean)
-                                        (implicit ordered: ENTITY => Ordered[ENTITY]) = {
+  /**
+    *
+    * @param matching a source stream of (entity1, entity2, similarity) tuples (non-symmetric)
+    * @param ordered  an ordering over entities
+    * @tparam ENTITY the entity's type
+    * @tparam Mat    the stream's materialization value
+    * @return a map assigning to each(entity1, entity2) a leftSimilarityValue and a rightSimilarityValue
+    */
+  private def buidInclusionRelation[ENTITY, Mat](matching: Source[(ENTITY, ENTITY, Double), Mat])
+                                                (implicit ordered: ENTITY => Ordered[ENTITY]) = {
     val equalityMapBuilder = new scala.collection.mutable.HashMap[(ENTITY, ENTITY), (Double, Double)]
     matching.runForeach {
-      case (entity1, entity2, weight) =>
-        if (weightFilter(weight)) {
-          val (key, (new1, new2)) = if (entity1 > entity2) {
-            ((entity2, entity1), (0.0, weight))
-          } else {
-            ((entity1, entity2), (weight, 0.0))
-          }
-          val (w1, w2) = equalityMapBuilder.getOrElseUpdate(key, (0.0, 0.0))
-          val value = (Math.max(w1, new1), Math.max(w2, new2))
-          equalityMapBuilder += ((key, value))
+      case (entity1, entity2, similarity) =>
+        val (key, (newLeftSimilarity, newRightSimilarity)) = if (entity1 > entity2) {
+          ((entity2, entity1), (0.0, similarity))
+        } else {
+          ((entity1, entity2), (similarity, 0.0))
         }
+        val (leftSimilarity, rightSimilarity) = equalityMapBuilder.getOrElseUpdate(key, (0.0, 0.0))
+        val value = (Math.max(leftSimilarity, newLeftSimilarity), Math.max(rightSimilarity, newRightSimilarity))
     }.map {
       case _ => equalityMapBuilder.result()
     }
@@ -926,6 +926,10 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
             }
         }
     }
+  }
+
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

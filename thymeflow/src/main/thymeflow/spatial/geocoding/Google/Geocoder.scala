@@ -1,4 +1,4 @@
-package thymeflow.spatial.geocoding.Google
+package thymeflow.spatial.geocoding.google
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
@@ -51,10 +51,10 @@ object Geocoder {
 
 }
 
-private[Google] case class GeocoderResult(results: Array[Feature]) {
+private[google] case class GeocoderResult(results: Array[Feature]) {
 }
 
-private[Google] trait GeocoderResultJsonProtocol extends SprayJsonSupport with DefaultJsonProtocol {
+private[google] trait GeocoderResultJsonProtocol extends SprayJsonSupport with DefaultJsonProtocol {
   implicit val componentFormat = jsonFormat3(Component)
   implicit val addressFormat = jsonFormat1(Address)
   implicit val locationFormat = jsonFormat2(Location)

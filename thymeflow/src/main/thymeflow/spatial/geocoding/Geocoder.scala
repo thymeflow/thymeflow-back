@@ -41,5 +41,5 @@ object Geocoder {
     *
     * @return a GoogleMapsGeocoder
     */
-  def googleMaps() = geocoding.Google.Geocoder()
+  def googleMaps() = geocoding.google.Geocoder()
 }

@@ -1,4 +1,4 @@
-package thymeflow.spatial.geocoding.Google
+package thymeflow.spatial.geocoding.google
 
 import thymeflow.spatial.geocoding.FeatureSource
 

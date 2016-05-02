@@ -1,4 +1,4 @@
-package thymeflow.spatial.geocoding.Google
+package thymeflow.spatial.geocoding.google
 
 import thymeflow.spatial.geocoding
 import thymeflow.spatial.geocoding.FeatureSource
@@ -18,12 +18,12 @@ case class Feature(formatted_address: String, address_components: Array[Componen
   override def name: Option[String] = Some(formatted_address)
 }
 
-private[Google] case class Geometry(location: Location) {
+private[google] case class Geometry(location: Location) {
 }
 
-private[Google] case class Location(lat: Double, lng: Double) {
+private[google] case class Location(lat: Double, lng: Double) {
 }
 
 
-private[Google] case class Component(long_name: String, short_name: String, types: Array[String]) {
+private[google] case class Component(long_name: String, short_name: String, types: Array[String]) {
 }

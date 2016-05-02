@@ -14,6 +14,7 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   *         Works only if the repository does symmetric inference for owl:sameAs
   *         (if owl:sameAs statements are only retrieved from InverseFunctionalPropertyInferencer it is already done)
+  *         TODO: will do bad things if owl:sameAs is also used for places
   */
 class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
 

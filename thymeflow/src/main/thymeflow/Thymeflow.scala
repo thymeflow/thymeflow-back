@@ -5,6 +5,7 @@ import java.io.File
 import com.typesafe.scalalogging.StrictLogging
 import thymeflow.enricher._
 import thymeflow.rdf.RepositoryFactory
+import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.sync.FileSynchronizer
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
 
@@ -22,6 +23,7 @@ object Thymeflow extends StrictLogging {
     setupSynchronizers()
     val pipeline = new Pipeline(repository.getConnection, List(
       new InverseFunctionalPropertyInferencer(repository.getConnection),
+      new GeocoderEnricher(repository.getConnection, Geocoder.cached(Geocoder.googleMaps())),
       new LocationStayEnricher(repository.getConnection, 10 seconds),
       new LocationEventEnricher(repository.getConnection, 240 seconds),
       new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)

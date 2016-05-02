@@ -5,5 +5,7 @@ package thymeflow.spatial.geocoding
   */
 trait FeatureSource {
   def isValid: Boolean
+
+  def iri: String
 }
 

@@ -9,7 +9,7 @@ import thymeflow.spatial.geographic.{Geography, Point}
   */
 case class Feature(formatted_address: String, address_components: Array[Component], geometry: Geometry, place_id: String)
   extends geocoding.Feature {
-  override def source: FeatureSource = GoogleMap()
+  override def source: FeatureSource = GoogleMap(place_id)
 
   override def address: geocoding.Address = new Address(address_components)
 

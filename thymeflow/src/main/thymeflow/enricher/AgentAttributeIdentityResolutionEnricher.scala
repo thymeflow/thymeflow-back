@@ -77,15 +77,26 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
-  private val metric = new LevensteinDistance()
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
-  private val matchingDistance = new BipartiteMatchingDistance(
-    (s1, s2) => 1.0d - metric.getDistance(normalizeTerm(s1), normalizeTerm(s2)), 0.3
-  )
-  private val entityMatchingWeight = matchingDistance.getDistance _
-  private val entityMatchIndices = matchingDistance.matchIndices _
+  private val termSimilarity = {
+    val levensteinDistance = new LevensteinDistance()
+    (term1: String, term2: String) => {
+      levensteinDistance.getDistance(normalizeTerm(term1), normalizeTerm(term2))
+    }
+  }
+
+  private val (getMatchingTermSimilarities, getMatchingTermIndices) = {
+    val distanceThreshold = 0.3
+    val bipartiteMatchingDistance = new BipartiteMatchingDistance((s1, s2) => 1d - termSimilarity(s1, s2), distanceThreshold)
+    def getSimilarities(terms1: Seq[String], terms2: Seq[String]) = {
+      bipartiteMatchingDistance.getDistance(terms1, terms2).map {
+        case (subTerms1, subTerms2, distance) => (subTerms1, subTerms2, 1d - distance)
+      }
+    }
+    (getSimilarities _, bipartiteMatchingDistance.matchIndices _)
+  }
   private val parallelism = 1
-  private val sameAsThreshold = 0.7d
+  private val termInclusionSimilarityThreshold = 0.7d
   // contactRelativeWeight must be between 0 and 1 or None
   private val contactRelativeWeight = Option(0.5)
   private val persistenceThreshold = 0.9d
@@ -147,22 +158,20 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
 
     val agentRepresentativeMatchNames = if (solveDuplicateNameParts) {
-      if (solveNamePartTypes) {
-        val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
-        reconciledAgentNames.map {
-          case (agent, primaryNames, _) =>
-            agent -> primaryNames.map {
-              case (primaryName, (weight, _)) => (primaryName, weight, namePartTypeInference((agent, primaryName)))
-            }
-        }.toMap
-      } else {
-        reconciledAgentNames.map {
-          case (agent, primaryNames, _) =>
-            agent -> primaryNames.map {
-              case (primaryName, (weight, namePartTypes)) => (primaryName, weight, namePartTypes.toSet)
-            }
-        }.toMap
+      val getNamePartTypes = {
+        if (solveNamePartTypes) {
+          val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
+          (agent: Resource, primaryName: String, sourceNamePartTypes: Vector[IRI]) => namePartTypeInference((agent, primaryName))
+        } else {
+          (agent: Resource, primaryName: String, sourceNamePartTypes: Vector[IRI]) => sourceNamePartTypes.toSet
+        }
       }
+      reconciledAgentNames.map {
+        case (agent, primaryNames, _) =>
+          agent -> primaryNames.map {
+            case (primaryName, (weight, namePartTypes)) => (primaryName, weight, getNamePartTypes(agent, primaryName, namePartTypes))
+          }
+      }.toMap
     } else {
       agentRepresentativeNames.map {
         case (agent, names) => agent -> names.toIndexedSeq.map {
@@ -176,24 +185,32 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }(scala.collection.breakOut): Map[String, Resource]
 
     // compute a (Agent, Name) list
-    val agentAndNames = agentRepresentativeMatchNames.flatMap {
-      case (agent, nameCounts) =>
-        nameCounts.map {
-          case (name, _, _) => (agent, name)
-        }.distinct
-    }(scala.collection.breakOut): Vector[(Resource, String)]
+    val agentAndNames: Vector[(Resource, String)] = if (solveDuplicateNameParts) {
+      // in this case, a agent only has one name assignment through agentRepresentativeMatchNames
+      // we simply concatenate their name terms sorted by decreasing weight
+      val ordering = implicitly[Ordering[Double]].reverse
+      agentRepresentativeMatchNames.map {
+        case (agent, terms) =>
+          val name = terms.sortBy(_._2)(ordering).map(_._1).mkString(" ")
+          (agent, name)
+      }(scala.collection.breakOut)
+    } else {
+      agentRepresentativeMatchNames.flatMap {
+        case (agent, nameCounts) =>
+          nameCounts.map {
+            case (name, _, _) => (agent, name)
+          }.distinct
+      }(scala.collection.breakOut)
+    }
 
     val termIDFs = computeTermIDFs(agentAndNames.view.map(_._2))
-    val textMatchScore = entityMatchingScore(entityMatchingWeightCombine(termIDFs), entityMatchingWeight) _
-
+    val termMatchingSimilarity = termMatchingScore(normalizedSoftTFIDF(termIDFs), getMatchingTermSimilarities) _
     FullTextSearchServer[Resource](agentRepresentativeIRIToResourceMap.apply)(_.stringValue()).flatMap {
       case textSearchServer =>
         textSearchServer.add(agentAndNames).flatMap {
-          case _ =>
-            textSearchServer.refreshIndex()
+          _ => textSearchServer.refreshIndex()
         }.map {
-          case _ =>
-            textSearchServer
+          _ => textSearchServer
         }
     }.flatMap {
       case textSearchServer =>
@@ -201,31 +218,30 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         implicit val orderedValues = (thisValue: Resource) => new Ordered[Resource] {
           override def compare(that: Resource): Int = thisValue.stringValue().compare(that.stringValue())
         }
-        val source = Source.fromIterator(() => agentAndNames.iterator).mapAsync(parallelism) {
+        val similaritySource = Source.fromIterator(() => agentAndNames.iterator).mapAsync(parallelism) {
           case (agent1, name1) =>
             recognizeEntities(entityRecognizer)(Int.MaxValue, clearDuplicateNestedResults = true)(name1).map {
               _.collect({
-                case (agent2, name2, name1Split, name2Split, nameMatch) if agent1 != agent2 => (agent1, agent2, name1Split, name2Split, nameMatch)
+                case (agent2, name2, terms1, terms2, matchedTerms1) if agent1 != agent2 => (agent1, agent2, terms1, terms2)
               })
             }
         }.mapConcat(_.toVector).map {
-          case (agent1, agent2, text1, text2, matchText1) =>
-            textMatchScore(text1, text2).map {
-              case t => (agent1, agent2, matchText1, t)
+          case (agent1, agent2, terms1, terms2) =>
+            termMatchingSimilarity(terms1, terms2).map {
+              case (_, similarity) => (agent1, agent2, similarity)
             }
         }.collect {
-          case Some((agent1, agent2, _, (_, similarity))) => (agent1, agent2, similarity)
+          case Some(x) => x
         }
-        buildInclusionRelationSimilarities(source.filter(_._3 >= sameAsThreshold)).map {
+        // Filter candidate equalities over a certain threshold in both inclusions
+        buildInclusionRelationSimilarities(similaritySource.filter(_._3 >= termInclusionSimilarityThreshold)).map {
           case equalities =>
-            // Filter candidate equalities over a certain threshold in both inclusions
             val sameAsCandidates: Vector[(Resource, Resource)] = equalities.collect {
-              case ((agent1, agent2), (leftInclusionWeight, rightInclusionWeight)) if leftInclusionWeight >= sameAsThreshold && rightInclusionWeight >= sameAsThreshold => (agent1, agent2)
+              case ((agent1, agent2), (leftInclusionWeight, rightInclusionWeight)) if leftInclusionWeight != 0d && rightInclusionWeight != 0d => (agent1, agent2)
             }(scala.collection.breakOut)
             val ordering = implicitly[Ordering[Double]].reverse
-            def occurringNames(instance: Resource) = agentRepresentativeMatchNames(instance)
             // Compute final equality weights
-            val equalityWeights = getEqualityProbabilities(sameAsCandidates, occurringNames, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
+            val equalityWeights = getEqualityProbabilities(sameAsCandidates, agentRepresentativeMatchNames.apply, termIDFs, getMatchingTermSimilarities).sortBy(_._5)(ordering)
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalityWeights.foreach {
@@ -541,7 +557,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         agent ->(agentRepresentativeMessageNames.get(agent).map(_.toIndexedSeq).getOrElse(IndexedSeq.empty), agentNameParts.getOrElse(agent, IndexedSeq.empty))
     }.toIndexedSeq
 
-    reconcileEntityNames(agentAndNames, entityMatchIndices)
+    reconcileEntityNames(agentAndNames, getMatchingTermIndices)
   }
 
   private def reconcileEntityNames[ENTITY, TERM_PART, NUMERIC: Numeric](entityNames: Traversable[(ENTITY, (Traversable[(String, NUMERIC)], Traversable[(String, TERM_PART)]))],
@@ -570,9 +586,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     entityNames.map {
       case (agent, (names, nameParts)) =>
         val splitNames = (names.view.map {
-          case (name, count) => (entitySplit(name), Left(count))
+          case (name, count) => (extractTerms(name), Left(count))
         } ++ nameParts.map {
-          case (name, t) => (entitySplit(name), Right(t))
+          case (name, t) => (extractTerms(name), Right(t))
         }.view).toVector
         val reconciledNames = reconcileNames(splitNames, equivalenceMatching).map {
           case (equivalentNames) =>
@@ -666,10 +682,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }.toVector
   }
 
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
-  }
-
   /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
@@ -696,49 +708,54 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                                                  entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
     equalityCandidates.map {
       case (instance1, instance2) =>
-        getEqualityProbability(instance1, instance2, nameStatements, termIDFs, entityMatchingWeight)
+        val instance1Names = nameStatements(instance1)
+        val instance2Names = nameStatements(instance2)
+        val probability = getNamesEqualityProbability(instance1Names, instance2Names, termIDFs, entityMatchingWeight)
+        (instance1, instance1Names, instance2, instance2Names, probability)
     }
   }
 
-  private def getEqualityProbability[RESOURCE](instance1: RESOURCE,
-                                               instance2: RESOURCE,
-                                               nameStatements: (RESOURCE) => Traversable[(String, Double, Set[IRI])],
-                                               termIDFs: Map[String, Double],
-                                               entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
+  private def getNamesEqualityProbability[RESOURCE](names1: Traversable[(String, Double, Set[IRI])],
+                                                    names2: Traversable[(String, Double, Set[IRI])],
+                                                    termIDFs: Map[String, Double],
+                                                    termSimilarityMatch: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
     var weight = 0d
     var normalization = 0d
-    val nameStatements1 = nameStatements(instance1)
-    val nameStatements2 = nameStatements(instance2)
-    nameStatements1.foreach {
+    names1.foreach {
       case (name1, count1, _) =>
-        nameStatements2.foreach {
+        names2.foreach {
           case (name2, count2, _) =>
-            val split1 = entitySplit(name1)
-            val split2 = entitySplit(name2)
-            if (split1.nonEmpty && split2.nonEmpty) {
-              val weight1 = entityMatchingWeight(split1, split2)
-              val weight2 = weight1.map {
+            val terms1 = extractTerms(name1)
+            val terms2 = extractTerms(name2)
+            if (terms1.nonEmpty && terms2.nonEmpty) {
+              val similarities1 = termSimilarityMatch(terms1, terms2)
+              val similarities2 = similarities1.map {
                 case (s1, s2, w) => (s2, s1, w)
               }
-              val maxWeight = scala.math.max(entityMatchingWeightCombine(termIDFs)(split1, split2, weight1), entityMatchingWeightCombine(termIDFs)(split2, split1, weight2))
+              val maxWeight = scala.math.max(normalizedSoftTFIDF(termIDFs)(terms1, terms2, similarities1), normalizedSoftTFIDF(termIDFs)(terms2, terms1, similarities2))
               weight += (count1 * count2) * maxWeight
               normalization += (count1 * count2)
             }
         }
     }
-    val equalityMatchingWeight = if (normalization != 0.0) {
+    val equalityProbability = if (normalization != 0.0) {
       weight / normalization
     } else {
       0.0
     }
-    (instance1, nameStatements1, instance2, nameStatements2, equalityMatchingWeight)
+    equalityProbability
   }
 
-  private def entityMatchingWeightCombine(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], weight: Seq[(Seq[String], Seq[String], Double)]) => {
-    weight.map {
-      case (terms1, terms2, distance) =>
-        terms1.map(termIDFs.compose(normalizeTerm)).sum * (1.0 - distance)
-    }.sum / text1.map(termIDFs.compose(normalizeTerm)).sum
+  private def normalizedSoftTFIDF(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], similarities: Seq[(Seq[String], Seq[String], Double)]) => {
+    val denominator = text1.map(termIDFs.compose(normalizeTerm)).sum * text2.map(termIDFs.compose(normalizeTerm)).sum
+    if (denominator == 0d) {
+      0d
+    } else {
+      similarities.map {
+        case (terms1, terms2, similarity) =>
+          terms1.map(termIDFs.compose(normalizeTerm)).sum * terms2.map(termIDFs.compose(normalizeTerm)).sum * similarity
+      }.sum / denominator
+    }
   }
 
   /**
@@ -778,8 +795,8 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     * or more if contact names are already more important. If contactRelativeWeight is not set, this procedure simply computes name weights by considering
     * contact name ocurrences just as important as message name ocurrences
     *
-    * @param agentRepresentativeContactNames
-    * @param agentRepresentativeMessageNames
+    * @param agentRepresentativeContactNames a map from an agent representative to a name occurrence map, extracted from contact cards
+    * @param agentRepresentativeMessageNames a map from an agent representative to a name occurrence map, extracted from messages
     * @return a map assigning to each agent a list of names and their weights.
     *         for each agent, all weights sum up to 1.0
     */
@@ -812,13 +829,14 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
           case None =>
             (1 / s, 1 / s)
         }
-        agent -> namesForAgent.groupBy(_._1).map {
+        val nameWeights = namesForAgent.groupBy(_._1).map {
           case (name, h) =>
             name -> h.collect {
               case (_, count, true) => count.toDouble * contactMultiplier
-              case (_, count, false) => count.toDouble
+              case (_, count, false) => count.toDouble * messageMultiplier
             }.sum
         }
+        agent -> nameWeights
     }
   }
 
@@ -899,12 +917,12 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }: mutable.Builder[(RESOURCE, VALUE, Long), Map[RESOURCE, Map[VALUE, Long]]]
   }
 
-  private def entityMatchingScore(combine: (Seq[String], Seq[String], Seq[(Seq[String], Seq[String], Double)]) => Double,
-                                  entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)])(text1: Seq[String], text2: Seq[String]) = {
-    val weight = entityMatchingWeight(text1, text2)
-    if (weight.nonEmpty) {
-      val weightScore = combine(text1, text2, weight)
-      Some((weight, weightScore))
+  private def termMatchingScore(combineWeights: (Seq[String], Seq[String], Seq[(Seq[String], Seq[String], Double)]) => Double,
+                                getMatchingWeights: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)])(terms1: Seq[String], terms2: Seq[String]) = {
+    val matchingWeights = getMatchingWeights(terms1, terms2)
+    if (matchingWeights.nonEmpty) {
+      val combinedWeight = combineWeights(terms1, terms2, matchingWeights)
+      Some((matchingWeights, combinedWeight))
     } else {
       None
     }
@@ -920,7 +938,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     */
   private def buildInclusionRelationSimilarities[ENTITY, Mat](matching: Source[(ENTITY, ENTITY, Double), Mat])
                                                              (implicit ordered: ENTITY => Ordered[ENTITY]) = {
-    val equalityMapBuilder = new scala.collection.mutable.HashMap[(ENTITY, ENTITY), (Double, Double)]
+    val inclusionRelationSimilarityMapBuilder = new scala.collection.mutable.HashMap[(ENTITY, ENTITY), (Double, Double)]
     matching.runForeach {
       case (entity1, entity2, similarity) =>
         val (key, (newLeftSimilarity, newRightSimilarity)) = if (entity1 > entity2) {
@@ -928,10 +946,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         } else {
           ((entity1, entity2), (similarity, 0.0))
         }
-        val (leftSimilarity, rightSimilarity) = equalityMapBuilder.getOrElseUpdate(key, (0.0, 0.0))
+        val (leftSimilarity, rightSimilarity) = inclusionRelationSimilarityMapBuilder.getOrElseUpdate(key, (0.0, 0.0))
         val value = (Math.max(leftSimilarity, newLeftSimilarity), Math.max(rightSimilarity, newRightSimilarity))
+        inclusionRelationSimilarityMapBuilder += key -> value
     }.map {
-      case _ => equalityMapBuilder.result()
+      case _ => inclusionRelationSimilarityMapBuilder.result()
     }
   }
 
@@ -942,7 +961,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     * @return a TERM -> IDF map
     */
   private def computeTermIDFs(documents: Traversable[String]) = {
-    val normalizedContent = documents.map(x => entitySplit(x).map(y => normalizeTerm(y)).distinct)
+    val normalizedContent = documents.map(x => extractTerms(x).map(y => normalizeTerm(y)).distinct)
     val N = normalizedContent.size
     val idfs = normalizedContent.flatten.groupBy(identity).map {
       case (term, terms) => term -> math.log(N / terms.size)
@@ -952,19 +971,28 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
-                                   clearDuplicateNestedResults: Boolean = false)(value1: String) = {
-    val value1Split = entitySplit(value1)
-    entityRecognizer.partialMatchQuery(value1Split, searchDepth, clearDuplicateNestedResults = clearDuplicateNestedResults).map {
+                                   clearDuplicateNestedResults: Boolean = false)(text1: String) = {
+    val terms1 = extractTerms(text1)
+    entityRecognizer.partialMatchQuery(terms1, searchDepth, clearDuplicateNestedResults = clearDuplicateNestedResults).map {
       case (positions) =>
         positions.flatMap {
           case (position, matchedEntities) =>
-            val literal1Slice = position.slice(value1Split)
+            val matchedTerms1 = position.slice(terms1)
             matchedEntities.map {
-              case (matchedEntity2, matchedValue2, _) =>
-                (matchedEntity2, matchedValue2, value1Split, entitySplit(matchedValue2), literal1Slice)
+              case (matchedEntity2, matchedText2, _) =>
+                (matchedEntity2, matchedText2, terms1, extractTerms(matchedText2), matchedTerms1)
             }
         }
     }
+  }
+
+  /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

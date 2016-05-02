@@ -8,9 +8,9 @@ import thymeflow.graph.BipartiteMatching
 class BipartiteMatchingDistance(distance: (String, String) => Double,
                                 distanceThreshold: Double) {
 
-  def getDistance(s1Tokens: Seq[String], s2Tokens: Seq[String]): Seq[(Seq[String], Seq[String], Double)] = {
+  def getDistance(s1Tokens: IndexedSeq[String], s2Tokens: IndexedSeq[String]): Seq[(Seq[String], Seq[String], Double)] = {
     matchIndices(s1Tokens, s2Tokens).map {
-      case (s1, s2, d) => (s1.map(s1Tokens), s2.map(s2Tokens), d)
+      case (indices1, indices2, d) => (indices1.map(s1Tokens), indices2.map(s2Tokens), d)
     }
   }
 
@@ -24,14 +24,14 @@ class BipartiteMatchingDistance(distance: (String, String) => Double,
           }
       }
       val (matching, _) = BipartiteMatching.extractMatching(distanceMatrix)
-      val resultBuilder = Vector.newBuilder[(Seq[Int], Seq[Int], Double)]
-      val matchedIndexes1Builder = Vector.newBuilder[Int]
-      val matchedIndexes2Builder = Vector.newBuilder[Int]
+      val resultBuilder = IndexedSeq.newBuilder[(Seq[Int], Seq[Int], Double)]
+      val matchedIndexes1Builder = IndexedSeq.newBuilder[Int]
+      val matchedIndexes2Builder = IndexedSeq.newBuilder[Int]
       matching.zipWithIndex.collect {
         case (v, u) if v != -1 && (distanceMatrix(u)(v) <= distanceThreshold) =>
           matchedIndexes1Builder += u
           matchedIndexes2Builder += v
-          resultBuilder += ((Vector(u), Vector(v), distanceMatrix(u)(v)))
+          resultBuilder += ((IndexedSeq(u), IndexedSeq(v), distanceMatrix(u)(v)))
         case _ =>
       }
       val matchedIndexes1 = matchedIndexes1Builder.result()
@@ -48,7 +48,7 @@ class BipartiteMatchingDistance(distance: (String, String) => Double,
       }
       resultBuilder.result()
     } else {
-      Vector()
+      IndexedSeq()
     }
   }
 }

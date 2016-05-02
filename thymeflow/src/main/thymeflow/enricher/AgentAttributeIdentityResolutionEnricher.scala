@@ -225,7 +225,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             val ordering = implicitly[Ordering[Double]].reverse
             def occurringNames(instance: Resource) = agentRepresentativeMatchNames(instance)
             // Compute final equality weights
-            val equalityWeights = getEqualityProbability(sameAsCandidates, occurringNames, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
+            val equalityWeights = getEqualityProbabilities(sameAsCandidates, occurringNames, termIDFs, entityMatchingWeight).sortBy(_._5)(ordering)
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalityWeights.foreach {
@@ -666,6 +666,10 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }.toVector
   }
 
+  private def entitySplit(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
@@ -686,40 +690,48 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
-  private def getEqualityProbability[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
+  private def getEqualityProbabilities[RESOURCE](equalityCandidates: Vector[(RESOURCE, RESOURCE)],
+                                                 nameStatements: (RESOURCE) => Traversable[(String, Double, Set[IRI])],
+                                                 termIDFs: Map[String, Double],
+                                                 entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
+    equalityCandidates.map {
+      case (instance1, instance2) =>
+        getEqualityProbability(instance1, instance2, nameStatements, termIDFs, entityMatchingWeight)
+    }
+  }
+
+  private def getEqualityProbability[RESOURCE](instance1: RESOURCE,
+                                               instance2: RESOURCE,
                                                nameStatements: (RESOURCE) => Traversable[(String, Double, Set[IRI])],
                                                termIDFs: Map[String, Double],
                                                entityMatchingWeight: (Seq[String], Seq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
-    equalityCandidates.map {
-      case (instance1, instance2) =>
-        var weight = 0d
-        var normalization = 0d
-        val nameStatements1 = nameStatements(instance1)
-        val nameStatements2 = nameStatements(instance2)
-        nameStatements1.foreach {
-          case (name1, count1, _) =>
-            nameStatements2.foreach {
-              case (name2, count2, _) =>
-                val split1 = entitySplit(name1)
-                val split2 = entitySplit(name2)
-                if (split1.nonEmpty && split2.nonEmpty) {
-                  val weight1 = entityMatchingWeight(split1, split2)
-                  val weight2 = weight1.map {
-                    case (s1, s2, w) => (s2, s1, w)
-                  }
-                  val maxWeight = scala.math.max(entityMatchingWeightCombine(termIDFs)(split1, split2, weight1), entityMatchingWeightCombine(termIDFs)(split2, split1, weight2))
-                  weight += (count1 * count2) * maxWeight
-                  normalization += (count1 * count2)
-                }
+    var weight = 0d
+    var normalization = 0d
+    val nameStatements1 = nameStatements(instance1)
+    val nameStatements2 = nameStatements(instance2)
+    nameStatements1.foreach {
+      case (name1, count1, _) =>
+        nameStatements2.foreach {
+          case (name2, count2, _) =>
+            val split1 = entitySplit(name1)
+            val split2 = entitySplit(name2)
+            if (split1.nonEmpty && split2.nonEmpty) {
+              val weight1 = entityMatchingWeight(split1, split2)
+              val weight2 = weight1.map {
+                case (s1, s2, w) => (s2, s1, w)
+              }
+              val maxWeight = scala.math.max(entityMatchingWeightCombine(termIDFs)(split1, split2, weight1), entityMatchingWeightCombine(termIDFs)(split2, split1, weight2))
+              weight += (count1 * count2) * maxWeight
+              normalization += (count1 * count2)
             }
         }
-        val equalityMatchingWeight = if (normalization != 0.0) {
-          weight / normalization
-        } else {
-          0.0
-        }
-        (instance1, nameStatements1, instance2, nameStatements2, equalityMatchingWeight)
     }
+    val equalityMatchingWeight = if (normalization != 0.0) {
+      weight / normalization
+    } else {
+      0.0
+    }
+    (instance1, nameStatements1, instance2, nameStatements2, equalityMatchingWeight)
   }
 
   private def entityMatchingWeightCombine(termIDFs: Map[String, Double]) = (text1: Seq[String], text2: Seq[String], weight: Seq[(Seq[String], Seq[String], Double)]) => {
@@ -953,10 +965,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }
         }
     }
-  }
-
-  private def entitySplit(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   /**

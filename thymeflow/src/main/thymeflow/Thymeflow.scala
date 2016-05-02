@@ -8,6 +8,7 @@ import thymeflow.rdf.RepositoryFactory
 import thymeflow.sync.FileSynchronizer
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
 
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
@@ -19,16 +20,18 @@ object Thymeflow extends StrictLogging {
   def main(args: Array[String]) {
     val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false, lucene = false)
     setupSynchronizers()
-    val pipeline = new Pipeline(repository.getConnection, List(
-      new InverseFunctionalPropertyInferencer(repository.getConnection),
-      new LocationStayEnricher(repository.getConnection),
-      new LocationEventEnricher(repository.getConnection),
-      new AgentIdentityResolutionEnricher(repository.getConnection)
-    ))
+    val pipeline = new Pipeline(
+      repository.getConnection,
+      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
+        .via(Pipeline.delayedBatchToFlow(10 seconds))
+        .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new AgentIdentityResolutionEnricher(repository.getConnection)))
+    )
+
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)
     }
-
   }
 
   def setupSynchronizers() = {

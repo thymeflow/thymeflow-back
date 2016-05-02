@@ -233,7 +233,8 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
           case (agent1, name1) =>
             recognizeEntities(entityRecognizer)(Int.MaxValue, clearDuplicateNestedResults = true)(name1).map {
               _.collect({
-                case (agent2, name2, terms1, terms2, matchedTerms1) if agent1 != agent2 => (agent1, agent2, terms1, terms2)
+                case (agent2, name2, terms1, terms2, matchedTerms1) if agent1 != agent2 =>
+                  (agent1, agent2, terms1, terms2)
               })
             }
         }.mapConcat(_.toIndexedSeq).map {
@@ -252,7 +253,18 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }(scala.collection.breakOut)
             val ordering = implicitly[Ordering[Double]].reverse
             // Compute final equality weights
-            val equalityWeights = getEqualityProbabilities(sameAsCandidates, agentRepresentativeMatchNames.apply, symmetricTFIDF, getMatchingTermSimilarities).sortBy(_._5)(ordering)
+            val equalityWeights = sameAsCandidates.map {
+              case (instance1, instance2) =>
+                val instance1Names = agentRepresentativeMatchNames(instance1).map(x => (x._1, x._2))
+                val instance2Names = agentRepresentativeMatchNames(instance2).map(x => (x._1, x._2))
+                val probability =
+                  if (solveDuplicateNameParts) {
+                    getNameTermsEqualityProbability(instance1Names, instance2Names, termIDFs, getMatchingTermIndicesWithSimilarities)
+                  } else {
+                    getNamesEqualityProbability(instance1Names, instance2Names, symmetricTFIDF, getMatchingTermSimilarities)
+                  }
+                (instance1, instance1Names, instance2, instance2Names, probability)
+            }.sortBy(_._5)(ordering)
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalityWeights.foreach {
@@ -713,29 +725,16 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
-  private def getEqualityProbabilities[RESOURCE](equalityCandidates: IndexedSeq[(RESOURCE, RESOURCE)],
-                                                 nameStatements: (RESOURCE) => Traversable[(String, Double, Set[IRI])],
-                                                 termIDFs: String => Double,
-                                                 termSimilarityMatch: (IndexedSeq[String], IndexedSeq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
-    equalityCandidates.map {
-      case (instance1, instance2) =>
-        val instance1Names = nameStatements(instance1)
-        val instance2Names = nameStatements(instance2)
-        val probability = getNamesEqualityProbability(instance1Names, instance2Names, termIDFs, termSimilarityMatch)
-        (instance1, instance1Names, instance2, instance2Names, probability)
-    }
-  }
-
-  private def getNamesEqualityProbability[RESOURCE](names1: Traversable[(String, Double, Set[IRI])],
-                                                    names2: Traversable[(String, Double, Set[IRI])],
+  private def getNamesEqualityProbability[RESOURCE](names1: Traversable[(String, Double)],
+                                                    names2: Traversable[(String, Double)],
                                                     termIDFs: String => Double,
                                                     termSimilarityMatch: (IndexedSeq[String], IndexedSeq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
     var weight = 0d
     var normalization = 0d
     names1.foreach {
-      case (name1, name1Weight, _) =>
+      case (name1, name1Weight) =>
         names2.foreach {
-          case (name2, name2Weight, _) =>
+          case (name2, name2Weight) =>
             val terms1 = extractTerms(name1)
             val terms2 = extractTerms(name2)
             if (terms1.nonEmpty && terms2.nonEmpty) {
@@ -820,7 +819,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             if (currentContactWeight >= relativeWeight) {
               (1 / s, 1 / s)
             } else {
-              (relativeWeight / totalNameCountsForContact.toDouble, (1d - relativeWeight) / totalNameCountsForMessages.toDouble)
+              if (totalNameCountsForContact > 0 && totalNameCountsForMessages > 0) {
+                (relativeWeight / totalNameCountsForContact.toDouble, (1d - relativeWeight) / totalNameCountsForMessages.toDouble)
+              } else {
+                (1 / s, 1 / s)
+              }
             }
           case None =>
             (1 / s, 1 / s)
@@ -965,6 +968,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     idfs
   }
 
+  /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq
+  }
+
   private def recognizeEntities[T](entityRecognizer: PartialTextMatcher[T])
                                   (searchDepth: Int = 3,
                                    clearDuplicateNestedResults: Boolean = false)(text1: String) = {
@@ -980,15 +992,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }
         }
     }
-  }
-
-  /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq
   }
 
   private def getNameTermsEqualityProbability(terms1: IndexedSeq[(String, Double)],
@@ -1008,15 +1011,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
-    val denominator = text1.map(text1TFIDF).sum * text2.map(text2TFIDF).sum
+    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
     if (denominator == 0d) {
       0d
     } else {
       val numerator = similarities.map {
         case (terms1, terms2, similarity) =>
-          terms1.map(text1TFIDF).sum * terms2.map(text2TFIDF).sum * similarity
+          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
       }.sum
-      numerator / denominator
+      Math.min(numerator / denominator, 1d)
     }
   }
 

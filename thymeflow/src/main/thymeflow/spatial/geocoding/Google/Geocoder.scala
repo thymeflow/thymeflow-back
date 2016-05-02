@@ -42,7 +42,7 @@ class Geocoder(val apiKey: String)(implicit actorSystem: ActorSystem,
 }
 
 object Geocoder {
-  def apply(implicit actorSystem: ActorSystem, materializer: Materializer, executionContext: ExecutionContext): Geocoder =
+  def apply()(implicit actorSystem: ActorSystem, materializer: Materializer, executionContext: ExecutionContext): Geocoder =
     new Geocoder("AIzaSyBe7Pp1BendNDiv8N0V_8rD4t5hJnQ27Vk")
 
   //TODO: remove when the repository will become public

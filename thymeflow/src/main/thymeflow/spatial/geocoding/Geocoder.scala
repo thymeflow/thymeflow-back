@@ -41,5 +41,5 @@ object Geocoder {
     *
     * @return a GoogleMapsGeocoder
     */
-  def googleMaps() = throw new NotImplementedError()
+  def googleMaps() = geocoding.Google.Geocoder()
 }

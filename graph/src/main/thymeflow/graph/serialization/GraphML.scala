@@ -13,15 +13,8 @@ object GraphML {
   def edge(id: String, source: String, target: String, attributes: Traversable[(String, String)] = Traversable.empty) = {
     val attributesXML = elementAttributes(attributes)
     <edge id={id.toString} source={source} target={target}>
-      attributesXML
+      {attributesXML}
     </edge>
-  }
-
-  def node(id: String, attributes: Traversable[(String, String)] = Traversable.empty) = {
-    val attributesXML = elementAttributes(attributes)
-    <node id={id}>
-      attributesXML
-    </node>
   }
 
   def elementAttributes(attributes: Traversable[(String, String)]) = {
@@ -30,6 +23,13 @@ object GraphML {
         {content}
       </data>
     }
+  }
+
+  def node(id: String, attributes: Traversable[(String, String)] = Traversable.empty) = {
+    val attributesXML = elementAttributes(attributes)
+    <node id={id}>
+      {attributesXML}
+    </node>
   }
 
   def nodeKeys(keys: Traversable[(String, String, String)]) = {
@@ -42,15 +42,13 @@ object GraphML {
 
   def graphKeys(keys: Traversable[(String, (String, String, String))]) = {
     keys.map {
-      case (attributeFor, (id, attributeName, attributeType)) =>
-        <key id={id} for={attributeFor} attr.name={attributeName} attr.type={attributeType}></key>
+      case (attributeFor, (id, attributeName, attributeType)) => <key id={id} for={attributeFor} attr.name={attributeName} attr.type={attributeType}></key>
     }
   }
 
   def keys(keys: Traversable[(String, String, String, String)]) = {
     keys.map {
-      case (attributeId, attributeFor, attributeName, attributeType) =>
-        <key id={attributeId} for={attributeFor} attr.name={attributeName} attr.type={attributeType}></key>
+      case (attributeId, attributeFor, attributeName, attributeType) => <key id={attributeId} for={attributeFor} attr.name={attributeName} attr.type={attributeType}></key>
     }
   }
 

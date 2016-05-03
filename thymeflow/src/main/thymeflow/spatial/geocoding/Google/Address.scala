@@ -9,6 +9,14 @@ case class Address(components: Array[Component]) extends geocoding.Address {
 
   override def houseNumber: Option[String] = findComponent("street_number")
 
+  override def street: Option[String] = findComponent("street_address").orElse(findComponent("route"))
+
+  override def city: Option[String] = findComponent("locality")
+
+  override def postcode: Option[String] = findComponent("postal_code")
+
+  override def state: Option[String] = findComponent("administrative_area_level_1")
+
   private def findComponent(typeStr: String): Option[String] = {
     for (component <- components) {
       if (component.types.contains(typeStr)) {
@@ -18,13 +26,5 @@ case class Address(components: Array[Component]) extends geocoding.Address {
     None
   }
 
-  override def city: Option[String] = findComponent("street_number")
-
   override def country: Option[String] = findComponent("country")
-
-  override def state: Option[String] = findComponent("administrative_area_level_1")
-
-  override def postcode: Option[String] = findComponent("postal_code")
-
-  override def street: Option[String] = findComponent("route")
 }

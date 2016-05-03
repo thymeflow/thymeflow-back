@@ -43,7 +43,10 @@ class GeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geo
       if (geocoderResults.size == 1) {
         //We only add the geocoder result if there is only one result
         geocoderResults.map(addFeatureToModel(_, model))
-          .map(model.add(placeIri, OWL.SAMEAS, _))
+          .map({
+            model.add(placeIri, OWL.SAMEAS, _)
+            model.add(_, OWL.SAMEAS, placeIri)
+          })
       } else if (geocoderResults.size > 1) {
         logger.info(s"${geocoderResults.size} results: $geocoderResults")
       }

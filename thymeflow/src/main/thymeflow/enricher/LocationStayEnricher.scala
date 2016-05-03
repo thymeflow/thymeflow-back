@@ -18,7 +18,7 @@ import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial.geographic.{Geography, Point}
-import thymeflow.sync.converter.utils.GeoCoordinatesConverter
+import thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
 import thymeflow.utilities.{ExceptionUtils, TimeExecution}
 
 import scala.concurrent.Await
@@ -32,6 +32,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
+  private val uuidConverter = new UUIDConverter(valueFactory)
 
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricher")
   private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
@@ -67,8 +68,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
     val locationCount = countLocations
     Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
       case cluster =>
-        (ClusterObservation(resource = valueFactory.createBNode(),
-          from = cluster.observations.head.time,
+        (ClusterObservation(from = cluster.observations.head.time,
           to = cluster.observations.last.time,
           accuracy = cluster.accuracy,
           point = cluster.mean), cluster.observations)
@@ -93,8 +93,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       case Seq(a) => a
     }.via(stage3).map {
       case cluster =>
-        (ClusterObservation(resource = valueFactory.createBNode(),
-          from = cluster.observations.head.time,
+        (ClusterObservation(from = cluster.observations.head.time,
           to = cluster.observations.last.time,
           accuracy = cluster.accuracy,
           point = cluster.mean), cluster.observations)
@@ -173,13 +172,14 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
   private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI, context: IRI) = {
     repositoryConnection.begin()
     val model = new SimpleHashModel()
+    val clusterResource = uuidConverter.createBNode(cluster)
     val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
-    model.add(cluster.resource, RDF.TYPE, `type`, context)
-    model.add(cluster.resource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
-    model.add(cluster.resource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
-    model.add(cluster.resource, SchemaOrg.GEO, clusterGeoResource, context)
+    model.add(clusterResource, RDF.TYPE, `type`, context)
+    model.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
+    model.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
+    model.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
     locations.foreach(location =>
-      model.add(location.resource, SchemaOrg.ITEM, cluster.resource, context)
+      model.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
     )
     repositoryConnection.add(model)
     repositoryConnection.commit()
@@ -220,8 +220,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
             point = point,
             accuracy = bindingSet.getValue("uncertainty").asInstanceOf[Literal].doubleValue()),
             Option(bindingSet.getValue("cluster").asInstanceOf[Resource]).map {
-              case cluster => ClusterObservation(resource = cluster,
-                from = Instant.parse(bindingSet.getValue("clusterFrom").stringValue()),
+              case cluster => ClusterObservation(from = Instant.parse(bindingSet.getValue("clusterFrom").stringValue()),
                 to = Instant.parse(bindingSet.getValue("clusterTo").stringValue()),
                 point = Geography.point(bindingSet.getValue("clusterLongitude").asInstanceOf[Literal].doubleValue(), bindingSet.getValue("clusterLatitude").asInstanceOf[Literal].doubleValue()),
                 accuracy = bindingSet.getValue("clusterUncertainty").asInstanceOf[Literal].doubleValue())
@@ -315,18 +314,8 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
                               accuracy: Double,
                               point: Point) extends thymeflow.location.treillis.Observation
 
-  private case class ClusterObservation(resource: Resource,
-                                        from: Instant,
+  private case class ClusterObservation(from: Instant,
                                         to: Instant,
                                         accuracy: Double,
-                                        point: Point) extends thymeflow.location.treillis.ClusterObservation {
-    override def equals(obj: scala.Any): Boolean = {
-      obj match {
-        case other: ClusterObservation => other.resource == resource
-        case _ => false
-      }
-    }
-
-    override def hashCode(): Int = resource.hashCode()
-  }
+                                        point: Point) extends thymeflow.location.treillis.ClusterObservation
 }

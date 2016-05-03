@@ -22,7 +22,6 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
-  private val uuidConverter = new UUIDConverter(valueFactory)
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "PlacesGeocoderEnricher")
 

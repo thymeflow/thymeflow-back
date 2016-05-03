@@ -16,6 +16,8 @@
     </appender>
 
     <logger name="org.elasticsearch" level="WARN"/>
+    <!-- suppress the JNA not found warning -->
+    <logger name="org.elasticsearch.bootstrap" level="ERROR"/>
 
     <root level="info">
         <!--

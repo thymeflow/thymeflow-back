@@ -11,7 +11,7 @@ import org.apache.commons.io.IOUtils
  * @author  David Montoya
  */
 object IO {
-  private val pathTimestampFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'hhmmss")
+  private val pathTimestampFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss")
 
   def pathTimestamp = pathTimestampFormat.format(OffsetDateTime.now(ZoneId.of("UTC")))
 

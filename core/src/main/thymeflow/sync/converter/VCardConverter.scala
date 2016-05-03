@@ -47,7 +47,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
 
   private class ToModelConverter(model: Model, context: IRI) {
     def convert(vCard: VCard): Resource = {
-      val cardResource = resourceFromUid(vCard.getUid)
+      val cardResource = resourceForVCard(vCard)
       model.add(cardResource, RDF.TYPE, Personal.AGENT, context)
 
       vCard.getProperties.asScala.foreach {
@@ -263,12 +263,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       }
     }
 
-    private def resourceFromUid(uid: Uid): Resource = {
-      if (uid == null) {
-        valueFactory.createBNode()
-      } else {
-        uuidConverter.convert(uid.getValue)
-      }
+    private def resourceForVCard(vCard: VCard): Resource = {
+      Option(vCard.getUid)
+        .map(uid => uuidConverter.convert(uid.getValue))
+        .getOrElse(uuidConverter.createIRI(vCard))
     }
   }
 }

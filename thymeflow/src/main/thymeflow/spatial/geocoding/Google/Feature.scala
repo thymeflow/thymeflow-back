@@ -1,5 +1,6 @@
 package thymeflow.spatial.geocoding.google
 
+import thymeflow.spatial
 import thymeflow.spatial.geocoding
 import thymeflow.spatial.geocoding.FeatureSource
 import thymeflow.spatial.geographic.{Geography, Point}
@@ -11,7 +12,7 @@ case class Feature(formatted_address: String, address_components: Array[Componen
   extends geocoding.Feature {
   override def source: FeatureSource = GoogleMap(place_id)
 
-  override def address: geocoding.Address = new Address(address_components)
+  override def address: spatial.Address = new Address(address_components)
 
   override def point: Point = Geography.point(geometry.location.lng, geometry.location.lat)
 

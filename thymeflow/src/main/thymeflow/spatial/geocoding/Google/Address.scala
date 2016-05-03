@@ -1,21 +1,15 @@
 package thymeflow.spatial.geocoding.google
 
-import thymeflow.spatial.geocoding
+import thymeflow.spatial
 
 /**
   * @author Thomas Pellissier Tanon
   */
-case class Address(components: Array[Component]) extends geocoding.Address {
+case class Address(components: Array[Component]) extends spatial.Address {
 
   override def houseNumber: Option[String] = findComponent("street_number")
 
   override def street: Option[String] = findComponent("street_address").orElse(findComponent("route"))
-
-  override def city: Option[String] = findComponent("locality")
-
-  override def postcode: Option[String] = findComponent("postal_code")
-
-  override def state: Option[String] = findComponent("administrative_area_level_1")
 
   private def findComponent(typeStr: String): Option[String] = {
     for (component <- components) {
@@ -25,6 +19,12 @@ case class Address(components: Array[Component]) extends geocoding.Address {
     }
     None
   }
+
+  override def locality: Option[String] = findComponent("locality")
+
+  override def postalCode: Option[String] = findComponent("postal_code")
+
+  override def region: Option[String] = findComponent("administrative_area_level_1")
 
   override def country: Option[String] = findComponent("country")
 }

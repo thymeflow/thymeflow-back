@@ -17,9 +17,9 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
                                 (implicit system: ActorSystem, executionContext: ExecutionContext)
   extends GraphStage[FlowShape[In, Out]] with StrictLogging {
 
-  override val shape: FlowShape[In, Out] = FlowShape.of(in, out)
   val in = Inlet[In]("DelayedBatch.in")
   val out = Outlet[Out]("DelayedBatch.out")
+  override val shape: FlowShape[In, Out] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
 

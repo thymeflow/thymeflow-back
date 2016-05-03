@@ -24,7 +24,7 @@ trait FullTextSearchPartialTextMatcher[ENTITY] extends PartialTextMatcher[ENTITY
 
   implicit def executionContext: ExecutionContext
 
-  override def partialMatchQuery(tokens: Seq[String], searchDepth: Int = defaultSearchDepth, clearDuplicateNestedResults: Boolean = false): Future[Seq[(ContentPosition, Seq[(ENTITY, String, Float)])]] = {
+  override def partialMatchQuery(tokens: IndexedSeq[String], searchDepth: Int = defaultSearchDepth, clearDuplicateNestedResults: Boolean = false): Future[Seq[(ContentPosition, Seq[(ENTITY, String, Float)])]] = {
     val tokensLength = tokens.length
 
     // this method is future-recursive, so it cannot blow up the stack
@@ -56,13 +56,13 @@ trait FullTextSearchPartialTextMatcher[ENTITY] extends PartialTextMatcher[ENTITY
                     case (position, entities) =>
                       val filteredEntities = entities.filter{
                         case (entity, _, _) =>
-                          nestedEntityPositions.get(entity).map{
+                          nestedEntityPositions.get(entity).forall {
                             case (positions) =>
                               !positions.exists{
                                 case (_, nestedEntityPosition) =>
                                   (nestedEntityPosition.index <= position.index) && (position.index + position.count <= nestedEntityPosition.index + nestedEntityPosition.count)
                               }
-                          }.getOrElse(true)
+                          }
                       }
                       if(filteredEntities.nonEmpty){
                         Some((position, filteredEntities))
@@ -81,7 +81,7 @@ trait FullTextSearchPartialTextMatcher[ENTITY] extends PartialTextMatcher[ENTITY
     searchRecursive(tokens.indices.map(ContentPosition(_, 1)))
   }
 
-  private def search(content: Seq[String])(position: ContentPosition) = {
+  private def search(content: IndexedSeq[String])(position: ContentPosition) = {
     val query = position.mkString(content)
     memoizedSearch(query).map {
       case result => (position, result)

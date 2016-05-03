@@ -16,6 +16,7 @@ import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.TextAlignment
 import thymeflow.text.distances.BipartiteMatchingDistance
@@ -24,6 +25,7 @@ import thymeflow.utilities.Memoize
 import thymeflow.utilities.text.Normalization
 
 import scala.collection.mutable
+import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 
 /**
@@ -68,11 +70,9 @@ object AgentAttributeIdentityResolutionEnricher {
   * Depends on InverseFunctionalPropertyInferencer
   */
 class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
-                                               val delay: Duration,
                                                solveDuplicateNameParts: Boolean = false,
                                                solveNamePartTypes: Boolean = false,
-                                               debug: Boolean = false)
-  extends DelayedEnricher with StrictLogging {
+                                               debug: Boolean = false) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
@@ -156,7 +156,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }"""
   )
 
-  override protected def runEnrichments() = {
+  override def enrich(diff: ModelDiff): Unit = {
     // get a map assigning to each agent facet its representative in the "shared id" equivalence class
     val agentRepresentativeMap = getSharedIdRepresentativeByAgent
     // get the list email addresses for each agent
@@ -229,7 +229,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       case (term, agents) => term -> agents.map(_._2).toSet
     }
 
-    FullTextSearchServer[Resource](agentRepresentativeIRIToResourceMap.apply)(_.stringValue(), searchSize = searchSize).flatMap {
+    val result = FullTextSearchServer[Resource](agentRepresentativeIRIToResourceMap.apply)(_.stringValue(), searchSize = searchSize).flatMap {
       case textSearchServer =>
         // add all terms to the index
         textSearchServer.add(agentAndNormalizedNameTerms.view.flatMap {
@@ -306,6 +306,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
         }
     }
+    Await.result(result, Duration.Inf)
   }
 
   private def inferNamePartTypes[NUMERIC: Numeric](reconciledAgentNames: IndexedSeq[(Resource, IndexedSeq[(String, (NUMERIC, IndexedSeq[IRI]))], IndexedSeq[IndexedSeq[(Seq[String], (NUMERIC, IndexedSeq[IRI]))]])],

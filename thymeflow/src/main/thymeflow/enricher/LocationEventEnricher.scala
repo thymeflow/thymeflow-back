@@ -1,161 +1,121 @@
 package thymeflow.enricher
 
-import java.time.{Duration, Instant}
+import javax.xml.bind.DatatypeConverter
 
 import akka.stream.scaladsl.Source
+import com.typesafe.scalalogging.StrictLogging
+import org.openrdf.model.vocabulary.XMLSchema
 import org.openrdf.model.{Literal, Resource}
-import org.openrdf.query.QueryLanguage
+import org.openrdf.query.{BindingSet, QueryLanguage}
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.LocationEventEnricher.{Event, Stay}
 import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import thymeflow.spatial.geographic.{Geography, Point}
 
-object LocationEventEnricher {
-
-  private case class Stay(resource: Resource,
-                          from: Instant,
-                          to: Instant,
-                          point: Point,
-                          accuracy: Double) {
-    override def equals(obj: scala.Any): Boolean = {
-      obj match {
-        case other: Stay if other.isInstanceOf[Stay] =>
-          other.resource == resource
-        case _ => false
-      }
-    }
-
-    override def hashCode(): Int = resource.hashCode()
-  }
-
-  private case class Event(resource: Resource,
-                           from: Instant,
-                           to: Instant) {
-    override def equals(obj: scala.Any): Boolean = {
-      obj match {
-        case other: Stay if other.isInstanceOf[Stay] =>
-          other.resource == resource
-        case _ => false
-      }
-    }
-
-    override def hashCode(): Int = resource.hashCode()
-  }
-
-}
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 /**
+  * @author Thomas Pellissier Tanon
   * @author David Montoya
+  *         All times are here stored as miliseconds since the epoch
   */
-class LocationEventEnricher(repositoryConnection: RepositoryConnection, val delay: scala.concurrent.duration.Duration) extends DelayedEnricher {
+class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationEventEnricher")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
+
+  private val overlapMinRatio = 0.1
+
+  private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?event ?start ?end WHERE {
+      ?event a <${SchemaOrg.EVENT}> ;
+             <${SchemaOrg.START_DATE}> ?start ;
+             <${SchemaOrg.END_DATE}> ?end .
+      } ORDER BY ?start"""
+  )
+  private val staysQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?event ?start ?end WHERE {
+      ?event a <${Personal.STAY_EVENT}> ;
+            <${SchemaOrg.START_DATE}> ?start ;
+            <${SchemaOrg.END_DATE}> ?end .
+    } ORDER BY ?start"""
+  )
 
   /**
     * Run the enrichments defined by this Enricher
     */
-  override def runEnrichments(): Unit = {
+  override def enrich(diff: ModelDiff): Unit = {
+    val events = getEvents.toBuffer
 
-    getEvents.runFold(Vector.empty[Event]) {
-      case (v, u) => v :+ u
-    }.map {
-      case events =>
-        getStays.map {
-          case stay =>
-            repositoryConnection.begin()
-            eventsForStay(events, stay).foreach {
-              case event =>
-                repositoryConnection.add(event, SchemaOrg.LOCATION, stay.resource, inferencerContext)
-            }
-            repositoryConnection.commit()
+    Await.result(getStays.map(stay =>
+      events.filter(event => {
+        //We look for not null intersection (remark: may not work if bounds are exactly equal)
+        if (event.start <= stay.start) {
+          //We should have stay beginning is between event.start and event.end
+          event.end >= stay.start && isMatchIntervalBiggerThanRatioOfEvent(stay.start, Math.min(event.end, stay.end), event)
+        } else {
+          //We should have the event beginning is between stay.start and stay.end
+          event.start <= stay.end && isMatchIntervalBiggerThanRatioOfEvent(event.start, Math.min(event.end, stay.end), event)
         }
+      }).map(event => {
+        repositoryConnection.begin()
+        repositoryConnection.add(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext)
+        repositoryConnection.commit()
+        event
+      }).size
+    ).runReduce(_ + _).map(addedConnections =>
+      logger.info(s"$addedConnections added between events and stay locations")
+    ), Duration.Inf)
+  }
+
+  private def isMatchIntervalBiggerThanRatioOfEvent(start: Long, end: Long, event: TimeIntervalResource): Boolean = {
+    (end - start).toFloat / event.length > overlapMinRatio
+  }
+
+  private def getEvents: Iterator[TimeIntervalResource] = {
+    eventsQuery.evaluate().map(parseTimeIntervalTuple).collect {
+      case Some(timeIntervalResource) => timeIntervalResource
     }
   }
 
-  def eventsForStay(events: IndexedSeq[Event], stay: Stay) = {
-    import scala.collection.Searching._
-    val ordering = new Ordering[Event] {
-      override def compare(x: Event, y: Event): Int = {
-        val d = Duration.between(x.from, y.from)
-        if (d.isNegative) 1 else if (d.isZero) 0 else -1
+  private def getStays: Source[TimeIntervalResource, _] = {
+    Source.fromIterator(() => staysQuery.evaluate()).map(parseTimeIntervalTuple).collect {
+      case Some(timeIntervalResource) => timeIntervalResource
+    }
+  }
+
+  private def parseTimeIntervalTuple(bindingSet: BindingSet): Option[TimeIntervalResource] = {
+    (
+      Option(bindingSet.getValue("event").asInstanceOf[Resource]),
+      Option(bindingSet.getValue("start").asInstanceOf[Literal]).flatMap(parseLiteralAsTime),
+      Option(bindingSet.getValue("end").asInstanceOf[Literal]).flatMap(parseLiteralAsTime)
+      ) match {
+      case (Some(resource), Some(start), Some(end)) => Some(TimeIntervalResource(resource, start, end))
+      case _ => None
+    }
+  }
+
+  private def parseLiteralAsTime(literal: Literal): Option[Long] = {
+    literal.getDatatype match {
+      case XMLSchema.DATE => Some(DatatypeConverter.parseDate(literal.getLabel).getTimeInMillis)
+      case XMLSchema.DATETIME => Some(DatatypeConverter.parseDateTime(literal.getLabel).getTimeInMillis)
+      case _ => None
+    }
+  }
+
+  private case class TimeIntervalResource(resource: Resource, start: Long, end: Long) {
+    def length = end - start
+
+    override def equals(obj: scala.Any): Boolean = {
+      obj match {
+        case other: TimeIntervalResource => other.resource == resource
+        case _ => false
       }
     }
-    val searchValue = Event(stay.resource, stay.from, stay.from)
-    events.search(searchValue)(ordering) match {
-      case Found(i) =>
-        val Event(a, _, ta) = events(math.max(i - 1, events.indices.min))
-        val Event(b, tb, _) = events(math.min(i, events.indices.max))
-        Some(Seq((a, ta), (b, tb)).map(x => (x._1, Duration.between(stay.from, x._2).abs)).minBy(_._2)._1)
-      case InsertionPoint(i) if i > 0 && i <= events.indices.max =>
-        val Event(a, _, ta) = events(math.max(i - 1, events.indices.min))
-        val Event(b, tb, _) = events(math.min(i, events.indices.max))
-        Some(Seq((a, ta), (b, tb)).map(x => (x._1, Duration.between(stay.from, x._2).abs)).minBy(_._2)._1)
-      case _ =>
-        None
-    }
-  }
 
-  private def getEvents = {
-    val eventsQuery =
-      s"""
-         |SELECT ?event ?from ?to
-         |WHERE {
-         |  ?event a <${SchemaOrg.EVENT}> ;
-         |          <${SchemaOrg.START_DATE}> ?from ;
-         |          <${SchemaOrg.END_DATE}> ?to .
-         |} ORDER BY ?from
-    """.stripMargin
-    Source.fromIterator(() => repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, eventsQuery).evaluate()).map {
-      case bindingSet =>
-        try {
-          val event = bindingSet.getValue("event").asInstanceOf[Resource]
-          val from = Instant.parse(bindingSet.getValue("from").stringValue())
-          val to = Instant.parse(bindingSet.getValue("to").stringValue())
-          Some(Event(event, from, to))
-        } catch {
-          case e: NumberFormatException => None
-          case e: NullPointerException => None
-        }
-    }.collect {
-      case Some(x) => x
-    }
-  }
-
-  private def getStays = {
-    val staysQuery =
-      s"""
-         |SELECT ?stay ?from ?to ?longitude ?latitude ?uncertainty
-         |WHERE {
-         |  ?stay a <${Personal.STAY_EVENT}> ;
-         |          <${SchemaOrg.GEO}> ?clusterGeo ;
-         |          <${SchemaOrg.START_DATE}> ?from ;
-         |          <${SchemaOrg.END_DATE}> ?to .
-         |  ?geo    <${SchemaOrg.LONGITUDE}> ?longitude ;
-         |          <${SchemaOrg.LATITUDE}> ?latitude ;
-         |          <${Personal.UNCERTAINTY}> ?uncertainty .
-         |} ORDER BY ?from
-    """.stripMargin
-    Source.fromIterator(() => repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, staysQuery).evaluate()).map {
-      case bindingSet =>
-        try {
-          val stay = bindingSet.getValue("stay").asInstanceOf[Resource]
-          val longitude = bindingSet.getValue("longitude").asInstanceOf[Literal].doubleValue()
-          val latitude = bindingSet.getValue("latitude").asInstanceOf[Literal].doubleValue()
-          val point = Geography.point(longitude, latitude)
-          val from = Instant.parse(bindingSet.getValue("from").stringValue())
-          val to = Instant.parse(bindingSet.getValue("to").stringValue())
-          val uncertainty = bindingSet.getValue("uncertainty").asInstanceOf[Literal].doubleValue()
-          Some(Stay(stay, from, to, point, uncertainty))
-        } catch {
-          case e: NumberFormatException => None
-          case e: NullPointerException => None
-        }
-    }.collect {
-      case Some(x) => x
-    }
+    override def hashCode(): Int = resource.hashCode()
   }
 
 }

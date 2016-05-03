@@ -2,13 +2,13 @@ package thymeflow
 
 import akka.NotUsed
 import akka.actor.ActorRef
-import akka.stream.SourceShape
+import akka.stream._
 import akka.stream.scaladsl.GraphDSL.Implicits._
 import akka.stream.scaladsl._
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.Enricher
+import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
@@ -22,12 +22,12 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[Enricher])
+class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Flow[ModelDiff, ModelDiff, _])
   extends StrictLogging {
 
   private val actorRefs = buildSource()
     .via(buildRepositoryInsertion())
-    .via(buildInferenceSystem())
+    .via(enrichers)
     .to(Sink.ignore)
     .run()
 
@@ -89,15 +89,16 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Iterable[E
 
     new ModelDiff(statements, statementsToRemove)
   }
+}
 
-  private def buildInferenceSystem(): Flow[ModelDiff, ModelDiff, NotUsed] = {
-    var flow = Flow[ModelDiff]
-    for (enricher <- enrichers) {
-      flow = flow.map(diff => {
-        enricher.enrich(diff)
-        diff
-      })
-    }
-    flow
-  }
+object Pipeline {
+  def delayedBatchToFlow(delay: FiniteDuration) = Flow[ModelDiff].via(DelayedBatch[ModelDiff]((diff1, diff2) => {
+    diff1.apply(diff2)
+    diff1
+  }, delay))
+
+  def enricherToFlow(enricher: Enricher) = Flow[ModelDiff].map(diff => {
+    enricher.enrich(diff)
+    diff
+  })
 }

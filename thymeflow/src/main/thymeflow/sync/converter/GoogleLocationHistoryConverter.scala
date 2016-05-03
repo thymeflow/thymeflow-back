@@ -54,13 +54,6 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     convert(parse(str).extract[LocationHistory], context)
   }
 
-  private def convert(locationHistory: LocationHistory, context: IRI): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context)
-    converter.convert(locationHistory)
-    model
-  }
-
   override def convert(inputStream: InputStream, context: IRI): Model = {
     try {
       convert(parse(inputStream).extract[LocationHistory], context)
@@ -71,11 +64,17 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     }
   }
 
+  private def convert(locationHistory: LocationHistory, context: IRI): Model = {
+    val model = new SimpleHashModel(valueFactory)
+    val converter = new ToModelConverter(model, context)
+    converter.convert(locationHistory)
+    logger.info("Extraction of " + locationHistory.locations.size + " locations done.")
+    model
+  }
+
   private class ToModelConverter(model: Model, context: IRI) {
     def convert(locationHistory: LocationHistory): Unit = {
-      locationHistory.locations.foreach {
-        location => convert(location)
-      }
+      locationHistory.locations.foreach(convert)
     }
 
     def convert(location: Location): Unit = {
@@ -88,17 +87,15 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
           model.add(timeGeoLocationNode, SchemaOrg.DATE_CREATED, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
 
           // less frequent
-          location.velocity.foreach {
-            case magnitude =>
-              val velocityNode = valueFactory.createBNode()
-              model.add(velocityNode, RDF.TYPE, Personal.GEO_VECTOR, context)
-              model.add(geoCoordinatesNode, Personal.VELOCITY, velocityNode, context)
-              model.add(velocityNode, Personal.MAGNITUDE, valueFactory.createLiteral(magnitude), context)
-              location.heading.foreach {
-                case heading =>
-                  model.add(geoCoordinatesNode, Personal.ANGLE, valueFactory.createLiteral(heading), context)
-              }
-          }
+          location.velocity.foreach(magnitude => {
+            val velocityNode = valueFactory.createBNode()
+            model.add(velocityNode, RDF.TYPE, Personal.GEO_VECTOR, context)
+            model.add(geoCoordinatesNode, Personal.VELOCITY, velocityNode, context)
+            model.add(velocityNode, Personal.MAGNITUDE, valueFactory.createLiteral(magnitude), context)
+            location.heading.foreach(heading =>
+              model.add(geoCoordinatesNode, Personal.ANGLE, valueFactory.createLiteral(heading), context)
+            )
+          })
         case None =>
           logger.warn(s"Ignoring location with invalid timestamp {location=$location}.")
       }

@@ -34,7 +34,7 @@ object Geocoder {
     * @param geocoder the geocoder to cache
     * @return a Geocoder that caches responses
     */
-  def cached(geocoder: Geocoder) = throw new NotImplementedError()
+  def cached(geocoder: Geocoder) = new CachedGeocoder(geocoder)
 
   /**
     * Geocoder client for Google Maps API

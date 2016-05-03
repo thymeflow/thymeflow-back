@@ -21,12 +21,15 @@ class FullTextSearchServerSpec extends FlatSpec with Matchers with ScalaFutures 
       case server =>
         server.add(texts.zip(texts)).flatMap {
           _ =>
-            Source(queries).mapAsync(1) {
-              case query =>
-                server.matchQuery(query, matchPercent).map {
-                  _.map(_._2).toSet
-                }
-            }.runFold(Vector.empty[Set[String]])(_ :+ _)
+            server.refreshIndex().flatMap{
+              _ =>
+                Source(queries).mapAsync(1) {
+                  case query =>
+                    server.matchQuery(query, matchPercent).map {
+                      _.map(_._2).toSet
+                    }
+                }.runFold(Vector.empty[Set[String]])(_ :+ _)
+            }
         }
     }
     resultFuture.map {

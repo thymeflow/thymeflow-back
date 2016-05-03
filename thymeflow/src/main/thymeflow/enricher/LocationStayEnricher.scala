@@ -15,49 +15,28 @@ import thymeflow.actors._
 import thymeflow.location.Clustering
 import thymeflow.location.cluster.MaxLikelihoodCluster
 import thymeflow.rdf.Converters._
-import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
 import thymeflow.utilities.{ExceptionUtils, TimeExecution}
 
-import scala.concurrent.Future
-import scala.util.Failure
+import scala.concurrent.Await
 
 /**
   * @author David Montoya
+  *         TODO: not nice usage of Await
   */
-private case class Location(resource: Resource,
-                            time: Instant,
-                            accuracy: Double,
-                            point: Point) extends thymeflow.location.treillis.Observation
-
-private case class ClusterObservation(resource: Resource,
-                                      from: Instant,
-                                      to: Instant,
-                                      accuracy: Double,
-                                      point: Point) extends thymeflow.location.treillis.ClusterObservation {
-  override def equals(obj: scala.Any): Boolean = {
-    obj match {
-      case other: ClusterObservation if other.isInstanceOf[ClusterObservation] =>
-        other.resource == resource
-      case _ => false
-    }
-  }
-
-  override def hashCode(): Int = resource.hashCode()
-}
-
-class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay: scala.concurrent.duration.Duration)
-  extends DelayedEnricher with StrictLogging {
+class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
 
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
 
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricher")
+  private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
 
-  override def runEnrichments(): Unit = {
+  override def enrich(diff: ModelDiff): Unit = {
     implicit val format = org.json4s.DefaultFormats
     val clustering = new Clustering {}
     val minimumStayDuration = Duration.ofMinutes(15)
@@ -65,120 +44,88 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     val movementEstimatorDuration = Duration.ofMinutes(120)
     val lambda = 0.95
     logger.info(s"[location-stay-enricher] - Extracting StayEvents {minimumStayDuration=$minimumStayDuration,observationEstimatorDuration=$observationEstimatorDuration,movementEstimatorDuration=$movementEstimatorDuration}.")
-    deleteStays().flatMap {
-      _ =>
-        countLocations.flatMap {
-          locationCount =>
-            val stage1 = new BufferedProcessorStage(
-              (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-                val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
-                (onObservation, onFinish)
-              }
-            )
-            val stage2 = new BufferedProcessorStage(
-              (out: IndexedSeq[(Location, Option[ClusterObservation])] => Unit) => {
-                val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, lambda)(out)
-                (onObservation, onFinish)
-              }
-            )
-            val stage3 = new BufferedProcessorStage(
-              (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
-                val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
-                (onObservation, onFinish)
-              }
-            )
-            getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
-              case cluster =>
-                (ClusterObservation(resource = valueFactory.createBNode(),
-                  from = cluster.observations.head.time,
-                  to = cluster.observations.last.time,
-                  accuracy = cluster.accuracy,
-                  point = cluster.mean), cluster.observations)
-            }.runForeach {
-              case (cluster, locations) =>
-                // clusters are temporary
-                // TODO: save them in some temporary storage
-                createCluster(cluster, locations)
-            }.flatMap {
-              _ =>
-                getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
-                  case (observationsAndClusters) =>
-                    clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
-                }.sliding(2).collect {
-                  case Seq(a, b) if a.resource != b.resource => a
-                  case Seq(a) => a
-                }.via(stage3).map {
-                  case cluster =>
-                    (ClusterObservation(resource = valueFactory.createBNode(),
-                      from = cluster.observations.head.time,
-                      to = cluster.observations.last.time,
-                      accuracy = cluster.accuracy,
-                      point = cluster.mean), cluster.observations)
-                }.runForeach {
-                  case (cluster, locations) =>
-                    createStay(cluster, locations)
-                }.recover {
-                  case throwable =>
-                    logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
-                    Done
-                }.flatMap {
-                  case _ =>
-                    // clean-up clusters
-                    deleteClusters()
-                }
-            }
-        }.map {
-          case _ =>
-            logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
-        }
-    }.andThen {
-      case Failure(throwable) =>
+
+    val stage1 = new BufferedProcessorStage(
+      (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
+        val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(minimumStayDuration, observationEstimatorDuration, lambda)(out)
+        (onObservation, onFinish)
+      }
+    )
+    val stage2 = new BufferedProcessorStage(
+      (out: IndexedSeq[(Location, Option[ClusterObservation])] => Unit) => {
+        val (onObservation, onFinish) = clustering.splitMovement(movementEstimatorDuration, lambda)(out)
+        (onObservation, onFinish)
+      }
+    )
+    val stage3 = new BufferedProcessorStage(
+      (out: MaxLikelihoodCluster[Location, Instant] => Unit) => {
+        val (onObservation, onFinish, _) = clustering.extractStaysFromObservations(Duration.ZERO, Duration.ofMinutes(0), lambda)(out)
+        (onObservation, onFinish)
+      }
+    )
+
+    val locationCount = countLocations
+    Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
+      case cluster =>
+        (ClusterObservation(resource = valueFactory.createBNode(),
+          from = cluster.observations.head.time,
+          to = cluster.observations.last.time,
+          accuracy = cluster.accuracy,
+          point = cluster.mean), cluster.observations)
+    }.runForeach {
+      case (cluster, locations) =>
+        // clusters are temporary
+        // TODO: save them in some temporary storage
+        createCluster(cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
+    }.recover {
+      case throwable =>
         logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
-    }
+        Done
+    }, scala.concurrent.duration.Duration.Inf)
+
+    deleteGraph(inferencerContext) //We only need to delete the previously added inferences at this stage
+    //TODO: This quite early drop may lead of failures of next enrichers (but they will be run again after this one so it will lead after some time to a good state)
+    Await.result(getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
+      case (observationsAndClusters) =>
+        clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
+    }.sliding(2).collect {
+      case Seq(a, b) if a.resource != b.resource => a
+      case Seq(a) => a
+    }.via(stage3).map {
+      case cluster =>
+        (ClusterObservation(resource = valueFactory.createBNode(),
+          from = cluster.observations.head.time,
+          to = cluster.observations.last.time,
+          accuracy = cluster.accuracy,
+          point = cluster.mean), cluster.observations)
+    }.runForeach {
+      case (cluster, locations) =>
+        createStay(cluster, locations)
+    }.recover {
+      case throwable =>
+        logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+        Done
+    }, scala.concurrent.duration.Duration.Inf)
+    deleteTempInferencerGraph()
+
+    logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
   }
 
-  private def deleteStays() = {
-    deleteClusters(Personal.STAY_EVENT)
+  private def deleteTempInferencerGraph() = {
+    deleteGraph(tempInferencerContext)
   }
 
-  private def deleteClusters(`type`: IRI = Personal.CLUSTER_EVENT) = {
-    val clustersQuery =
+  private def countLocations: Long = {
+    val countLocationsQuery =
       s"""
-         |SELECT ?cluster ?clusterGeo
+         |SELECT (count(?location) as ?count)
          |WHERE {
-         |  ?cluster a <${`type`}> ;
-         |             <${SchemaOrg.GEO}> ?clusterGeo .
-         |} ORDER BY ?time
-    """.stripMargin
-    Source.fromIterator(() => repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, clustersQuery).evaluate()).runForeach {
-      case bindingSet =>
-        repositoryConnection.begin()
-        Option(bindingSet.getValue("cluster").asInstanceOf[Resource]).foreach {
-          case cluster =>
-            repositoryConnection.remove(cluster, null, null, inferencerContext)
-            repositoryConnection.remove(null: Resource, null: IRI, cluster, inferencerContext)
-        }
-        Option(bindingSet.getValue("clusterGeo").asInstanceOf[Resource]).foreach {
-          case clusterGeo =>
-            repositoryConnection.remove(clusterGeo, null, null, inferencerContext)
-        }
-        repositoryConnection.commit()
-    }
-  }
-
-  private def countLocations: Future[Long] = {
-    Future {
-      val countLocationsQuery =
-        s"""
-           |SELECT (count(?location) as ?count)
-           |WHERE {
-           |  ?location a <${Personal.TIME_GEO_LOCATION}> .
-           | }
+         |  ?location a <${Personal.TIME_GEO_LOCATION}> .
+         | }
       """.stripMargin
-      repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, countLocationsQuery).evaluate().map {
-        case bindingSet => bindingSet.getValue("count").asInstanceOf[Literal].longValue()
-      }.toVector.head
-    }
+    repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, countLocationsQuery).evaluate().map {
+      case bindingSet => bindingSet.getValue("count").asInstanceOf[Literal].longValue()
+    }.toTraversable.head
   }
 
   private def getLocations: Source[Location, NotUsed] = {
@@ -214,21 +161,20 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
   }
 
   private def createStay(stay: ClusterObservation, locations: Traversable[Location]) = {
-    createCluster(stay, locations, Personal.STAY_EVENT)
+    createCluster(stay, locations, Personal.STAY_EVENT, inferencerContext)
   }
 
-  private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI = Personal.CLUSTER_EVENT) = {
+  private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI, context: IRI) = {
     repositoryConnection.begin()
     val model = new SimpleHashModel()
     val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
-    model.add(cluster.resource, RDF.TYPE, `type`, inferencerContext)
-    model.add(cluster.resource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME))
-    model.add(cluster.resource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), inferencerContext)
-    model.add(cluster.resource, SchemaOrg.GEO, clusterGeoResource, inferencerContext)
-    locations.foreach {
-      case location =>
-        model.add(location.resource, SchemaOrg.ITEM, cluster.resource, inferencerContext)
-    }
+    model.add(cluster.resource, RDF.TYPE, `type`, context)
+    model.add(cluster.resource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
+    model.add(cluster.resource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
+    model.add(cluster.resource, SchemaOrg.GEO, clusterGeoResource, context)
+    locations.foreach(location =>
+      model.add(location.resource, SchemaOrg.ITEM, cluster.resource, context)
+    )
     repositoryConnection.add(model)
     repositoryConnection.commit()
   }
@@ -281,6 +227,16 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }.collect {
       case Some(x) => x
     }
+  }
+
+  private def deleteGraph(iri: IRI) = {
+    repositoryConnection.begin()
+    repositoryConnection.remove(null: Resource, null, null, iri)
+    repositoryConnection.commit()
+  }
+
+  private def deleteInferencerGraph() = {
+    deleteGraph(inferencerContext)
   }
 
   private class TimeStage[T](processName: String, target: Long, step: Long = 1) extends GraphStage[FlowShape[T, T]] {
@@ -354,4 +310,23 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection, val delay
     }
   }
 
+  private case class Location(resource: Resource,
+                              time: Instant,
+                              accuracy: Double,
+                              point: Point) extends thymeflow.location.treillis.Observation
+
+  private case class ClusterObservation(resource: Resource,
+                                        from: Instant,
+                                        to: Instant,
+                                        accuracy: Double,
+                                        point: Point) extends thymeflow.location.treillis.ClusterObservation {
+    override def equals(obj: scala.Any): Boolean = {
+      obj match {
+        case other: ClusterObservation => other.resource == resource
+        case _ => false
+      }
+    }
+
+    override def hashCode(): Int = resource.hashCode()
+  }
 }

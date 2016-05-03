@@ -783,6 +783,28 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
+  }
+
+  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
+    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
+    if (denominator == 0d) {
+      0d
+    } else {
+      val numerator = similarities.map {
+        case (terms1, terms2, similarity) =>
+          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
+      }.sum
+      Math.min(numerator / denominator, 1d)
+    }
+  }
+
+  /**
     * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
     *         equivalence relation
     *         by default, an unknown agent is represented by itself
@@ -986,15 +1008,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     idfs
   }
 
-  /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
-
   private def getNameTermsEqualityProbability(terms1: IndexedSeq[(String, Double)],
                                               terms2: IndexedSeq[(String, Double)],
                                               termIDFs: String => Double,
@@ -1008,19 +1021,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       normalizedSoftTFIDF(termsTFIDFs(terms1), termsTFIDFs(terms2))(terms1.indices, terms2.indices, similarityIndices)
     } else {
       0d
-    }
-  }
-
-  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
-    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
-    if (denominator == 0d) {
-      0d
-    } else {
-      val numerator = similarities.map {
-        case (terms1, terms2, similarity) =>
-          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
-      }.sum
-      Math.min(numerator / denominator, 1d)
     }
   }
 

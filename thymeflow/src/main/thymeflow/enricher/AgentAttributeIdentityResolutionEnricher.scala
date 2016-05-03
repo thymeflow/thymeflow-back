@@ -105,7 +105,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     (getSimilarities _, getIndicesWithSimilarities _, getIndices _)
   }
   private val searchMatchPercent = 70
-  private val searchSize = 1000
+  private val searchSize = 10000
   private val parallelism = 2
   // contactRelativeWeight must be between 0 and 1 or None
   private val contactRelativeWeight = Option(0.5)
@@ -161,38 +161,36 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     val agentRepresentativeMap = getSharedIdRepresentativeByAgent
     // get the list email addresses for each agent
     val agentRepresentativeEmailAddresses = getAgentEmails(agentRepresentativeMap.apply)
-    // the name counts for each agent
+    // for each agent, get a count for each name
     val (agentRepresentativeContactNames, agentRepresentativeMessageNames) = getAgentNameCounts(agentRepresentativeMap.apply)
+    // for each agent, get a weight for each name, taking into account the relative weight of contact card vs messages
     val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
-    val agentNameParts = getAgentNameParts(agentRepresentativeMap.apply)
-
-    val agentRepresentativeMatchNames = if (solveDuplicateNameParts) {
-      val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
-      val getNamePartTypes = {
-        if (solveNamePartTypes) {
-          val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
-          (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => namePartTypeInference((agent, primaryName))
-        } else {
-          (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => sourceNamePartTypes.toSet
-        }
-      }
-      reconciledAgentNames.map {
-        case (agent, primaryNames, _) =>
-          agent -> primaryNames.map {
-            case (primaryName, (weight, namePartTypes)) => (primaryName, weight, getNamePartTypes(agent, primaryName, namePartTypes))
+    // for each agent, get a weight for each name, and possibly name term types
+    val agentRepresentativeMatchNames =
+      if (solveDuplicateNameParts) {
+        val agentNameParts = getAgentNameParts(agentRepresentativeMap.apply)
+        val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
+        val getNamePartTypes = {
+          if (solveNamePartTypes) {
+            val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
+            (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => namePartTypeInference((agent, primaryName))
+          } else {
+            (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => sourceNamePartTypes.toSet
           }
-      }.toMap
-    } else {
-      agentRepresentativeNames.map {
-        case (agent, names) => agent -> names.toIndexedSeq.map {
-          case (name, weight) => (name, weight, Set.empty[IRI])
         }
-      }
-    }.withDefaultValue(IndexedSeq.empty)
-
-    val agentRepresentativeIRIToResourceMap = (agentRepresentativeMatchNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
-      case (agent) => (agent.stringValue(), agent)
-    }(scala.collection.breakOut): Map[String, Resource]
+        reconciledAgentNames.map {
+          case (agent, primaryNames, _) =>
+            agent -> primaryNames.map {
+              case (primaryName, (weight, namePartTypes)) => (primaryName, weight, getNamePartTypes(agent, primaryName, namePartTypes))
+            }
+        }.toMap
+      } else {
+        agentRepresentativeNames.map {
+          case (agent, names) => agent -> names.toIndexedSeq.map {
+            case (name, weight) => (name, weight, Set.empty[IRI])
+          }
+        }
+      }.withDefaultValue(IndexedSeq.empty)
 
     // compute a (Agent, NameTerms) list
     val agentAndNormalizedNameTerms: scala.collection.immutable.IndexedSeq[(Resource, IndexedSeq[(String, Double)])] =
@@ -216,8 +214,14 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }(scala.collection.breakOut)
       }
 
-    val termIDFs = computeTermIDFs(agentAndNormalizedNameTerms.view.map(_._2))
-    val symmetricTFIDF = termIDFs.compose(normalizeTerm)
+    // compute inverse document frequency of each term, when considering each agent as a document, where each term has a probability to be in the document.
+    val termIDFs = computeTermIDFs(agentAndNormalizedNameTerms.view.map(_._2)).compose(normalizeTerm)
+
+    // a map from an agent's stringValue to the agent (for deserialization)
+    val agentRepresentativeIRIToResourceMap = (agentRepresentativeMatchNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
+      case (agent) =>
+        (agent.stringValue(), agent)
+    }(scala.collection.breakOut): Map[String, Resource]
 
     // compute an agent -> termSet map
     val normalizedTermsToAgents = agentAndNormalizedNameTerms.view.flatMap {
@@ -243,17 +247,20 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }
     }.flatMap {
       case textSearchServer =>
+        // an order on agents (comparison of their string value)
         implicit val orderedAgents = (thisValue: Resource) => new Ordered[Resource] {
           override def compare(that: Resource): Int = thisValue.stringValue().compare(that.stringValue())
         }
         var candidatePairCount = 0
         var candidatePairCountAboveThreshold = 0
+        // start looking for alignment candidates
         buildSimilarityRelation(Source.fromIterator(() => normalizedTermsToAgents.iterator).mapAsync(parallelism) {
           case (term, agents) =>
             // search for agents containing term or similar
             textSearchServer.matchQuery(term, matchPercent = searchMatchPercent).map {
               hits =>
                 if (hits.size >= searchSize) {
+                  // when searchSize is reached, this means we miss some results..
                   logger.warn(s"[agent-attribute-identity-resolution-enricher] - Reached searchSize $searchSize for term $term.")
                 }
                 (term, hits, agents)
@@ -274,14 +281,14 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             val agent2Names = agentRepresentativeMatchNames(agent2).map(x => (x._1, x._2))
             val probability =
               if (solveDuplicateNameParts) {
-                getNameTermsEqualityProbability(agent1Names, agent2Names, symmetricTFIDF, getMatchingTermIndicesWithSimilarities)
+                getNameTermsEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermIndicesWithSimilarities)
               } else {
-                getNamesEqualityProbability(agent1Names, agent2Names, symmetricTFIDF, getMatchingTermSimilarities)
+                getNamesEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermSimilarities)
               }
             (agent1, agent2, probability)
         }.filter {
           case (_, _, probability) =>
-            // Filter candidate equalities over a certain threshold
+            // retain candidate equalities whose probability is over a certain threshold
             if (probability >= persistenceThreshold) {
               candidatePairCountAboveThreshold += 1
               true

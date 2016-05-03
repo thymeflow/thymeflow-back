@@ -124,7 +124,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
         region = Option(address.getRegion),
         country = Option(address.getCountry),
         postalCode = Option(address.getPostalCode)
-      ), model)
+      ), model, context)
       address.getPoBoxes.asScala.foreach(poBox =>
         model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
       )

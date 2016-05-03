@@ -51,13 +51,15 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
 
     Await.result(getStays.map(stay =>
       events.filter(event => {
-        //We look for not null intersection (remark: may not work if bounds are exactly equal)
-        if (event.start <= stay.start) {
-          //We should have stay beginning is between event.start and event.end
-          event.end >= stay.start && isMatchIntervalBiggerThanRatioOfEvent(stay.start, Math.min(event.end, stay.end), event)
+        // We look for not null intersection
+        // Does 1 or 2 comparisons when intersection is null (average = 1),
+        // Does 4 comparisons when intersection is not null
+        if (event.start <= stay.end && stay.start <= event.end) {
+          val start = Math.max(stay.start, event.start) // lower bound of intersection interval
+          val end = Math.min(event.end, stay.end) // upper bound of intersection interval
+          isMatchIntervalBiggerThanRatioOfEvent(start, end, event)
         } else {
-          //We should have the event beginning is between stay.start and stay.end
-          event.start <= stay.end && isMatchIntervalBiggerThanRatioOfEvent(event.start, Math.min(event.end, stay.end), event)
+          false
         }
       }).map(event => {
         repositoryConnection.begin()

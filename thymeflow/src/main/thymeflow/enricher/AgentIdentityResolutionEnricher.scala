@@ -13,6 +13,7 @@ import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
 import thymeflow.graph.ConnectedComponents
 import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.Alignment
 import thymeflow.text.distances.BipartiteMatchingDistance
@@ -22,7 +23,6 @@ import thymeflow.utilities.Memoize
 import thymeflow.utilities.text.Normalization
 
 import scala.collection.mutable
-import scala.concurrent.duration.Duration
 
 /**
   * @author David Montoya
@@ -37,8 +37,7 @@ case class VariableNamePart(id: Int) extends NamePart
   *
   * Depends on InverseFunctionalPropertyInferencer
   */
-class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection, val delay: Duration)
-  extends DelayedEnricher with StrictLogging {
+class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
@@ -99,7 +98,8 @@ class AgentIdentityResolutionEnricher(repositoryConnection: RepositoryConnection
     }"""
   )
 
-  override protected def runEnrichments() = {
+  //TODO: make this function blocking in order to ensure that the next pipeline stage are only run after the completion of this one
+  override def enrich(diff: ModelDiff): Unit = {
     val agentFacetRepresentativeMap = getSharedIdRepresentativeByAgent
 
     val agentEmailAddresses = agentEmailAddressesQuery.evaluate().toIterator.map(bindingSet =>

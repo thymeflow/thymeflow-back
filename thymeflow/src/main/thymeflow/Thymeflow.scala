@@ -21,17 +21,19 @@ object Thymeflow extends StrictLogging {
   def main(args: Array[String]) {
     val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false, lucene = false)
     setupSynchronizers()
-    val pipeline = new Pipeline(repository.getConnection, List(
-      new InverseFunctionalPropertyInferencer(repository.getConnection),
-      new GeocoderEnricher(repository.getConnection, Geocoder.cached(Geocoder.googleMaps())),
-      new LocationStayEnricher(repository.getConnection, 10 seconds),
-      new LocationEventEnricher(repository.getConnection, 240 seconds),
-      new AgentIdentityResolutionEnricher(repository.getConnection, 10 seconds)
-    ))
+    val pipeline = new Pipeline(
+      repository.getConnection,
+      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
+        .via(Pipeline.enricherToFlow(new GeocoderEnricher(repository.getConnection, Geocoder.cached(Geocoder.googleMaps()))))
+        .via(Pipeline.delayedBatchToFlow(10 seconds))
+        .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new AgentIdentityResolutionEnricher(repository.getConnection)))
+    )
+
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)
     }
-
   }
 
   def setupSynchronizers() = {

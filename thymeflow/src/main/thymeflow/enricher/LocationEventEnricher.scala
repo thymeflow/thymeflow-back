@@ -10,15 +10,18 @@ import org.openrdf.query.{BindingSet, QueryLanguage}
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
 import thymeflow.rdf.Converters._
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 /**
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   *         All times are here stored as miliseconds since the epoch
   */
-class LocationEventEnricher(repositoryConnection: RepositoryConnection, val delay: scala.concurrent.duration.Duration)
-  extends DelayedEnricher with StrictLogging {
+class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
@@ -43,10 +46,10 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection, val dela
   /**
     * Run the enrichments defined by this Enricher
     */
-  override def runEnrichments(): Unit = {
+  override def enrich(diff: ModelDiff): Unit = {
     val events = getEvents.toBuffer
 
-    val addedConnections = getStays.map(stay =>
+    Await.result(getStays.map(stay =>
       events.filter(event => {
         //We look for not null intersection (remark: may not work if bounds are exactly equal)
         if (event.start <= stay.start) {
@@ -62,9 +65,9 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection, val dela
         repositoryConnection.commit()
         event
       }).size
-    ).runFold(0)(_ + _).foreach(addedConnections =>
+    ).runReduce(_ + _).map(addedConnections =>
       logger.info(s"$addedConnections added between events and stay locations")
-    )
+    ), Duration.Inf)
   }
 
   private def isMatchIntervalBiggerThanRatioOfEvent(start: Long, end: Long, event: TimeIntervalResource): Boolean = {

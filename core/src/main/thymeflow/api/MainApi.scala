@@ -20,7 +20,8 @@ object MainApi extends Api {
   //TODO: should be in configuration
   override protected val pipeline = new Pipeline(
     repository.getConnection,
-    List(new InverseFunctionalPropertyInferencer(repository.getConnection), new PrimaryFacetEnricher(repository.getConnection))
+    Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
+      .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.getConnection)))
   )
 
 }

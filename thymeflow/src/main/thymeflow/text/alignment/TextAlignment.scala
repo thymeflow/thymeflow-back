@@ -8,12 +8,23 @@ import scala.collection.mutable
 /**
   * @author David Montoya
   */
-object Alignment {
+object TextAlignment {
 
   final val spaceScore = -1.0
   final val matchScore = 1.0
   final val mismatchScore = -1.0
 
+  /**
+    *
+    * @param queries       queries to look-up for
+    * @param text          the document to search
+    * @param filter        match filter
+    * @param queryToString get the string equivalent for some query
+    * @tparam T the query type
+    * @return (the alignment score, a vector of text matches)
+    *         text matches are given as (matchedText, indexFrom, indexTo),
+    *         where matchedText is a substring of text, and indexFrom/indexTo are the substring indexes
+    */
   def alignment[T](queries: Traversable[T],
                    text: String,
                    filter: (Double, Int, Int) => Boolean = (_, _, _) => true)(implicit queryToString: T => String) = {
@@ -157,21 +168,9 @@ object Alignment {
     alignCandidates(previous, orderedScores, filter)(rowSequence, columnSequence)
   }
 
-  def align(sequence1: String, sequence2: String, filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
-    val rowSequence = RowSequence(sequence1)
-    val columnSequence = ColumnSequence(sequence2)
-    val (rows, cols, score, previous) = sequenceAlignment(rowSequence, columnSequence)
-    val iterator = for (i <- Iterator.range(0, rows); j <- Iterator.range(0, cols)) yield {
-      val cell = Cell(i, j)
-      cell -> score(cell)
-    }
-    val orderedScores = iterator.toIndexedSeq.sortBy(_._2._1).reverse
-    alignCandidates(previous, orderedScores, filter)(rowSequence, columnSequence)
-  }
-
-  def alignCandidates(previous: Cell => Option[Direction],
-                      orderedScores: IndexedSeq[(Cell, (Double, Int, Int))],
-                      filter: (Double, Int, Int) => Boolean)(implicit rowSequence: RowSequence, columnSequence: ColumnSequence) = {
+  private def alignCandidates(previous: Cell => Option[Direction],
+                              orderedScores: IndexedSeq[(Cell, (Double, Int, Int))],
+                              filter: (Double, Int, Int) => Boolean)(implicit rowSequence: RowSequence, columnSequence: ColumnSequence) = {
     val scanned = new mutable.HashMap[Cell, Int]
     var bestRanges = Vector[((Int, Int), (Int, Int))]()
     val best = Vector.newBuilder[((Int, Int), (Int, Int), Double, Double)]
@@ -311,6 +310,18 @@ object Alignment {
         }
       }
     }
+  }
+
+  def align(sequence1: String, sequence2: String, filter: (Double, Int, Int) => Boolean = (_, _, _) => true) = {
+    val rowSequence = RowSequence(sequence1)
+    val columnSequence = ColumnSequence(sequence2)
+    val (rows, cols, score, previous) = sequenceAlignment(rowSequence, columnSequence)
+    val iterator = for (i <- Iterator.range(0, rows); j <- Iterator.range(0, cols)) yield {
+      val cell = Cell(i, j)
+      cell -> score(cell)
+    }
+    val orderedScores = iterator.toIndexedSeq.sortBy(_._2._1).reverse
+    alignCandidates(previous, orderedScores, filter)(rowSequence, columnSequence)
   }
 
   sealed trait AlignmentNode {

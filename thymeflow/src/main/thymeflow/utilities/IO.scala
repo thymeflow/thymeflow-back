@@ -2,6 +2,8 @@ package thymeflow.utilities
 
 import java.io._
 import java.nio.charset.Charset
+import java.time.format.DateTimeFormatter
+import java.time.{OffsetDateTime, ZoneId}
 
 import org.apache.commons.io.IOUtils
 
@@ -9,6 +11,10 @@ import org.apache.commons.io.IOUtils
  * @author  David Montoya
  */
 object IO {
+  private val pathTimestampFormat = DateTimeFormatter.ofPattern("yyyyMMdd'T'hhmmss")
+
+  def pathTimestamp = pathTimestampFormat.format(OffsetDateTime.now(ZoneId.of("UTC")))
+
   def toString(input: InputStream, charset: Charset = Charset.forName("UTF-8")) = {
     IOUtils.toString(input, charset)
   }

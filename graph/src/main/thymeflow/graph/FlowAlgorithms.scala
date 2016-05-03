@@ -49,7 +49,7 @@ object FlowAlgorithms {
     val neighbors = neighborMap.getOrElse(_: NODE, Vector.empty)
     var totalFlow = 0d
     var totalCost = 0d
-    val ordering = implicitly[Ordering[Double]].reverse
+    val ordering = implicitly[Ordering[Double]]
     val q = new FiedlerFibonacciHeap[NODE, Double]()(ordering)
     var b = true
     while (b && totalFlow < maxFlow) {

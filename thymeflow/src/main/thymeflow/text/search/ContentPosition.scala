@@ -7,11 +7,11 @@ trait ContentPosition{
   def index: Int
   def count: Int
 
-  def mkString(content: Seq[String], separator: String = " ") = {
+  def mkString(content: IndexedSeq[String], separator: String = " ") = {
     slice(content).mkString(separator)
   }
 
-  def slice(content: Seq[String]) = {
+  def slice(content: IndexedSeq[String]) = {
     content.slice(index, index + count)
   }
 

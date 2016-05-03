@@ -115,6 +115,12 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
     deleteGraph(tempInferencerContext)
   }
 
+  private def deleteGraph(iri: IRI) = {
+    repositoryConnection.begin()
+    repositoryConnection.remove(null: Resource, null, null, iri)
+    repositoryConnection.commit()
+  }
+
   private def countLocations: Long = {
     val countLocationsQuery =
       s"""
@@ -227,12 +233,6 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
     }.collect {
       case Some(x) => x
     }
-  }
-
-  private def deleteGraph(iri: IRI) = {
-    repositoryConnection.begin()
-    repositoryConnection.remove(null: Resource, null, null, iri)
-    repositoryConnection.commit()
   }
 
   private def deleteInferencerGraph() = {

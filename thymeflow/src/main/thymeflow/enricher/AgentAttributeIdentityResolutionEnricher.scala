@@ -1,6 +1,7 @@
 package thymeflow.enricher
 
-import java.nio.file.Paths
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Paths}
 import java.util.Locale
 
 import akka.stream.scaladsl.Source
@@ -21,8 +22,8 @@ import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.TextAlignment
 import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
-import thymeflow.utilities.Memoize
 import thymeflow.utilities.text.Normalization
+import thymeflow.utilities.{IO, Memoize}
 
 import scala.collection.mutable
 import scala.concurrent.Await
@@ -302,15 +303,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalities.foreach {
-              case ((instance1, instance2), weight) =>
-                val statement = valueFactory.createStatement(instance1, OWL.SAMEAS, instance2, inferencerContext)
+              case ((agent1, agent2), _) =>
+                val statement = valueFactory.createStatement(agent1, OWL.SAMEAS, agent2, inferencerContext)
                 if (!repositoryConnection.hasStatement(statement, false)) {
                   repositoryConnection.add(statement)
                 }
               case _ =>
             }
             repositoryConnection.commit()
-
+            saveResultsToFile(equalities)
         }
     }
     Await.result(result, Duration.Inf)
@@ -481,7 +482,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       ("content", "content", "string")
     ))
 
-    GraphML.write(Paths.get("data/nameParts.graphml"),
+    GraphML.write(Paths.get(s"data/agent-attribute-identity-resolution-enricher_name-term-types_${IO.pathTimestamp}.graphml"),
       GraphML.graph("nameParts", directed = false, keys, serializedNodes, serializedEdges))
   }
 
@@ -1029,6 +1030,14 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     } else {
       0d
     }
+  }
+
+  private def saveResultsToFile(equalities: Map[(Resource, Resource), Double]) = {
+    val results = equalities.map {
+      case ((agent1, agent2), probability) => Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
+    }.mkString("\n")
+    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
+    Files.write(path, results.getBytes(StandardCharsets.UTF_8))
   }
 
   /**

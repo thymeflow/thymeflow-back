@@ -50,6 +50,14 @@ class FullTextSearchServer[T] private(indexName: String,
     deleteIndex()
   }
 
+  private def deleteIndex() = {
+    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
+      case _ => ()
+    }.recover {
+      case e: IndexMissingException => ()
+    }
+  }
+
   def add(valuedEntities: Traversable[(T, String)]): Future[Unit] = {
     implicit val formats = org.json4s.DefaultFormats
     val bulkRequest = esClient.prepareBulk()
@@ -109,14 +117,6 @@ class FullTextSearchServer[T] private(indexName: String,
     }
   }
 
-  private def deleteIndex() = {
-    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
-      case _ => ()
-    }.recover {
-      case e: IndexMissingException => ()
-    }
-  }
-
 }
 
 object FullTextSearchServer extends StrictLogging {
@@ -135,10 +135,10 @@ object FullTextSearchServer extends StrictLogging {
   }
   private lazy val esDirectory: File = setupDirectories(dataDirectory)
 
-  def apply[T](entityDeserialize: String => T)(entitySerialize: T => String)(implicit executionContext: ExecutionContext) = {
+  def apply[T](entityDeserialize: String => T)(entitySerialize: T => String, searchSize: Int = 100)(implicit executionContext: ExecutionContext) = {
     // randomized index name
     val indexName = UUID.randomUUID().toString
-    val server = new FullTextSearchServer[T](indexName, entityDeserialize, entitySerialize)
+    val server = new FullTextSearchServer[T](indexName, entityDeserialize, entitySerialize, searchSize)
     server.recreateIndex().map{
       case _ => server
     }

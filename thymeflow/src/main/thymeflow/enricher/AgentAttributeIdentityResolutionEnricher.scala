@@ -33,50 +33,33 @@ import scala.concurrent.duration.Duration
   * @author David Montoya
   */
 
-object AgentAttributeIdentityResolutionEnricher {
-
-  sealed trait NamePart
-
-  sealed trait NamePartGraphNode
-
-  sealed trait NamePartMatch
-
-  sealed trait AgentNamePartNode extends NamePartGraphNode {
-    def agent: Resource
-
-    def namePart: String
-  }
-
-  case class NamePartNoMatch(namePart: String) extends NamePartMatch
-
-  case class NamePartUnqualifiedMatch(namePart: String, matchedNamedPart: String) extends NamePartMatch
-
-  case class NamePartQualifiedMatch(namePart: String, matchedNamePart: String, namePartTypes: Set[IRI]) extends NamePartMatch
-
-  case class TextNamePart(content: String) extends NamePart
-
-  case class VariableNamePart(id: Int) extends NamePart
-
-  case class NamePartNode(content: String) extends NamePartGraphNode
-
-  case class DomainNamePartPatternNamePartNode(domain: String, namePartPattern: IndexedSeq[NamePart], variableNamePart: VariableNamePart) extends NamePartGraphNode
-
-  case class AgentUnqualifiedNamePartNode(agent: Resource, namePart: String) extends AgentNamePartNode
-
-  case class AgentQualifiedNamePartNode(agent: Resource, namePart: String, namePartTypes: Set[IRI]) extends AgentNamePartNode
-}
-
 /**
   *
-  * Depends on InverseFunctionalPropertyInferencer
+  * Depends on @InverseFunctionalPropertyInferencer
+  *
+  * @param repositoryConnection   a connection to the knowledge base
+  * @param solveMode              resolution algorithm
+  * @param searchMatchPercent     the term percent match required for candidate equalities
+  * @param searchSize             the number of candidate results for each term
+  * @param parallelism            the concurrency level when looking up for candidate equalities
+  * @param matchDistanceThreshold maximum distance for a term to be considered as match
+  * @param contactRelativeWeight  expresses the relative weight contact card names have with respect to message names
+  *                               must be equal to None or between 0 and 1
+  * @param persistenceThreshold   probability threshold above which equalities are saved
+  * @param debug                  debug mode
   */
 class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
-                                               solveDuplicateNameParts: Boolean = false,
-                                               solveNamePartTypes: Boolean = false,
+                                               solveMode: SolveMode = Vanilla,
+                                               searchMatchPercent: Int = 70,
+                                               searchSize: Int = 10000,
+                                               parallelism: Int = 2,
+                                               matchDistanceThreshold: Double = 0.3,
+                                               contactRelativeWeight: Option[Double] = Option(0.5),
+                                               persistenceThreshold: Double = 0.4d,
                                                debug: Boolean = false) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentIdentityResolution")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
   private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
   private val termSimilarity = {
     val levensteinDistance = new LevensteinDistance()
@@ -86,8 +69,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   private val (getMatchingTermSimilarities, getMatchingTermIndicesWithSimilarities, getMatchingTermIndices) = {
-    val distanceThreshold = 0.3
-    val bipartiteMatchingDistance = new BipartiteMatchingDistance((s1, s2) => 1d - termSimilarity(s1, s2), distanceThreshold)
+    val bipartiteMatchingDistance = new BipartiteMatchingDistance((s1, s2) => 1d - termSimilarity(s1, s2), matchDistanceThreshold)
     def getIndicesWithSimilarities(terms1: IndexedSeq[String], terms2: IndexedSeq[String]) = {
       bipartiteMatchingDistance.matchIndices(terms1, terms2).map {
         case (subTerms1, subTerms2, distance) => (subTerms1, subTerms2, 1d - distance)
@@ -105,12 +87,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
     (getSimilarities _, getIndicesWithSimilarities _, getIndices _)
   }
-  private val searchMatchPercent = 70
-  private val searchSize = 10000
-  private val parallelism = 2
-  // contactRelativeWeight must be between 0 and 1 or None
-  private val contactRelativeWeight = Option(0.5)
-  private val persistenceThreshold = 0.4d
+
   // \u2022 is the bullet character
   private val tokenSeparator =
     """[\p{Punct}\s\u2022]+""".r
@@ -168,51 +145,53 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     val agentRepresentativeNames = getAgentNameWeights(agentRepresentativeContactNames, agentRepresentativeMessageNames)
     // for each agent, get a weight for each name, and possibly name term types
     val agentRepresentativeMatchNames =
-      if (solveDuplicateNameParts) {
-        val agentNameParts = getAgentNameParts(agentRepresentativeMap.apply)
-        val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
-        val getNamePartTypes = {
-          if (solveNamePartTypes) {
-            val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
-            (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => namePartTypeInference((agent, primaryName))
-          } else {
-            (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => sourceNamePartTypes.toSet
-          }
-        }
-        reconciledAgentNames.map {
-          case (agent, primaryNames, _) =>
-            agent -> primaryNames.map {
-              case (primaryName, (weight, namePartTypes)) => (primaryName, weight, getNamePartTypes(agent, primaryName, namePartTypes))
+      (solveMode match {
+        case _: DeduplicateAgentTerms =>
+          val agentNameParts = getAgentNameParts(agentRepresentativeMap.apply)
+          val reconciledAgentNames = reconcileAgentNames(agentRepresentativeNames, agentNameParts)
+          val getNamePartTypes = {
+            if (solveMode == DeduplicateAgentTermsAndSolveTermTypes) {
+              val namePartTypeInference = inferNamePartTypes(reconciledAgentNames, agentRepresentativeEmailAddresses.apply)
+              (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => namePartTypeInference((agent, primaryName))
+            } else {
+              (agent: Resource, primaryName: String, sourceNamePartTypes: IndexedSeq[IRI]) => sourceNamePartTypes.toSet
             }
-        }.toMap
-      } else {
-        agentRepresentativeNames.map {
-          case (agent, names) => agent -> names.toIndexedSeq.map {
-            case (name, weight) => (name, weight, Set.empty[IRI])
           }
-        }
-      }.withDefaultValue(IndexedSeq.empty)
+          reconciledAgentNames.map {
+            case (agent, primaryNames, _) =>
+              agent -> primaryNames.map {
+                case (primaryName, (weight, namePartTypes)) => (primaryName, weight, getNamePartTypes(agent, primaryName, namePartTypes))
+              }
+          }.toMap
+        case _ =>
+          agentRepresentativeNames.map {
+            case (agent, names) => agent -> names.toIndexedSeq.map {
+              case (name, weight) => (name, weight, Set.empty[IRI])
+            }
+          }
+      }).withDefaultValue(IndexedSeq.empty)
 
     // compute a (Agent, NameTerms) list
     val agentAndNormalizedNameTerms: scala.collection.immutable.IndexedSeq[(Resource, IndexedSeq[(String, Double)])] =
-      if (solveDuplicateNameParts) {
-        // in this case, a agent only has one name assignment through agentRepresentativeMatchNames
-        agentRepresentativeMatchNames.map {
-          case (agent, terms) =>
-            (agent, terms.map {
-              case (term, weight, _) => (normalizeTerm(term), weight)
-            })
-        }(scala.collection.breakOut)
-      } else {
-        agentRepresentativeMatchNames.map {
-          case (agent, nameCounts) =>
-            agent -> nameCounts.flatMap {
-              case (name, weight, _) =>
-                extractTerms(name).map(normalizeTerm).map((_, weight))
-            }.groupBy(_._1).map {
-              case (term, occurrences) => term -> Math.min(occurrences.map(_._2).sum, 1d)
-            }.toIndexedSeq
-        }(scala.collection.breakOut)
+      solveMode match {
+        case _: DeduplicateAgentTerms =>
+          // in this case, a agent only has one name assignment through agentRepresentativeMatchNames
+          agentRepresentativeMatchNames.map {
+            case (agent, terms) =>
+              (agent, terms.map {
+                case (term, weight, _) => (normalizeTerm(term), weight)
+              })
+          }(scala.collection.breakOut)
+        case _ =>
+          agentRepresentativeMatchNames.map {
+            case (agent, nameCounts) =>
+              agent -> nameCounts.flatMap {
+                case (name, weight, _) =>
+                  extractTerms(name).map(normalizeTerm).map((_, weight))
+              }.groupBy(_._1).map {
+                case (term, occurrences) => term -> Math.min(occurrences.map(_._2).sum, 1d)
+              }.toIndexedSeq
+          }(scala.collection.breakOut)
       }
 
     // compute inverse document frequency of each term, when considering each agent as a document, where each term has a probability to be in the document.
@@ -281,10 +260,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             val agent1Names = agentRepresentativeMatchNames(agent1).map(x => (x._1, x._2))
             val agent2Names = agentRepresentativeMatchNames(agent2).map(x => (x._1, x._2))
             val probability =
-              if (solveDuplicateNameParts) {
-                getNameTermsEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermIndicesWithSimilarities)
-              } else {
-                getNamesEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermSimilarities)
+              solveMode match {
+                case _: DeduplicateAgentTerms =>
+                  getNameTermsEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermIndicesWithSimilarities)
+                case _ =>
+                  getNamesEqualityProbability(agent1Names, agent2Names, termIDFs, getMatchingTermSimilarities)
               }
             (agent1, agent2, probability)
         }.filter {
@@ -743,6 +723,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
+  }
+
+  /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
     *
@@ -788,28 +777,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       0.0
     }
     equalityProbability
-  }
-
-  /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
-
-  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
-    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
-    if (denominator == 0d) {
-      0d
-    } else {
-      val numerator = similarities.map {
-        case (terms1, terms2, similarity) =>
-          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
-      }.sum
-      Math.min(numerator / denominator, 1d)
-    }
   }
 
   /**
@@ -1032,6 +999,19 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
+  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
+    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
+    if (denominator == 0d) {
+      0d
+    } else {
+      val numerator = similarities.map {
+        case (terms1, terms2, similarity) =>
+          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
+      }.sum
+      Math.min(numerator / denominator, 1d)
+    }
+  }
+
   private def saveResultsToFile(equalities: Map[(Resource, Resource), Double]) = {
     val results = equalities.map {
       case ((agent1, agent2), probability) => Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
@@ -1094,4 +1074,48 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   private def uncachedNormalizeTerm(term: String) = {
     Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
   }
+}
+
+object AgentAttributeIdentityResolutionEnricher {
+
+  sealed trait SolveMode
+
+  sealed trait DeduplicateAgentTerms extends SolveMode
+
+  sealed trait NamePart
+
+  sealed trait NamePartGraphNode
+
+  sealed trait NamePartMatch
+
+  sealed trait AgentNamePartNode extends NamePartGraphNode {
+    def agent: Resource
+
+    def namePart: String
+  }
+
+  case class NamePartNoMatch(namePart: String) extends NamePartMatch
+
+  case class NamePartUnqualifiedMatch(namePart: String, matchedNamedPart: String) extends NamePartMatch
+
+  case class NamePartQualifiedMatch(namePart: String, matchedNamePart: String, namePartTypes: Set[IRI]) extends NamePartMatch
+
+  case class TextNamePart(content: String) extends NamePart
+
+  case class VariableNamePart(id: Int) extends NamePart
+
+  case class NamePartNode(content: String) extends NamePartGraphNode
+
+  case class DomainNamePartPatternNamePartNode(domain: String, namePartPattern: IndexedSeq[NamePart], variableNamePart: VariableNamePart) extends NamePartGraphNode
+
+  case class AgentUnqualifiedNamePartNode(agent: Resource, namePart: String) extends AgentNamePartNode
+
+  case class AgentQualifiedNamePartNode(agent: Resource, namePart: String, namePartTypes: Set[IRI]) extends AgentNamePartNode
+
+  object Vanilla extends SolveMode
+
+  object VanillaDeduplicateAgentTerms extends DeduplicateAgentTerms
+
+  object DeduplicateAgentTermsAndSolveTermTypes extends DeduplicateAgentTerms
+
 }

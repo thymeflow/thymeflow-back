@@ -23,6 +23,7 @@ class Geocoder(val apiKey: String)(implicit actorSystem: ActorSystem,
                                    executionContext: ExecutionContext) extends geocoding.Geocoder with GeocoderResultJsonProtocol {
 
   val geocoderUri = Uri("https://maps.googleapis.com/maps/api/geocode/json")
+  val halfSizeOfTheLocationBias = 0.01
 
   override def reverse(point: Point): Future[Traversable[geocoding.Feature]] =
     doQuery(Query(("latlng", s"${point.latitude},${point.longitude}")))
@@ -38,7 +39,11 @@ class Geocoder(val apiKey: String)(implicit actorSystem: ActorSystem,
 
   override def direct(address: String): Future[Traversable[geocoding.Feature]] = doQuery(Query(("address", address)))
 
-  override def direct(address: String, locationBias: Point): Future[Traversable[geocoding.Feature]] = ???
+  override def direct(address: String, locationBias: Point): Future[Traversable[geocoding.Feature]] =
+    doQuery(Query(
+      ("address", address),
+      ("bounds", s"${locationBias.latitude - halfSizeOfTheLocationBias},${locationBias.longitude - halfSizeOfTheLocationBias}|${locationBias.latitude + halfSizeOfTheLocationBias},${locationBias.longitude + halfSizeOfTheLocationBias}")
+    ))
 }
 
 object Geocoder {

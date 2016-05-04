@@ -180,7 +180,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     private def convert(location: Location): Resource = {
       val placeResource = uuidConverter.createBNode(location)
       model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue.trim), context)
+      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue.replaceAll("\n", " ").trim), context)
       placeResource
     }
 

@@ -9,7 +9,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.apache.lucene.search.spell.LevensteinDistance
 import org.openrdf.model.impl.SimpleLiteral
 import org.openrdf.model.vocabulary.OWL
-import org.openrdf.model.{IRI, Resource}
+import org.openrdf.model.{BNode, IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
@@ -293,7 +293,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalities.foreach {
-              case ((agent1, agent2), _) =>
+              case (agent1, agent2, _) =>
                 val statement = valueFactory.createStatement(agent1, OWL.SAMEAS, agent2, inferencerContext)
                 if (!repositoryConnection.hasStatement(statement, false)) {
                   repositoryConnection.add(statement)
@@ -301,7 +301,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
               case _ =>
             }
             repositoryConnection.commit()
-            saveResultsToFile(equalities)
         }
     }
     Await.result(result, Duration.Inf)
@@ -843,15 +842,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
-
-  /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
     *
@@ -901,6 +891,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   /**
     *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
+  }
+
+  /**
+    *
     * @param text1TFIDF tf-idf for the first text
     * @param text2TFIDF tf-idf for the second text
     * @tparam T the term type
@@ -927,7 +926,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   private def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
     val sameIdAgents = getSameIdAgents
     ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
-      .flatMap(connectedComponent => connectedComponent.map(_ -> connectedComponent.head))
+      .flatMap(connectedComponent => connectedComponent.map {
+        _ -> connectedComponent.collectFirst {
+          case resource if !resource.isInstanceOf[BNode] => resource
+        }.getOrElse(connectedComponent.head)
+      })
       .toMap
       .withDefault(identity)
   }
@@ -1104,7 +1107,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         val newSimilarity = Math.max(previousSimilarity, similarity)
         similarityRelationBuilder += key -> newSimilarity
     }.map {
-      case _ => similarityRelationBuilder.result().toMap
+      case _ => similarityRelationBuilder.view.map {
+        case ((entity1, entity2), similarity) => (entity1, entity2, similarity)
+      }.toIndexedSeq
     }
   }
 
@@ -1148,29 +1153,16 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    * Save the equalities to some file
-    *
-    * @param equalities a map from a Set(agent1, agent2) to its equality probability
-    */
-  private def saveResultsToFile(equalities: Map[(Resource, Resource), Double]) {
-    val results = equalities.map {
-      case ((agent1, agent2), probability) => Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
-    }.mkString("\n")
-    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
-    Files.write(path, results.getBytes(StandardCharsets.UTF_8))
-  }
-
-  /**
     * Report some statistics on the equality results
     *
     * @param equalities a map from a Set(agent1, agent2) to its equality probability
     */
-  private def reportResults(equalities: Map[(Resource, Resource), Double]) {
-    val sortedEqualities = equalities.toIndexedSeq.sortBy(_._2)(implicitly[Ordering[Double]].reverse)
+  private def reportResults(equalities: Traversable[(Resource, Resource, Double)]) {
+    val sortedEqualities = equalities.toIndexedSeq.sortBy(_._3)(implicitly[Ordering[Double]].reverse)
     var previous = equalities.size
     val hist = for (i <- 1 to 11) yield {
       val t = i.toDouble * 0.1
-      val s = sortedEqualities.takeWhile(_._2 >= t).size
+      val s = sortedEqualities.takeWhile(_._3 >= t).size
       val diff = previous - s
       previous = s
       if (t > 1d) {
@@ -1183,6 +1175,20 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       }
     }
     logger.info(s"[agent-attribute-identity-resolution-enricher] - Result distribution: $hist")
+    saveResultsToFile(sortedEqualities)
+  }
+
+  /**
+    * Save the equalities to some file
+    *
+    * @param equalities a map from a Set(agent1, agent2) to its equality probability
+    */
+  private def saveResultsToFile(equalities: Traversable[(Resource, Resource, Double)]) {
+    val results = equalities.map {
+      case (agent1, agent2, probability) => Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
+    }.mkString("\n")
+    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
+    Files.write(path, results.getBytes(StandardCharsets.UTF_8))
   }
 
   /**

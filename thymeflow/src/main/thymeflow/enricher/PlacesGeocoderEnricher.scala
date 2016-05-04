@@ -8,7 +8,7 @@ import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial.geocoding.{Feature, Geocoder}
-import thymeflow.sync.converter.utils.{GeoCoordinatesConverter, PostalAddressConverter, UUIDConverter}
+import thymeflow.sync.converter.utils.{GeoCoordinatesConverter, PostalAddressConverter}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -17,6 +17,7 @@ import scala.concurrent.{Await, Future}
 
 /**
   * @author Thomas Pellissier Tanon
+  *         TODO: geocode places with no name but an address
   */
 class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder) extends Enricher with StrictLogging {
 
@@ -30,11 +31,14 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
     val model = new SimpleHashModel(valueFactory)
 
     diff.added.filter(null, RDF.TYPE, SchemaOrg.PLACE).subjects().asScala.foreach(placeResource =>
-      if (!repositoryConnection.hasStatement(placeResource, SchemaOrg.ADDRESS, null, true)) {
+      if (
+        !repositoryConnection.hasStatement(null, SchemaOrg.ADDRESS_COUNTRY, placeResource, true) &&
+          !repositoryConnection.hasStatement(null, SchemaOrg.ADDRESS_REGION, placeResource, true) &&
+          !repositoryConnection.hasStatement(null, SchemaOrg.ADDRESS_LOCALITY, placeResource, true)
+      ) {
         val geocoderResults = Await.result(Future.sequence(
           repositoryConnection.getStatements(placeResource, SchemaOrg.NAME, null, true)
             .map(_.getObject.stringValue())
-            .filter(str => str.contains(",") || str.contains("\n")) //We geocode only places with "," the other are probably addresses components
             .map(geocoder.direct)
         ), Duration.Inf).flatMap(identity).toTraversable //TODO: what if the request failed?
 

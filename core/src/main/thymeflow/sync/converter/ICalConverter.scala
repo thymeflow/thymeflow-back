@@ -228,9 +228,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convertXAppleStructuredLocation(xAppleStructuredLocation: RawProperty): Resource = {
-      val placeResource = uuidConverter.createBNode(xAppleStructuredLocation)
-      model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(xAppleStructuredLocation.getParameter("X-TITLE")), context)
+      val placeResource = convert(new Location(xAppleStructuredLocation.getParameter("X-TITLE")))
       geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, model).foreach(
         coordinatesResource => model.add(placeResource, SchemaOrg.GEO, coordinatesResource, context)
       )

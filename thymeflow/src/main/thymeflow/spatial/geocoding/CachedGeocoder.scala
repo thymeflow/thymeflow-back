@@ -16,6 +16,7 @@ class CachedGeocoder(geocoder: Geocoder, persistantCacheFile: Option[File] = Non
 
   private val mapDb: DB = persistantCacheFile
     .map(file => {
+      file.getParentFile.mkdirs()
       logger.info(s"Geocoder cache is stored in file $file")
       DBMaker.newFileDB(file)
     })

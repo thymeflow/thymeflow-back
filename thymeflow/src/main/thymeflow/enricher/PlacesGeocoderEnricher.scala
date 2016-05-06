@@ -8,7 +8,7 @@ import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial.geocoding.{Feature, Geocoder}
-import thymeflow.spatial.geographic.impl.Point
+import thymeflow.spatial.geographic.Geography
 import thymeflow.sync.converter.utils.{GeoCoordinatesConverter, PostalAddressConverter}
 
 import scala.collection.JavaConverters._
@@ -43,7 +43,7 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
             repositoryConnection.getStatements(geoResource, SchemaOrg.LATITUDE, null, true).map(_.getObject).flatMap {
               case latitude: Literal =>
                 repositoryConnection.getStatements(geoResource, SchemaOrg.LONGITUDE, null, true).map(_.getObject).map {
-                  case longitude: Literal => Point(longitude.doubleValue(), latitude.doubleValue())
+                  case longitude: Literal => Geography.point(longitude.doubleValue(), latitude.doubleValue())
                 }
             }
         }.toTraversable

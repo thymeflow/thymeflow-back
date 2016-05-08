@@ -85,7 +85,7 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
       model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), inferencerContext)
     )
     model.add(placeResource, SchemaOrg.ADDRESS, postalAddressConverter.convert(feature.address, model, inferencerContext), inferencerContext)
-    model.add(placeResource, SchemaOrg.GEO, geoCoordinatesConverter.convert(feature.point.latitude, feature.point.longitude, None, None, model), inferencerContext)
+    model.add(placeResource, SchemaOrg.GEO, geoCoordinatesConverter.convert(feature.point.longitude, feature.point.latitude, None, None, model), inferencerContext)
 
     placeResource
   }

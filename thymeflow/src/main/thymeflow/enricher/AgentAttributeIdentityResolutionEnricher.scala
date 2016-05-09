@@ -328,22 +328,22 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       threshold =>
         val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold)
         (Some(threshold), map, classes)
-    }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], IndexedSeq[(Resource, Resource)])], baseMap)) {
+    }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], Long, IndexedSeq[(Resource, Resource)])], baseMap)) {
       case ((v, previousMap), (threshold, map, classes)) =>
-        val samples = equalitySampler(previousMap, classes).map {
-          sampler =>
+        val (samples, size) = equalitySampler(previousMap, classes).map {
+          case (sampler, size) =>
             val samples = (1 to nSamples).map {
               _ => sampler.draw()
             }
             assert(samples.map { case (agent1, agent2) => map(agent1) == map(agent2) }.forall(identity))
-            samples
-        }.getOrElse(IndexedSeq.empty)
-        (v :+(threshold, samples), map)
+            (samples, size)
+        }.getOrElse((IndexedSeq.empty, 0L))
+        (v :+(threshold, size, samples), map)
     }._1
   }
 
   private def equalitySampler(previousEquivalenceMap: Map[Resource, Set[Resource]],
-                              classes: IndexedSeq[Set[Resource]])(implicit random: Random): Option[Rand[(Resource, Resource)]] = {
+                              classes: IndexedSeq[Set[Resource]])(implicit random: Random): Option[(Rand[(Resource, Resource)], Long)] = {
     val subClassSamplers = classes.flatMap {
       case clazz =>
         val subClasses = clazz.map(previousEquivalenceMap).toIndexedSeq.map {
@@ -364,11 +364,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       None
     } else {
       val cumulative = Rand.cumulative(subClassSamplers)
-      Some(new Rand[(Resource, Resource)] {
+      Some((new Rand[(Resource, Resource)] {
         override def draw(): (Resource, Resource) = {
           cumulative.draw().draw()
         }
-      })
+      }, cumulative.size))
     }
   }
 
@@ -972,15 +972,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   /**
     *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
-
-  /**
-    *
     * @param text1TFIDF tf-idf for the first text
     * @param text2TFIDF tf-idf for the second text
     * @tparam T the term type
@@ -997,6 +988,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       }.sum
       Math.min(numerator / denominator, 1d)
     }
+  }
+
+  /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
   }
 
   /**
@@ -1284,18 +1284,24 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
 
-  private def saveSamplesToFile(samples: Traversable[(Option[BigDecimal], Traversable[(Resource, Resource)])]) {
-    val output = samples.flatMap {
-      case (threshold, samplesForThreshold) =>
+  private def saveSamplesToFile(samples: Traversable[(Option[BigDecimal], Long, Traversable[(Resource, Resource)])]) {
+    val timestamp = IO.pathTimestamp
+    val sampleEqualitiesOutput = samples.flatMap {
+      case (threshold, size, samplesForThreshold) =>
         samplesForThreshold.groupBy(identity).map {
-          case ((resource1, resource2), g) => (threshold.map(_.toString).getOrElse(""),
+          case ((resource1, resource2), g) => (threshold.map(_.toString).getOrElse("Infinity"),
             resource1.stringValue(),
             resource2.stringValue(),
             g.size.toString).productIterator.mkString(",")
         }
     }.mkString("\n")
-    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_samples_${IO.pathTimestamp}.csv")
-    Files.write(path, output.getBytes(StandardCharsets.UTF_8))
+    val sampleEqualitiesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_samples_$timestamp.csv")
+    Files.write(sampleEqualitiesPath, sampleEqualitiesOutput.getBytes(StandardCharsets.UTF_8))
+    val sampleGroupSizes = samples.map {
+      case (threshold, size, _) => (threshold.map(_.toString).getOrElse("Infinity"), size.toString).productIterator.mkString(",")
+    }.mkString("\n")
+    val sampleGroupSizesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_samples-group-sizes_$timestamp.csv")
+    Files.write(sampleGroupSizesPath, sampleGroupSizes.getBytes(StandardCharsets.UTF_8))
   }
 
   /**

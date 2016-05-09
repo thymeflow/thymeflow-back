@@ -6,7 +6,7 @@ import scala.collection.mutable
   * @author  David Montoya
   */
 object ConnectedComponents {
-  def compute[NODE](nodes: Traversable[NODE], neighbors: NODE => Traversable[NODE]): Seq[Set[NODE]] = {
+  def compute[NODE](nodes: Traversable[NODE], neighbors: NODE => Traversable[NODE]): IndexedSeq[Set[NODE]] = {
     val processed = mutable.HashSet.empty[NODE]
     val components = mutable.Queue.empty[Set[NODE]]
 
@@ -32,7 +32,7 @@ object ConnectedComponents {
     for {
       u <- nodes if !(processed contains u)
     } bfs(u)
-    components
+    components.toIndexedSeq
   }
 
 }

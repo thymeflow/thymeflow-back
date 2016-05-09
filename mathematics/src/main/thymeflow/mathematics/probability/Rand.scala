@@ -9,6 +9,10 @@ trait Rand[T] {
   def draw(): T
 }
 
+trait DiscreteRand[T] extends Rand[T] {
+  def all(): Traversable[T]
+}
+
 object Rand {
   def nextLong(bound: Long)(implicit random: Random) = {
     if (bound <= 0) throw new IllegalArgumentException("bound must be positive")
@@ -30,7 +34,7 @@ object Rand {
     r
   }
 
-  def shuffleTwoWeightedOrdered[T](weightedElements: IndexedSeq[(T, Long)])(implicit random: Random): (Rand[(T, T)], Long) = {
+  def shuffleTwoWeightedOrdered[T](weightedElements: IndexedSeq[(T, Long)])(implicit random: Random): (DiscreteRand[(T, T)], Long) = {
     if (weightedElements.size < 2) throw new IllegalArgumentException("there should be two or more elements")
     val adjustedWeightElements = weightedElements.indices.map {
       i =>
@@ -42,13 +46,23 @@ object Rand {
     }
     val adjustedCumulativeRand = Rand.cumulative(adjustedWeightElements)
     val cumulativeRand = Rand.cumulative(weightedElements)
-    (new Rand[(T, T)] {
+    (new DiscreteRand[(T, T)] {
       def draw() = {
         // sample from 0 to n - 2
         val (e1, i) = adjustedCumulativeRand.drawWithIndex()
         // sample from 0 to n - 1 without i
         val (e2, _) = cumulativeRand.drawAfter(i)
         (e1, e2)
+      }
+
+      def all() = {
+        weightedElements.indices.flatMap {
+          i =>
+            val e1 = weightedElements(i)._1
+            (i + 1 to weightedElements.indices.last).map {
+              j => (e1, weightedElements(j)._1)
+            }
+        }
       }
     }, adjustedCumulativeRand.size)
   }

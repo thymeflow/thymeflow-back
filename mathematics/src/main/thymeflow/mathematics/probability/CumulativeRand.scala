@@ -5,7 +5,7 @@ import scala.util.Random
 /**
   * @author David Montoya
   */
-class CumulativeRand[T] private[probability](valueProbabilities: IndexedSeq[(T, Long)])(implicit random: Random) extends Rand[T] {
+class CumulativeRand[T] private[probability](valueProbabilities: IndexedSeq[(T, Long)])(implicit random: Random) extends DiscreteRand[T] {
 
   private val (cumulativeCounts, count) = {
     val cumulativeCountsBuilder = IndexedSeq.newBuilder[Long]
@@ -29,6 +29,16 @@ class CumulativeRand[T] private[probability](valueProbabilities: IndexedSeq[(T, 
     search(Rand.nextLong(before))
   }
 
+  private def search(offset: Long) = {
+    import scala.collection.Searching._
+    val index =
+      new SearchImpl(cumulativeCounts).search(offset) match {
+        case InsertionPoint(insertionPoint) => insertionPoint
+        case Found(i) => i + 1
+      }
+    (valueProbabilities(index)._1, index)
+  }
+
   def size = count
 
   override def draw(): T = {
@@ -39,14 +49,6 @@ class CumulativeRand[T] private[probability](valueProbabilities: IndexedSeq[(T, 
     search(Rand.nextLong(count))
   }
 
-  private def search(offset: Long) = {
-    import scala.collection.Searching._
-    val index =
-      new SearchImpl(cumulativeCounts).search(offset) match {
-        case InsertionPoint(insertionPoint) => insertionPoint
-        case Found(i) => i + 1
-      }
-    (valueProbabilities(index)._1, index)
-  }
+  def all() = valueProbabilities.map(_._1)
 }
 

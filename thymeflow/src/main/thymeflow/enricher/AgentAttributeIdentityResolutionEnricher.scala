@@ -16,7 +16,7 @@ import thymeflow.actors._
 import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
-import thymeflow.mathematics.probability.Rand
+import thymeflow.mathematics.probability.{DiscreteRand, Rand}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -330,20 +330,26 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         (Some(threshold), map, classes)
     }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], Long, IndexedSeq[(Resource, Resource)])], baseMap)) {
       case ((v, previousMap), (threshold, map, classes)) =>
-        val (samples, size) = equalitySampler(previousMap, classes).map {
-          case (sampler, size) =>
-            val samples = (1 to nSamples).map {
-              _ => sampler.draw()
+        val (samples, sampleGroupSize) = equalitySampler(previousMap, classes).map {
+          case (sampler, samplerSize) =>
+            val samples = if (nSamples >= samplerSize) {
+              val s = sampler.all().toIndexedSeq
+              assert(s.size == samplerSize)
+              s
+            } else {
+              (1 to nSamples).map {
+                _ => sampler.draw()
+              }
             }
             assert(samples.map { case (agent1, agent2) => map(agent1) == map(agent2) }.forall(identity))
-            (samples, size)
+            (samples, samplerSize)
         }.getOrElse((IndexedSeq.empty, 0L))
-        (v :+(threshold, size, samples), map)
+        (v :+(threshold, sampleGroupSize, samples), map)
     }._1
   }
 
   private def equalitySampler(previousEquivalenceMap: Map[Resource, Set[Resource]],
-                              classes: IndexedSeq[Set[Resource]])(implicit random: Random): Option[(Rand[(Resource, Resource)], Long)] = {
+                              classes: IndexedSeq[Set[Resource]])(implicit random: Random): Option[(DiscreteRand[(Resource, Resource)], Long)] = {
     val subClassSamplers = classes.flatMap {
       case clazz =>
         val subClasses = clazz.map(previousEquivalenceMap).toIndexedSeq.map {
@@ -351,9 +357,20 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }
         if (subClasses.size >= 2) {
           val (randomSubClassPair, count) = Rand.shuffleTwoWeightedOrdered(subClasses)
-          Some((new Rand[(Resource, Resource)] {
+          Some((new DiscreteRand[(Resource, Resource)] {
             override def draw(): (Resource, Resource) = randomSubClassPair.draw() match {
               case (class1, class2) => (class1.draw(), class2.draw())
+            }
+
+            override def all(): Traversable[(Resource, Resource)] = {
+              randomSubClassPair.all().flatMap {
+                case (e1Sampler, e2Sampler) =>
+                  e1Sampler.all().flatMap {
+                    e1 => e2Sampler.all().map {
+                      e2 => (e1, e2)
+                    }
+                  }
+              }
             }
           }, count))
         } else {
@@ -364,9 +381,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       None
     } else {
       val cumulative = Rand.cumulative(subClassSamplers)
-      Some((new Rand[(Resource, Resource)] {
+      Some((new DiscreteRand[(Resource, Resource)] {
         override def draw(): (Resource, Resource) = {
           cumulative.draw().draw()
+        }
+
+        def all(): Traversable[(Resource, Resource)] = {
+          cumulative.all().flatMap {
+            _.all()
+          }
         }
       }, cumulative.size))
     }
@@ -1276,11 +1299,13 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     */
   private def saveResultsToFile(equalities: Traversable[(Resource, Resource, Double)]) {
     val sortedEqualities = equalities.toIndexedSeq.sortBy(_._3)(implicitly[Ordering[Double]].reverse)
-    val results = sortedEqualities.map {
-      case (agent1, agent2, probability) => Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
-    }.mkString("\n")
+    val results = sortedEqualities.view.map {
+      case (agent1, agent2, probability) =>
+        Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",") + "\n"
+    }
     val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
-    Files.write(path, results.getBytes(StandardCharsets.UTF_8))
+    import scala.collection.JavaConverters._
+    Files.write(path, results.asJava, StandardCharsets.UTF_8)
   }
 
 

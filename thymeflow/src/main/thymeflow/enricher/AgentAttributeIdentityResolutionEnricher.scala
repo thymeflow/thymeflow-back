@@ -49,6 +49,7 @@ import scala.util.Random
   * @param matchDistanceThreshold maximum distance for a term to be considered as match
   * @param contactRelativeWeight  expresses the relative weight contact card names have with respect to message names
   *                               must be equal to None or between 0 and 1
+  * @param evaluationThreshold    probability threshold above which evaluation is performed
   * @param persistenceThreshold   probability threshold above which equalities are saved
   * @param debug                  debug mode
   */
@@ -59,7 +60,8 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                                                parallelism: Int = 2,
                                                matchDistanceThreshold: Double = 1d,
                                                contactRelativeWeight: Option[Double] = Option(0.5),
-                                               persistenceThreshold: Double = 0d,
+                                               evaluationThreshold: BigDecimal = BigDecimal(0),
+                                               persistenceThreshold: BigDecimal = BigDecimal(0),
                                                debug: Boolean = false) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
@@ -282,7 +284,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }.filter {
           case (_, _, probability) =>
             // retain candidate equalities whose probability is over a certain threshold
-            if (probability >= persistenceThreshold) {
+            if (probability >= evaluationThreshold) {
               candidatePairCountAboveThreshold += 1
               true
             } else {
@@ -302,7 +304,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
             equalities.foreach {
-              case (agent1, agent2, _) =>
+              case (agent1, agent2, probability) if probability >= persistenceThreshold =>
                 val statement1 = valueFactory.createStatement(agent1, OWL.SAMEAS, agent2, inferencerContext)
                 val statement2 = valueFactory.createStatement(agent2, OWL.SAMEAS, agent1, inferencerContext)
                 repositoryConnection.add(statement1)
@@ -320,11 +322,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                               buckets: NumericRange[BigDecimal],
                               nSamples: Int) = {
     implicit val random = Random
-    val (agentEquivalenceClassMap, agentEquivalenceClasses) = equalityRelationEquivalentClasses(baseAgentRepresentative, Traversable.empty, 0d)
+    val (agentEquivalenceClassMap, agentEquivalenceClasses) = equalityRelationEquivalentClasses(baseAgentRepresentative, Traversable.empty, BigDecimal(0))
     val baseMap: Map[Resource, Set[Resource]] = Map().withDefault(Set(_))
     (IndexedSeq((None: Option[BigDecimal], agentEquivalenceClassMap, agentEquivalenceClasses)).view ++ buckets.reverse.view.map {
       threshold =>
-        val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold.toDouble)
+        val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold)
         (Some(threshold), map, classes)
     }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], IndexedSeq[(Resource, Resource)])], baseMap)) {
       case ((v, previousMap), (threshold, map, classes)) =>
@@ -372,7 +374,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   private def equalityRelationEquivalentClasses(representatives: Traversable[(Resource, Resource)],
                                                 equalities: Traversable[(Resource, Resource, Double)],
-                                                threshold: Double) = {
+                                                threshold: BigDecimal) = {
     val e = equalities.view.filter(_._3 >= threshold).map(x => (x._1, x._2)) ++ representatives
     val neighbors = (e ++ e.map(x => (x._2, x._1))).groupBy(_._1).map {
       case (instance1, instances) => (instance1, instances.map(_._2).toSet)
@@ -921,15 +923,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
-
-  /**
     * Gets a map of agent name parts, for instance:
     * {JohnDoeAgent -> [("John", givenName), ("Doe", familyName)], AliceAgent -> [("Alice", givenName)]}
     *
@@ -975,6 +968,15 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       0.0
     }
     equalityProbability
+  }
+
+  /**
+    *
+    * @param content to extract terms from
+    * @return a list of extracted terms, in their order of appearance
+    */
+  private def extractTerms(content: String) = {
+    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
   }
 
   /**

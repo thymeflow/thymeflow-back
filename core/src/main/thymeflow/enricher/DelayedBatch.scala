@@ -19,7 +19,7 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
 
   val in = Inlet[In]("DelayedBatch.in")
   val out = Outlet[Out]("DelayedBatch.out")
-  val shape: FlowShape[In, Out] = FlowShape.of(in, out)
+  override val shape: FlowShape[In, Out] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
 

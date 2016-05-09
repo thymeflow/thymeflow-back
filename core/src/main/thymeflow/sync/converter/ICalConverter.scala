@@ -65,7 +65,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
           //DESCRIPTION
           case description: Description =>
             if (description.getValue != "") {
-              model.add(eventResource, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description.getValue), context)
+              model.add(eventResource, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description.getValue.trim), context)
             }
           //DEND
           case dateEnd: DateEnd => model.add(eventResource, SchemaOrg.END_DATE, convert(dateEnd), context)
@@ -83,7 +83,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
           //SUMMARY
           case summary: Summary =>
             if (summary.getValue != "") {
-              model.add(eventResource, SchemaOrg.NAME, valueFactory.createLiteral(summary.getValue), context)
+              model.add(eventResource, SchemaOrg.NAME, valueFactory.createLiteral(summary.getValue.trim), context)
             }
           //URL
           case url: Url =>
@@ -180,7 +180,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     private def convert(location: Location): Resource = {
       val placeResource = uuidConverter.createBNode(location)
       model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue), context)
+      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue.replaceAll("\n", " ").trim), context)
       placeResource
     }
 
@@ -228,9 +228,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convertXAppleStructuredLocation(xAppleStructuredLocation: RawProperty): Resource = {
-      val placeResource = uuidConverter.createBNode(xAppleStructuredLocation)
-      model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(xAppleStructuredLocation.getParameter("X-TITLE")), context)
+      val placeResource = convert(new Location(xAppleStructuredLocation.getParameter("X-TITLE")))
       geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, model).foreach(
         coordinatesResource => model.add(placeResource, SchemaOrg.GEO, coordinatesResource, context)
       )

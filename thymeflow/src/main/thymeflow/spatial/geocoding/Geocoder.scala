@@ -1,5 +1,7 @@
 package thymeflow.spatial.geocoding
 
+import java.io.File
+
 import akka.http.scaladsl.model.Uri
 import thymeflow.actors._
 import thymeflow.spatial.geocoding
@@ -34,12 +36,12 @@ object Geocoder {
     * @param geocoder the geocoder to cache
     * @return a Geocoder that caches responses
     */
-  def cached(geocoder: Geocoder) = new CachedGeocoder(geocoder)
+  def cached(geocoder: Geocoder, persistantCacheFile: Option[File] = None) = new CachedGeocoder(geocoder, persistantCacheFile)
 
   /**
     * Geocoder client for Google Maps API
     *
     * @return a GoogleMapsGeocoder
     */
-  def googleMaps() = throw new NotImplementedError()
+  def googleMaps() = geocoding.google.Geocoder()
 }

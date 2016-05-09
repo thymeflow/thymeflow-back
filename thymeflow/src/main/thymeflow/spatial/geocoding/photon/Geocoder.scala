@@ -12,8 +12,8 @@ import akka.stream.Materializer
 import com.typesafe.scalalogging.StrictLogging
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
-import thymeflow.spatial.geocoding
 import thymeflow.spatial.geographic.{Geography, Point}
+import thymeflow.spatial.{SimpleAddress, geocoding}
 
 import scala.concurrent.ExecutionContext
 
@@ -34,6 +34,11 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
       Query("lon" -> point.longitude.toString, "lat" -> point.latitude.toString))
   }
 
+  private def getAddresses(endpoint: Uri, query: Query) = {
+    http.singleRequest(HttpRequest(method = GET, uri = endpoint.withQuery(query)))
+      .flatMap(Unmarshal(_).to[Traversable[geocoding.Feature]])
+  }
+
   override def direct(address: String) = {
     direct(address, None)
   }
@@ -49,11 +54,6 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
     }.getOrElse(baseQuery)
     getAddresses(directGeocodingEndPoint,
       finalQuery)
-  }
-
-  private def getAddresses(endpoint: Uri, query: Query) = {
-    http.singleRequest(HttpRequest(method = GET, uri = endpoint.withQuery(query)))
-      .flatMap(Unmarshal(_).to[Traversable[geocoding.Feature]])
   }
 
   /**
@@ -73,7 +73,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
             implicit val formats = org.json4s.DefaultFormats
             val coordinates = (featureJson \ "geometry" \ "coordinates").extract[Seq[Double]]
             val point = Geography.point(coordinates.head, coordinates.last)
-            var address = Address()
+            var address = SimpleAddress()
             var source = Photon()
             var feature = Feature(point = point, address = address, source = source)
             featureJson \ "properties" match {
@@ -94,13 +94,13 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
                   case ("housenumber", string: JString) =>
                     address = address.copy(houseNumber = Some(string.s))
                   case ("city", string: JString) =>
-                    address = address.copy(city = Some(string.s))
+                    address = address.copy(locality = Some(string.s))
                   case ("street", string: JString) =>
                     address = address.copy(street = Some(string.s))
                   case ("postcode", string: JString) =>
-                    address = address.copy(postcode = Some(string.s))
+                    address = address.copy(postalCode = Some(string.s))
                   case ("state", string: JString) =>
-                    address = address.copy(state = Some(string.s))
+                    address = address.copy(region = Some(string.s))
                   case s =>
                   //logger.info(s"${s._1} -> ${write(s._2)}")
                 }

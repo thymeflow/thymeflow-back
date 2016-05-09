@@ -1,5 +1,8 @@
 package thymeflow.spatial.geocoding
 
+import java.io.File
+
+import com.typesafe.scalalogging.StrictLogging
 import org.mapdb.{DB, DBMaker}
 import thymeflow.actors._
 import thymeflow.spatial.geographic.Point
@@ -9,13 +12,22 @@ import scala.concurrent.Future
 /**
   * @author Thomas pellissier Tanon
   */
-class CachedGeocoder(geocoder: Geocoder, persistantCache: Boolean = true) extends Geocoder {
+class CachedGeocoder(geocoder: Geocoder, persistantCacheFile: Option[File] = None) extends Geocoder with StrictLogging {
 
-  private val mapDb: DB = (if (persistantCache) {
-    DBMaker.newTempFileDB()
-  } else {
-    DBMaker.newMemoryDirectDB()
-  }).make()
+  private val mapDb: DB = persistantCacheFile
+    .map(file => {
+      file.getParentFile.mkdirs()
+      logger.info(s"Geocoder cache is stored in file $file")
+      DBMaker.newFileDB(file)
+    })
+    .getOrElse({
+      logger.info(s"Geocoder cache is stored in memory")
+      DBMaker.newMemoryDirectDB
+    })
+    .compressionEnable()
+    .transactionDisable()
+    .closeOnJvmShutdown()
+    .make()
   private val reverseCache: java.util.Map[Point, Traversable[Feature]] = mapDb.getHashMap("geocoder-reverse")
   private val directCache: java.util.Map[String, Traversable[Feature]] = mapDb.getHashMap("geocoder-direct")
   private val directWithBiasCache: java.util.Map[(String, Point), Traversable[Feature]] = mapDb.getHashMap("geocoder-direct-bias")
@@ -29,7 +41,10 @@ class CachedGeocoder(geocoder: Geocoder, persistantCache: Boolean = true) extend
       }
     } else {
       val result = set(key)
-      result.foreach(cache.put(key, _))
+      result.foreach(value => {
+        cache.put(key, value)
+        mapDb.commit()
+      })
       result
     }
   }

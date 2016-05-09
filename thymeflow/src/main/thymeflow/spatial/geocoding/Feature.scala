@@ -1,5 +1,6 @@
 package thymeflow.spatial.geocoding
 
+import thymeflow.spatial.Address
 import thymeflow.spatial.geographic.Point
 
 /**

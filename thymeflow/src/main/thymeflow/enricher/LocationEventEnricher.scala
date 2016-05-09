@@ -4,7 +4,7 @@ import javax.xml.bind.DatatypeConverter
 
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.XMLSchema
+import org.openrdf.model.vocabulary.{OWL, XMLSchema}
 import org.openrdf.model.{Literal, Resource}
 import org.openrdf.query.{BindingSet, QueryLanguage}
 import org.openrdf.repository.RepositoryConnection
@@ -12,6 +12,8 @@ import thymeflow.actors._
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.spatial.geographic.metric.models.WGS84SphereHaversinePointMetric
+import thymeflow.spatial.geographic.{Geography, Point}
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -26,20 +28,31 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
 
-  private val overlapMinRatio = 0.1
+  private val overlapMinRatio = 0.3
+  private val maxLocationDistance = 1000
 
   private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
-    s"""SELECT ?event ?start ?end WHERE {
+    s"""SELECT ?event ?start ?end ?lat ?lon WHERE {
       ?event a <${SchemaOrg.EVENT}> ;
              <${SchemaOrg.START_DATE}> ?start ;
              <${SchemaOrg.END_DATE}> ?end .
-      } ORDER BY ?start"""
+      OPTIONAL {
+        ?event <${SchemaOrg.LOCATION}>/<${OWL.SAMEAS}>* ?location .
+        ?location a <${SchemaOrg.PLACE}> ;
+                  <${SchemaOrg.GEO}> ?geo .
+        ?geo <${SchemaOrg.LATITUDE}> ?lat ;
+             <${SchemaOrg.LONGITUDE}> ?lon .
+      }
+    } ORDER BY ?start"""
   )
   private val staysQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
-    s"""SELECT ?event ?start ?end WHERE {
+    s"""SELECT ?event ?start ?end ?lat ?lon WHERE {
       ?event a <${Personal.STAY_EVENT}> ;
             <${SchemaOrg.START_DATE}> ?start ;
-            <${SchemaOrg.END_DATE}> ?end .
+            <${SchemaOrg.END_DATE}> ?end ;
+            <${SchemaOrg.GEO}> ?geo .
+      ?geo <${SchemaOrg.LATITUDE}> ?lat ;
+           <${SchemaOrg.LONGITUDE}> ?lon .
     } ORDER BY ?start"""
   )
 
@@ -50,30 +63,31 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
     val events = getEvents.toBuffer
 
     Await.result(getStays.map(stay =>
-      events.filter(event => {
-        // We look for not null intersection
-        // Does 1 or 2 comparisons when intersection is null (average = 1),
-        // Does 4 comparisons when intersection is not null
-        if (event.start <= stay.end && stay.start <= event.end) {
-          val start = Math.max(stay.start, event.start) // lower bound of intersection interval
-          val end = Math.min(event.end, stay.end) // upper bound of intersection interval
-          isMatchIntervalBiggerThanRatioOfEvent(start, end, event)
-        } else {
-          false
-        }
-      }).map(event => {
-        repositoryConnection.begin()
-        repositoryConnection.add(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext)
-        repositoryConnection.commit()
-        event
+      events
+        .filter(event => event.start <= stay.end && stay.start <= event.end)
+        .filter(isSharedIntervalBiggerThanRatioOfEvent(stay, _))
+        .filter(isNear(stay, _))
+        .map(event => {
+          repositoryConnection.begin()
+          repositoryConnection.add(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext)
+          repositoryConnection.commit()
+          event
       }).size
-    ).runFold(0)(_ + _).map(addedConnections =>
+    ).runReduce(_ + _).map(addedConnections => {
       logger.info(s"$addedConnections added between events and stay locations")
-    ), Duration.Inf)
+    }), Duration.Inf)
   }
 
-  private def isMatchIntervalBiggerThanRatioOfEvent(start: Long, end: Long, event: TimeIntervalResource): Boolean = {
-    (end - start).toFloat / event.length > overlapMinRatio
+  private def isSharedIntervalBiggerThanRatioOfEvent(stay: TimeIntervalResource, event: TimeIntervalResource): Boolean = {
+    (Math.min(stay.end, event.end) - Math.max(stay.start, event.start)).toFloat / event.length > overlapMinRatio
+  }
+
+  private def isNear(stay: TimeIntervalResource, event: TimeIntervalResource): Boolean = {
+    event.coordinates.forall(eventCoordinates =>
+      stay.coordinates.forall(stayCoordinates =>
+        WGS84SphereHaversinePointMetric.distance(eventCoordinates, stayCoordinates) <= maxLocationDistance
+      )
+    )
   }
 
   private def getEvents: Iterator[TimeIntervalResource] = {
@@ -92,9 +106,14 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
     (
       Option(bindingSet.getValue("event").asInstanceOf[Resource]),
       Option(bindingSet.getValue("start").asInstanceOf[Literal]).flatMap(parseLiteralAsTime),
-      Option(bindingSet.getValue("end").asInstanceOf[Literal]).flatMap(parseLiteralAsTime)
+      Option(bindingSet.getValue("end").asInstanceOf[Literal]).flatMap(parseLiteralAsTime),
+      Option(bindingSet.getValue("lat").asInstanceOf[Literal]).map(_.floatValue()),
+      Option(bindingSet.getValue("lon").asInstanceOf[Literal]).map(_.floatValue())
       ) match {
-      case (Some(resource), Some(start), Some(end)) => Some(TimeIntervalResource(resource, start, end))
+      case (Some(resource), Some(start), Some(end), Some(lat), Some(lon)) =>
+        Some(TimeIntervalResource(resource, start, end, Some(Geography.point(lon, lat))))
+      case (Some(resource), Some(start), Some(end), None, None) =>
+        Some(TimeIntervalResource(resource, start, end))
       case _ => None
     }
   }
@@ -107,7 +126,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
     }
   }
 
-  private case class TimeIntervalResource(resource: Resource, start: Long, end: Long) {
+  private case class TimeIntervalResource(resource: Resource, start: Long, end: Long, coordinates: Option[Point] = None) {
     def length = end - start
 
     override def equals(obj: scala.Any): Boolean = {

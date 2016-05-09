@@ -146,7 +146,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
   override def enrich(diff: ModelDiff): Unit = {
     // get a map assigning to each agent facet its representative in the "shared id" equivalence class
-    val (agentRepresentativeMap, agentEquivalenceClasses) = getSharedIdRepresentativeByAgent
+    val agentRepresentativeMap = getSharedIdRepresentativeByAgent
     // get the list email addresses for each agent
     val agentRepresentativeEmailAddresses = getAgentEmails(agentRepresentativeMap.apply)
     // for each agent, get a count for each name
@@ -291,7 +291,10 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }).map {
           case equalities =>
             val buckets = samplingBuckets()
-            val samples = generateSamples(agentRepresentativeMap, agentEquivalenceClasses, equalities, buckets, 100)
+            val baseAgentRepresentative = (agentRepresentativeMap.keySet ++ agentRepresentativeIRIToResourceMap.values.toSet).map {
+              agent => (agent, agentRepresentativeMap(agent))
+            }
+            val samples = generateSamples(baseAgentRepresentative, equalities, buckets, 100)
             saveSamplesToFile(samples)
             reportStatistics(equalities, buckets)
             saveResultsToFile(equalities)
@@ -312,29 +315,25 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     Await.result(result, Duration.Inf)
   }
 
-  private def generateSamples(agentRepresentativeMap: Map[Resource, Resource],
-                              agentEquivalenceClasses: IndexedSeq[Set[Resource]],
+  private def generateSamples(baseAgentRepresentative: Traversable[(Resource, Resource)],
                               equalities: IndexedSeq[(Resource, Resource, Double)],
                               buckets: NumericRange[BigDecimal],
                               nSamples: Int) = {
     implicit val random = Random
-    val agentEquivalenceClassMap = agentEquivalenceClasses.flatMap {
-      agents => agents.view.map(_ -> agents)
-    }.toMap.withDefault(Set(_))
+    val (agentEquivalenceClassMap, agentEquivalenceClasses) = equalityRelationEquivalentClasses(baseAgentRepresentative, Traversable.empty, 0d)
     val baseMap: Map[Resource, Set[Resource]] = Map().withDefault(Set(_))
     (IndexedSeq((None: Option[BigDecimal], agentEquivalenceClassMap, agentEquivalenceClasses)).view ++ buckets.reverse.view.map {
       threshold =>
-        val (map, classes) = equalityRelationEquivalentClasses(agentRepresentativeMap, equalities, threshold.toDouble)
+        val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold.toDouble)
         (Some(threshold), map, classes)
     }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], IndexedSeq[(Resource, Resource)])], baseMap)) {
       case ((v, previousMap), (threshold, map, classes)) =>
-        logger.info(s"${classes.map(_.size).sum}")
         val samples = equalitySampler(previousMap, classes).map {
           sampler =>
             val samples = (1 to nSamples).map {
               _ => sampler.draw()
             }
-            logger.info(s"""${samples.map { case (agent1, agent2) => map(agent1) == map(agent2) }.forall(identity)}""")
+            assert(samples.map { case (agent1, agent2) => map(agent1) == map(agent2) }.forall(identity))
             samples
         }.getOrElse(IndexedSeq.empty)
         (v :+(threshold, samples), map)
@@ -979,11 +978,31 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
+    *
+    * @param text1TFIDF tf-idf for the first text
+    * @param text2TFIDF tf-idf for the second text
+    * @tparam T the term type
+    * @return the distance between two text sequences using cosine similarity over their TFIDF space
+    */
+  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
+    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
+    if (denominator == 0d) {
+      0d
+    } else {
+      val numerator = similarities.map {
+        case (terms1, terms2, similarity) =>
+          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
+      }.sum
+      Math.min(numerator / denominator, 1d)
+    }
+  }
+
+  /**
     * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
-    *         equivalence relation, and the list of equivalence classes
+    *         equivalence relation
     *         by default, an unknown agent is represented by itself
     */
-  private def getSharedIdRepresentativeByAgent: (Map[Resource, Resource], IndexedSeq[Set[Resource]]) = {
+  private def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
     val sameIdAgents = getSameIdAgents
     val equivalenceClasses = ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
     val agentRepresentativeMap = equivalenceClasses
@@ -994,7 +1013,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       })
       .toMap
       .withDefault(identity)
-    (agentRepresentativeMap, equivalenceClasses)
+    agentRepresentativeMap
   }
 
   /**
@@ -1211,26 +1230,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       normalizedSoftTFIDF(termsTFIDFs(terms1), termsTFIDFs(terms2))(terms1.indices, terms2.indices, similarityIndices)
     } else {
       0d
-    }
-  }
-
-  /**
-    *
-    * @param text1TFIDF tf-idf for the first text
-    * @param text2TFIDF tf-idf for the second text
-    * @tparam T the term type
-    * @return the distance between two text sequences using cosine similarity over their TFIDF space
-    */
-  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
-    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
-    if (denominator == 0d) {
-      0d
-    } else {
-      val numerator = similarities.map {
-        case (terms1, terms2, similarity) =>
-          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
-      }.sum
-      Math.min(numerator / denominator, 1d)
     }
   }
 

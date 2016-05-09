@@ -14,10 +14,14 @@ trait DiscreteRand[T] extends Rand[T] {
 }
 
 object Rand {
+
   def nextLong(bound: Long)(implicit random: Random) = {
     if (bound <= 0) throw new IllegalArgumentException("bound must be positive")
-
-    var r: Long = random.nextLong
+    def randomBits() = {
+      // unsigned long
+      (random.nextLong << 1) >>> 1
+    }
+    var r: Long = randomBits()
     val m: Long = bound - 1
     if ((bound & m) == 0) // i.e., bound is a power of 2
       r = r % bound
@@ -28,7 +32,7 @@ object Rand {
         r
       }
       while (u - a() + m < 0) {
-        u = random.nextLong
+        u = randomBits()
       }
     }
     r
@@ -39,7 +43,7 @@ object Rand {
     val adjustedWeightElements = weightedElements.indices.map {
       i =>
         val (e1, s1) = weightedElements(i)
-        val s = (i + 1 to weightedElements.indices.last).map {
+        val s = ((i + 1) to weightedElements.indices.last).map {
           j => s1 * weightedElements(j)._2
         }.sum
         (e1, s)

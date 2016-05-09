@@ -8,6 +8,23 @@ import org.scalatest._
 class RandSpec extends FlatSpec with Matchers {
   implicit val random = scala.util.Random
 
+  "Rand" should "nextLong" in {
+    val sampleSize = 1000000
+    val distribution = (1 to sampleSize).map {
+      _ => Rand.nextLong(2)
+    }.groupBy(identity).map {
+      case (element, e) => element -> e.size.toDouble / sampleSize.toDouble
+    }
+    val elements = 0L to 1L
+    val expectedDistribution = elements.map {
+      element => element -> 1d / elements.size.toDouble
+    }.toMap
+    val meanError = distribution.map {
+      case (element, v) => Math.abs(expectedDistribution.getOrElse(element, 0d) - v)
+    }.sum / elements.size
+    meanError should be <= 0.01
+  }
+
   "CumulativeRand" should "size should be equal to the sum of weights" in {
     val elements = Vector((1, 10L), (2, 5L), (3, 15L))
     Rand.cumulative(elements).size should equal(elements.map(_._2).sum)
@@ -32,7 +49,7 @@ class RandSpec extends FlatSpec with Matchers {
   }
 
   "Rand" should "shuffleTwoWeightedOrdered" in {
-    val elements = Vector((1, 10L), (2, 5L), (3, 15L))
+    val elements = Vector((1, 5L), (2, 15L), (3, 10L))
     val expected = elements.indices.flatMap {
       i =>
         val s1 = elements(i)._2

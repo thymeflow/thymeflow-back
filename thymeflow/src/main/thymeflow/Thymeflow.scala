@@ -19,21 +19,21 @@ import scala.language.postfixOps
 object Thymeflow extends StrictLogging {
 
   def main(args: Array[String]) {
+    val geocoder = Geocoder.cached(
+      Geocoder.googleMaps(),
+      Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/geocoder-google-cache"))
+    )
+
     val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false, lucene = false)
     setupSynchronizers()
     val pipeline = new Pipeline(
       repository.getConnection,
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
-        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(
-          repository.getConnection,
-          Geocoder.cached(
-            Geocoder.googleMaps(),
-            Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/geocoder-google-cache"))
-          )
-        )))
+        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection,
           solveMode = AgentAttributeIdentityResolutionEnricher.Vanilla)))
     )

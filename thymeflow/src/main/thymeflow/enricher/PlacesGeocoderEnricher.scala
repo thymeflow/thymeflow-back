@@ -9,7 +9,6 @@ import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial.geocoding.{Feature, Geocoder}
 import thymeflow.spatial.geographic.Geography
-import thymeflow.sync.converter.utils.{GeoCoordinatesConverter, PostalAddressConverter}
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -24,8 +23,7 @@ import scala.concurrent.{Await, Future}
 class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
-  private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
-  private val postalAddressConverter = new PostalAddressConverter(valueFactory)
+  private val featureConverter = new FeatureConverter(valueFactory)
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "PlacesGeocoderEnricher")
 
   override def enrich(diff: ModelDiff): Unit = {
@@ -63,7 +61,7 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
         if (geocoderResults.size == 1) {
           //We only add the geocoder result if there is only one result
           geocoderResults.foreach(feature => {
-            val resource = addFeatureToModel(feature, model)
+            val resource = featureConverter.convert(feature, model)
             model.add(placeResource, OWL.SAMEAS, resource, inferencerContext)
             model.add(resource, OWL.SAMEAS, placeResource, inferencerContext)
           })
@@ -75,18 +73,5 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
 
     repositoryConnection.add(model)
     repositoryConnection.commit()
-  }
-
-  private def addFeatureToModel(feature: Feature, model: Model): Resource = {
-    val placeResource = valueFactory.createIRI(feature.source.iri)
-
-    model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, inferencerContext)
-    feature.name.foreach(name =>
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), inferencerContext)
-    )
-    model.add(placeResource, SchemaOrg.ADDRESS, postalAddressConverter.convert(feature.address, model, inferencerContext), inferencerContext)
-    model.add(placeResource, SchemaOrg.GEO, geoCoordinatesConverter.convert(feature.point.longitude, feature.point.latitude, None, None, model), inferencerContext)
-
-    placeResource
   }
 }

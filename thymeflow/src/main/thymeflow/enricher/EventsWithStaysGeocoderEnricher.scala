@@ -1,19 +1,18 @@
 package thymeflow.enricher
 
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{OWL, RDF}
-import org.openrdf.model.{Literal, Model, Resource}
+import org.openrdf.model.vocabulary.OWL
+import org.openrdf.model.{Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
-import thymeflow.spatial.geocoding.{Feature, Geocoder}
+import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.spatial.geographic.Geography
 
-import scala.concurrent.duration.Duration
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 /**
   * @author Thomas Pellissier Tanon

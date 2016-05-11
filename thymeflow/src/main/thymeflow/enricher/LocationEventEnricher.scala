@@ -28,7 +28,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
 
-  private val overlapMinRatio = 0.3
+  private val overlapMinRatio = 0.2
   private val maxLocationDistance = 1000
 
   private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,

@@ -162,17 +162,17 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
 
     private def convert(duration: Duration): Literal = {
       val days = Option(duration.getWeeks)
-        .map[Integer](weeks => weeks * 7 + Option(duration.getDays).getOrElse[Integer](0))
+        .map[Int](_ * 7 + Option(duration.getDays).getOrElse[Int](0))
         .orElse(Option(duration.getDays))
 
       val xmlDuration = DatatypeFactory.newInstance().newDuration(
         !duration.isPrior,
         DatatypeConstants.FIELD_UNDEFINED,
         DatatypeConstants.FIELD_UNDEFINED,
-        days.getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
-        Option(duration.getHours).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
-        Option(duration.getMinutes).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED),
-        Option(duration.getSeconds).getOrElse[Integer](DatatypeConstants.FIELD_UNDEFINED)
+        days.getOrElse[Int](DatatypeConstants.FIELD_UNDEFINED),
+        Option(duration.getHours).getOrElse[Int](DatatypeConstants.FIELD_UNDEFINED),
+        Option(duration.getMinutes).getOrElse[Int](DatatypeConstants.FIELD_UNDEFINED),
+        Option(duration.getSeconds).getOrElse[Int](DatatypeConstants.FIELD_UNDEFINED)
       )
       valueFactory.createLiteral(xmlDuration.toString, XMLSchema.DAYTIMEDURATION)
     }

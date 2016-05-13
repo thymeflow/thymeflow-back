@@ -38,6 +38,14 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
   private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
 
   override def enrich(diff: ModelDiff): Unit = {
+    if (
+      !diff.added.contains(null, RDF.TYPE, Personal.TIME_GEO_LOCATION) &&
+        !diff.added.contains(null, RDF.TYPE, Personal.TIME_GEO_LOCATION)
+    ) {
+      //No change in data
+      return
+    }
+
     implicit val format = org.json4s.DefaultFormats
     val clustering = new Clustering {}
     val minimumStayDuration = Duration.ofMinutes(15)

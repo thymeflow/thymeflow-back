@@ -18,20 +18,19 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     toStatements(subj, pred, obj, contexts).map(add).reduce(_ || _)
   }
 
-  override def getNamespaces: util.Set[Namespace] = {
-    throw new UnsupportedOperationException
-  }
+  override def getNamespaces: util.Set[Namespace] = ???
 
-  override def unmodifiable(): Model = {
-    throw new UnsupportedOperationException
-  }
+  override def unmodifiable(): Model = ???
 
-  override def setNamespace(namespace: Namespace): Unit = {
-    throw new UnsupportedOperationException
-  }
+  override def setNamespace(namespace: Namespace): Unit = ???
 
   override def contains(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {
-    throw new UnsupportedOperationException
+    this.asScala.exists(statement =>
+      (subj == null || statement.getSubject == subj) &&
+        (pred == null || statement.getPredicate == pred) &&
+        (obj == null || statement.getObject == obj) &&
+        (contexts.isEmpty || contexts.contains(statement.getContext))
+    )
   }
 
   override def remove(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {
@@ -52,9 +51,7 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     throw new UnsupportedOperationException
   }
 
-  override def clear(context: Resource*): Boolean = {
-    throw new UnsupportedOperationException
-  }
+  override def clear(context: Resource*): Boolean = ???
 
   override def objects(): util.Set[Value] = {
     this.asScala.map(_.getObject).asJava

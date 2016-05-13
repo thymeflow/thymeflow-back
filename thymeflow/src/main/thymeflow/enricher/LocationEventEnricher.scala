@@ -73,7 +73,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
           repositoryConnection.commit()
           event
       }).size
-    ).runReduce(_ + _).map(addedConnections => {
+    ).runFold(0)(_ + _).map(addedConnections => {
       logger.info(s"$addedConnections added between events and stay locations")
     }), Duration.Inf)
   }

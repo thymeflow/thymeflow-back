@@ -1,6 +1,7 @@
 package thymeflow.api
 
 import java.util.Properties
+import java.util.concurrent.TimeUnit
 import javax.mail.{MessagingException, Session}
 
 import akka.http.scaladsl.Http
@@ -12,6 +13,8 @@ import org.openrdf.repository.Repository
 import thymeflow.Pipeline
 import thymeflow.actors._
 import thymeflow.sync._
+
+import scala.concurrent.duration.Duration
 
 /**
   * @author Thomas Pellissier Tanon
@@ -40,6 +43,7 @@ trait Api extends App with SparqlService {
           } ~
             path("token") {
               parameter('code) { code =>
+                logger.info(s"Google token received at time $durationSinceStart")
                 googleOAuth.getAccessToken(code).foreach(onGoogleToken)
                 redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
@@ -51,6 +55,7 @@ trait Api extends App with SparqlService {
             } ~
               path("token") {
                 parameter('code) { code =>
+                  logger.info(s"Microsoft token received at time $durationSinceStart")
                   microsoftOAuth.getAccessToken(code).foreach(onMicrosoftToken)
                   redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
                 }
@@ -60,6 +65,7 @@ trait Api extends App with SparqlService {
       pathPrefix("imap") {
         post {
           formFieldMap { fields =>
+            logger.info(s"IMAP accound on ${fields.get("host").get} received at time $durationSinceStart")
             val props = new Properties()
             if (fields.get("ssl").contains("true")) {
               props.put("mail.imap.ssl.enable", "true")
@@ -79,6 +85,7 @@ trait Api extends App with SparqlService {
       path("upload") {
         uploadedFile("file") {
           case (fileInfo, file) =>
+            logger.info(s"File $file received at time $durationSinceStart")
             pipeline.addSource(
               FileSynchronizer.Config(file, Some(fileInfo.contentType.mediaType.value))
             )
@@ -94,6 +101,10 @@ trait Api extends App with SparqlService {
   Http().bindAndHandle(route, "localhost", 8080)
 
   //TODO: make it configurable
+
+  protected def durationSinceStart: Duration = {
+    Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
+  }
 
   private def onGoogleToken(token: googleOAuth.Token): Unit = {
     val sardine = new SardineImpl(token.access_token)

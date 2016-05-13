@@ -20,8 +20,10 @@ object EfficientMainApi extends thymeflow.api.Api {
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     snapshotCleanupStore = false,
     owlInference = false,
-    lucene = false,
-    isolationLevel = IsolationLevels.NONE)
+    lucene = true,
+    isolationLevel = IsolationLevels.NONE
+    //persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/sesame-memory"))
+  )
 
   override protected val pipeline = {
     val geocoder = Geocoder.cached(
@@ -39,6 +41,10 @@ object EfficientMainApi extends thymeflow.api.Api {
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection)))
+        .map(diff => {
+          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")
+          diff
+        })
     )
   }
 }

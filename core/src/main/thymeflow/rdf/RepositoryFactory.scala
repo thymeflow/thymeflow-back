@@ -1,6 +1,7 @@
 package thymeflow.rdf
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, RDFS}
@@ -16,6 +17,8 @@ import org.openrdf.{IsolationLevel, IsolationLevels}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 
+import scala.concurrent.duration.Duration
+
 /**
   * @author Thomas Pellissier Tanon
   */
@@ -30,6 +33,7 @@ object RepositoryFactory extends StrictLogging {
                                    persistenceDirectory: Option[File] = None,
                                    isolationLevel: IsolationLevel = IsolationLevels.NONE
                                  ): Repository = {
+    val initializationStart = System.currentTimeMillis()
     logger.info("Start initializing memory store")
 
     val store = if (snapshotCleanupStore) {
@@ -54,7 +58,7 @@ object RepositoryFactory extends StrictLogging {
     loadOntology(repositoryConnection)
     repositoryConnection.close()
 
-    logger.info("Memory store initialization done")
+    logger.info(s"Memory store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
 
     repository
   }

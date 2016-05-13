@@ -42,6 +42,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       profile.add(FetchProfile.Item.CONTENT_INFO)
       profile
     }
+    private var numberOfSent = 0
 
     system.scheduler.schedule(1 minute, 1 minute)({
       if (waitingForData) {
@@ -59,9 +60,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def onNewStore(store: Store) = {
-      val folders = store
-        .getDefaultFolder.list("*")
-        .filter(holdsInterestingMessages)
+      val folders = Seq(store.getFolder("INBOX")) //TODO: import all folders?
 
       logger.info("Importing the IMAP folders: " + folders.mkString(", "))
 
@@ -92,7 +91,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private def addMessages(messages: Array[Message], folder: Folder) = {
       folder.fetch(messages, fetchProfile)
-      messages.foreach(message => deliverAction(AddedMessage(message)))
+      messages.foreach(message => {
+        deliverAction(AddedMessage(message))
+      })
+      logger.info(s"End of folder ${folder.getFullName}")
     }
 
     private def removeMessages(messages: Array[Message], folder: Folder) = {
@@ -110,8 +112,12 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def deliverWaitingActions(): Unit = {
+      val queueWasNonEmpty = queue.nonEmpty
       while (waitingForData && queue.nonEmpty) {
         onNext(documentForAction(queue.dequeue()))
+      }
+      if (queueWasNonEmpty && queue.isEmpty) {
+        logger.info(s"Emails importation finished with $numberOfSent messages imported")
       }
     }
 
@@ -120,7 +126,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         case action: AddedMessage =>
           val context = messageContext(action.message)
           try {
-            logger.info("importing message with context " + context)
+            numberOfSent += 1
+            if (numberOfSent % 100 == 0) {
+              logger.info(s"$numberOfSent email messages imported")
+            }
             Document(context, emailMessageConverter.convert(action.message, context))
           } catch {
             case e: FolderClosedException =>

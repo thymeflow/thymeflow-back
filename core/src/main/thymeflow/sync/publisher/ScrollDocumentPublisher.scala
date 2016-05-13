@@ -13,21 +13,16 @@ import scala.concurrent.Future
   */
 trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT] with StrictLogging {
   protected var currentScrollOption: Option[SCROLL] = None
-  protected var noMoreResults = false
   protected var processing = false
   protected var buf = Vector.empty[DOCUMENT]
 
   def receive = {
     case Result(scrollOption, hits) =>
       processing = false
-      if (scrollOption.isEmpty) {
-        noMoreResults = true
-      } else {
-        currentScrollOption = scrollOption
-      }
+      currentScrollOption = scrollOption
       buf ++= hits
       deliverBuf()
-      if (!(buf.isEmpty && noMoreResults)) {
+      if (!(buf.isEmpty && currentScrollOption.isEmpty)) {
         if (isActive && totalDemand > 0) {
           nextResults(totalDemand)
         }
@@ -38,7 +33,7 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
     case Request(requestCount) =>
       deliverBuf()
       if (isActive) {
-        if (!noMoreResults && totalDemand > 0) {
+        if (currentScrollOption.nonEmpty && totalDemand > 0) {
           nextResults(requestCount)
         }
       }

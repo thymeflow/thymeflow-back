@@ -12,7 +12,6 @@ import org.openrdf.model.{IRI, ValueFactory}
 import thymeflow.actors._
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.document.Document
-import thymeflow.sync.Synchronizer.Sync
 import thymeflow.sync.converter.EmailMessageConverter
 
 import scala.collection.mutable
@@ -51,7 +50,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     })
 
     override def receive: Receive = {
-      case Request(_) | Sync =>
+      case Request(_) =>
         deliverWaitingActions()
       case config: Config =>
         onNewStore(config.store)

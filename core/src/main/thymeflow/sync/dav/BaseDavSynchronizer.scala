@@ -34,6 +34,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       if (waitingForData) {
         fetchers.foreach(retrieveDocuments)
       }
+      deliverWaitingDocuments()
     })
 
     protected def addFetcher(fetcher: DocumentFetcher): Unit = {

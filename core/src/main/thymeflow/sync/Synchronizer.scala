@@ -12,8 +12,3 @@ trait Synchronizer {
 
 }
 
-object Synchronizer {
-
-  case class Sync()
-
-}

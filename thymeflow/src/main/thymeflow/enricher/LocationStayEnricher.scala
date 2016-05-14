@@ -46,7 +46,6 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       return
     }
 
-    implicit val format = org.json4s.DefaultFormats
     val clustering = new Clustering {}
     val minimumStayDuration = Duration.ofMinutes(15)
     val observationEstimatorDuration = Duration.ofMinutes(60)

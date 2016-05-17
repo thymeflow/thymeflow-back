@@ -29,7 +29,6 @@ object SchemaOrg {
   val ATTENDEE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "attendee")
   val BIRTH_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "birthDate")
   val BIRTH_PLACE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "birthPlace")
-  val DATE_CREATED: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "dateCreated")
   val DATE_RECEIVED: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "dateReceived")
   val DATE_SENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "dateSent")
   val DEATH_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "deathDate")

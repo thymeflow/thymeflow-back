@@ -47,7 +47,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
   )
   private val staysQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?event ?start ?end ?lat ?lon WHERE {
-      ?event a <${Personal.STAY_EVENT}> ;
+      ?event a <${Personal.STAY}> ;
             <${SchemaOrg.START_DATE}> ?start ;
             <${SchemaOrg.END_DATE}> ?end ;
             <${SchemaOrg.GEO}> ?geo .

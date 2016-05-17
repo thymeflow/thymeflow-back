@@ -39,8 +39,8 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
 
   override def enrich(diff: ModelDiff): Unit = {
     if (
-      !diff.added.contains(null, RDF.TYPE, Personal.TIME_GEO_LOCATION) &&
-        !diff.added.contains(null, RDF.TYPE, Personal.TIME_GEO_LOCATION)
+      !diff.added.contains(null, RDF.TYPE, Personal.LOCATION) &&
+        !diff.added.contains(null, RDF.TYPE, Personal.LOCATION)
     ) {
       //No change in data
       return
@@ -132,7 +132,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       s"""
          |SELECT (count(?location) as ?count)
          |WHERE {
-         |  ?location a <${Personal.TIME_GEO_LOCATION}> .
+         |  ?location a <${Personal.LOCATION}> .
          | }
       """.stripMargin
     repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL, countLocationsQuery).evaluate().map {
@@ -145,9 +145,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty
          |WHERE {
-         |  ?location a <${Personal.TIME_GEO_LOCATION}> ;
+         |  ?location a <${Personal.LOCATION}> ;
          |            <${SchemaOrg.GEO}> ?geo ;
-         |            <${SchemaOrg.DATE_CREATED}> ?time .
+         |            <${Personal.TIME}> ?time .
          |  ?geo <${SchemaOrg.LATITUDE}> ?latitude ;
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
          |       <${Personal.UNCERTAINTY}> ?uncertainty .
@@ -173,7 +173,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
   }
 
   private def createStay(stay: ClusterObservation, locations: Traversable[Location]) = {
-    createCluster(stay, locations, Personal.STAY_EVENT, inferencerContext)
+    createCluster(stay, locations, Personal.STAY, inferencerContext)
   }
 
   private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI, context: IRI) = {
@@ -197,9 +197,9 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       s"""
          |SELECT ?location ?time ?longitude ?latitude ?uncertainty ?cluster ?clusterLongitude ?clusterLatitude ?clusterFrom ?clusterTo ?clusterUncertainty
          |WHERE {
-         |  ?location a <${Personal.TIME_GEO_LOCATION}> ;
+         |  ?location a <${Personal.LOCATION}> ;
          |            <${SchemaOrg.GEO}> ?geo ;
-         |            <${SchemaOrg.DATE_CREATED}> ?time .
+         |            <${Personal.TIME}> ?time .
          |  ?geo <${SchemaOrg.LATITUDE}> ?latitude ;
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
          |       <${Personal.UNCERTAINTY}> ?uncertainty .

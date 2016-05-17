@@ -25,7 +25,7 @@ class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection
   private val eventsWithStaysWithoutPlacesWithGeocoodinatesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?event ?place ?placeName ?lat ?lon WHERE {
       ?event <${SchemaOrg.LOCATION}> ?stay .
-      ?stay a <${Personal.STAY_EVENT}> ;
+      ?stay a <${Personal.STAY}> ;
             <${SchemaOrg.GEO}> ?geo .
       ?geo <${SchemaOrg.LATITUDE}> ?lat ;
            <${SchemaOrg.LONGITUDE}> ?lon .

@@ -304,7 +304,7 @@ personal:nickname a rdf:Property ;
 personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
 
-persona:time a rdf:Property ;
+personal:time a rdf:Property ;
     rdfs:range rdfs:Literal .
 
 personal:magnitude a rdf:Property ;

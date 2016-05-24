@@ -79,7 +79,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           Option(structuredName.getGiven).foreach(givenName =>
             model.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName), context)
           )
-          structuredName.getAdditional.asScala.foreach(additionalName =>
+          structuredName.getAdditionalNames.asScala.foreach(additionalName =>
             model.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName), context)
           )
           structuredName.getPrefixes.asScala.foreach(prefix =>

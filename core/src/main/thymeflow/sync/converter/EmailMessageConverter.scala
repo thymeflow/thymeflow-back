@@ -112,7 +112,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         model.add(messageResource, SchemaOrg.IN_LANGUAGE, valueFactory.createLiteral(language), context) //TODO: is it valid ISO code? if yes, use good XSD type
       ))
 
-      Option(message.getHeader("In-Reply-To", null)).map(inReplyTo =>
+      Option(message.getHeader("In-Reply-To", null)).filter(_.nonEmpty).map(inReplyTo =>
         model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
       )
 

@@ -17,6 +17,7 @@ import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 
 import scala.collection.JavaConverters._
+import scala.language.implicitConversions
 
 /**
   * @author Thomas Pellissier Tanon
@@ -123,22 +124,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
           resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
         }
       )
-      Option(attendee.getUri).foreach(url =>
-        try {
-          val uri = new URI(url)
-          if (uri.getScheme == "message") {
-            emailAddressConverter.convert(uri, model).foreach {
-              resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
-            }
-          } else {
-            model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
-            logger.info("Attendee address that is not a mailto URI: " + url)
-          }
-        } catch {
-          case e: IllegalArgumentException =>
-            logger.warn("The URL " + url + " is invalid", e)
-        }
-      )
+      Option(attendee.getUri).foreach(url => {
+        model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
+        logger.info("Attendee address that is not a mailto URI: " + url)
+      })
 
       attendeeResource
     }
@@ -198,22 +187,10 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
           resource => model.add(organizerResource, SchemaOrg.EMAIL, resource, context)
         }
       )
-      Option(organizer.getUri).foreach(url =>
-        try {
-          val uri = new URI(url)
-          if (uri.getScheme == "message") {
-            emailAddressConverter.convert(uri, model).foreach {
-              resource => model.add(organizerResource, SchemaOrg.EMAIL, resource, context)
-            }
-          } else {
-            model.add(organizerResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
-            logger.info("Organizer address that is not a mailto URI: " + url)
-          }
-        } catch {
-          case e: IllegalArgumentException =>
-            logger.warn("The URL " + url + " is invalid", e)
-        }
-      )
+      Option(organizer.getUri).foreach(url => {
+        model.add(organizerResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
+        logger.info("Organizer address that is not a mailto URI: " + url)
+      })
 
       organizerResource
     }

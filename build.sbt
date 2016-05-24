@@ -61,6 +61,7 @@ val coreProject = Project(
   libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-text" % "4.+",
   //libraryDependencies += "org.openrdf.sesame" % "sesame-queryalgebra-geosparql" % "4.+", TODO: enable if we want GeoSPARQL support
   libraryDependencies += "org.openrdf.sesame" % "sesame-sail-lucene4" % "4.+",
+  libraryDependencies += "commons-logging" % "commons-logging" % "1.+",
   libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+",
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",

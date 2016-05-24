@@ -90,6 +90,10 @@ schema:birthPlace a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range schema:Place .
 
+schema:containedInPlace a rdf:Property ;
+    rdfs:domain schema:Place ;
+    rdfs:range schema:Place .
+
 schema:dateReceived a rdf:Property ;
     rdfs:domain schema:Message ;
     rdfs:range rdfs:Literal .

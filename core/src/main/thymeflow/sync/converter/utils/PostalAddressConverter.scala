@@ -32,6 +32,7 @@ class PostalAddressConverter(valueFactory: ValueFactory) {
       model.add(regionResource, RDF.TYPE, SchemaOrg.PLACE, context)
       model.add(regionResource, SchemaOrg.NAME, valueFactory.createLiteral(region), context)
       model.add(addressResource, SchemaOrg.ADDRESS_REGION, regionResource, context)
+      countryResource.map(model.add(regionResource, SchemaOrg.CONTAINED_IN_PLACE, _, context))
       regionResource
     })
     address.locality.foreach(locality => {
@@ -41,6 +42,8 @@ class PostalAddressConverter(valueFactory: ValueFactory) {
       model.add(localityResource, RDF.TYPE, SchemaOrg.PLACE, context)
       model.add(localityResource, SchemaOrg.NAME, valueFactory.createLiteral(locality), context)
       model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, localityResource, context)
+      countryResource.map(model.add(localityResource, SchemaOrg.CONTAINED_IN_PLACE, _, context))
+      regionResource.map(model.add(localityResource, SchemaOrg.CONTAINED_IN_PLACE, _, context))
     })
     address.postalCode.foreach(postalCode =>
       model.add(addressResource, SchemaOrg.POSTAL_CODE, valueFactory.createLiteral(postalCode), context)

@@ -6,6 +6,8 @@ import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 
+import scala.language.implicitConversions
+
 /**
   * @author Thomas Pellissier Tanon
   */
@@ -15,12 +17,14 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     * Parses geo: URI
     */
   def convertGeoUri(geoUri: String, model: Model): Option[IRI] = {
+    implicit def doubleToOption(double: java.lang.Double): Option[Double] = Option(double).map(_.doubleValue())
+
     try {
       val uri = GeoUri.parse(geoUri)
-      Some(convert(uri.getCoordB, uri.getCoordA, Option(uri.getCoordC), Option(uri.getUncertainty), model))
+      Some(convert(uri.getCoordB, uri.getCoordA, uri.getCoordC, uri.getUncertainty, model))
     } catch {
-      case e: IllegalArgumentException =>
-        logger.warn("The geo URI " + geoUri + " is invalid")
+      case _: IllegalArgumentException =>
+        logger.warn(s"The geo URI $geoUri is invalid")
         None
     }
   }

@@ -7,9 +7,8 @@ import java.util.Locale
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.lucene.search.spell.LevensteinDistance
-import org.openrdf.model.impl.SimpleLiteral
+import org.openrdf.model.{BNode, IRI, Literal, Resource}
 import org.openrdf.model.vocabulary.OWL
-import org.openrdf.model.{BNode, IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
@@ -1036,7 +1035,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       (
         Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
         Option(bindingSet.getValue("name")).map(_.stringValue()),
-        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral].longValue())
+        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[Literal].longValue())
         ) match {
         case (Some(agent), Some(name), Some(msgCount)) =>
           val agentRepresentative = getAgentRepresentative(agent)

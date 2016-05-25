@@ -44,7 +44,7 @@ trait Api extends App with SparqlService {
             path("token") {
               parameter('code) { code =>
                 logger.info(s"Google token received at time $durationSinceStart")
-                googleOAuth.getAccessToken(code).foreach(onGoogleToken)
+                googleOAuth.getAccessToken(code).foreach(tokenRenewal(_, onGoogleToken))
                 redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
               }
             }
@@ -56,7 +56,7 @@ trait Api extends App with SparqlService {
               path("token") {
                 parameter('code) { code =>
                   logger.info(s"Microsoft token received at time $durationSinceStart")
-                  microsoftOAuth.getAccessToken(code).foreach(onMicrosoftToken)
+                  microsoftOAuth.getAccessToken(code).foreach(tokenRenewal(_, onMicrosoftToken))
                   redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
                 }
               }
@@ -104,6 +104,16 @@ trait Api extends App with SparqlService {
 
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
+  }
+
+  private def tokenRenewal[T <: OAuth2.RenewableToken[T], R](token: T, onNewToken: (T => R)): Unit = {
+    var currentToken = token
+    onNewToken(currentToken)
+
+    token.onShouldBeRenewed(currentToken.renew().foreach(newToken => {
+      currentToken = newToken
+      onNewToken(currentToken)
+    }))
   }
 
   private def onGoogleToken(token: googleOAuth.Token): Unit = {

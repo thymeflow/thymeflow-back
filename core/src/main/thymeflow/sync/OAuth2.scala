@@ -29,6 +29,12 @@ object OAuth2 {
     "O0RVtj-cfkiINpVVdc-LrF-3euqHf2cW", //TODO: remove before making the repository public
     redirectUri
   )
+
+  trait RenewableToken[Token] {
+    def renew(): Future[Token]
+
+    def onShouldBeRenewed[T](f: => T): Cancellable
+  }
 }
 
 class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String, redirectUri: String)
@@ -58,10 +64,12 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
     }
   }
 
-  case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: Option[String], id_token: Option[String], user_id: Option[String]) {
+  case class Token(access_token: String, token_type: String, expires_in: Long, refresh_token: Option[String], id_token: Option[String], user_id: Option[String])
+    extends OAuth2.RenewableToken[Token] {
     def renew(): Future[Token] = refresh_token.map(getAccessToken(_)).get //TODO: avoid hard fail
 
-    def onShouldBeRenewed(f: ⇒ Unit): Cancellable =
-      system.scheduler.schedule((expires_in - 1) seconds, (expires_in - 1) seconds)(thymeflow.actors.executor)
+    def onShouldBeRenewed[T](f: => T): Cancellable =
+      system.scheduler.schedule((expires_in - 10) seconds, (expires_in - 10) seconds)(thymeflow.actors.executor)
   }
 }
+

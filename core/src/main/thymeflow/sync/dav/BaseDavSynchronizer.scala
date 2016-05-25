@@ -27,20 +27,23 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
   protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory)
     extends BasePublisher {
 
-    private val fetchers = new mutable.ArrayBuffer[DocumentFetcher]()
+    private val fetchers = new mutable.HashMap[String, DocumentFetcher]()
     private val queue = new mutable.Queue[Document]
 
     system.scheduler.schedule(1 minute, 1 minute)({
       if (waitingForData) {
-        fetchers.foreach(retrieveDocuments)
+        fetchers.values.foreach(retrieveDocuments)
       }
       deliverWaitingDocuments()
     })
 
     protected def addFetcher(fetcher: DocumentFetcher): Unit = {
-      fetchers += fetcher
+      //If it is a fetcher for the same base URI we only updates Sardine
+      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
+      newFetcher.updateSardine(fetcher.sardine)
+
       deliverWaitingDocuments()
-      retrieveDocuments(fetcher)
+      retrieveDocuments(newFetcher)
     }
 
     protected def deliverWaitingDocuments(): Unit = {
@@ -64,13 +67,17 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
   }
 
-  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, sardine: Sardine, baseUri: String) {
+  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, var sardine: Sardine, val baseUri: String) {
 
     private val elementsEtag = new mutable.HashMap[String, String]()
     private val paths = getDirectoryUris(baseUri)
 
     def newDocuments: Traversable[Document] = {
       paths.flatMap(newDocumentsFromDirectory)
+    }
+
+    def updateSardine(newSardine: Sardine): Unit = {
+      sardine = newSardine
     }
 
     private def newDocumentsFromDirectory(directoryUri: String): Traversable[Document] = {

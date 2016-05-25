@@ -33,7 +33,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val queue = new mutable.Queue[ImapAction]
-    private val folders = new mutable.ArrayBuffer[Folder]()
+    private val folders = new mutable.HashMap[URLName, Folder]()
     private val fetchProfile = {
       val profile = new FetchProfile()
       profile.add(FetchProfile.Item.FLAGS)
@@ -45,7 +45,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     system.scheduler.schedule(1 minute, 1 minute)({
       if (waitingForData) {
-        folders.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+        folders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
       }
     })
 
@@ -58,12 +58,12 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         context.stop(self)
     }
 
-    private def onNewStore(store: Store) = {
-      val folders = Seq(store.getFolder("INBOX")) //TODO: import all folders?
+    private def onNewStore(store: Store, importFolders: Boolean = false) = {
+      getStoreFolders(store).foreach(onNewFolder)
+    }
 
-      logger.info("Importing the IMAP folders: " + folders.mkString(", "))
-
-      folders.foreach(onNewFolder)
+    private def getStoreFolders(store: Store): Iterable[Folder] = {
+      Seq(store.getFolder("INBOX")) //TODO: import all folders?
     }
 
     private def holdsInterestingMessages(folder: Folder): Boolean = {
@@ -76,6 +76,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private def onNewFolder(folder: Folder) = {
       folder.open(Folder.READ_ONLY)
+
       folder.addMessageCountListener(new MessageCountListener {
         override def messagesAdded(e: MessageCountEvent): Unit = {
           addMessages(e.getMessages, folder)
@@ -85,6 +86,16 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
           removeMessages(e.getMessages, folder)
         }
       })
+
+      val oldFolderOption = folders.put(folder.getURLName, folder)
+      if (oldFolderOption.isEmpty) {
+        importFolder(folder) //We import the folder
+      } else {
+        oldFolderOption.foreach(_.close(false)) //We close the old folder. It assumes that we have finished to retrieve messages from this folder
+      }
+    }
+
+    private def importFolder(folder: Folder) = {
       addMessages(folder.getMessages(), folder)
     }
 

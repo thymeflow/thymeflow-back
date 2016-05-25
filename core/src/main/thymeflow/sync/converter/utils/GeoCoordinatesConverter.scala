@@ -2,7 +2,7 @@ package thymeflow.sync.converter.utils
 
 import com.typesafe.scalalogging.StrictLogging
 import ezvcard.util.GeoUri
-import org.openrdf.model.vocabulary.RDF
+import org.openrdf.model.vocabulary.{GEO, RDF}
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 
@@ -46,6 +46,11 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     )
     elevationOption.foreach(elevation =>
         model.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation))
+    )
+    model.add(
+      geoResource,
+      GEO.AS_WKT,
+      valueFactory.createLiteral(s"POINT ($longitude $latitude)", GEO.WKT_LITERAL)
     )
     geoResource
   }

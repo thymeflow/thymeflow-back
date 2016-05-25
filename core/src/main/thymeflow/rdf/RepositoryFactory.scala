@@ -5,6 +5,7 @@ import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, RDFS}
+import org.openrdf.query.algebra.evaluation.function.FunctionRegistry
 import org.openrdf.repository.sail.SailRepository
 import org.openrdf.repository.{Repository, RepositoryConnection}
 import org.openrdf.rio.RDFFormat
@@ -16,6 +17,7 @@ import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
 import org.openrdf.{IsolationLevel, IsolationLevels}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
+import thymeflow.rdf.query.algebra.evaluation.function
 
 import scala.concurrent.duration.Duration
 
@@ -98,5 +100,11 @@ object RepositoryFactory extends StrictLogging {
       Personal.NAMESPACE,
       RDFFormat.TURTLE
     )
+  }
+
+  //Register extra SPARQL functions
+  {
+    FunctionRegistry.getInstance().add(new function.Duration)
+    FunctionRegistry.getInstance().add(new function.DurationInMillis)
   }
 }

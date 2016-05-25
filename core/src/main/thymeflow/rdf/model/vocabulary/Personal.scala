@@ -33,4 +33,7 @@ object Personal {
   val TIME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "time")
   val UNCERTAINTY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "uncertainty")
   val VELOCITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "velocity")
+
+  val DURATION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "duration")
+  val DURATION_IN_MILLIS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "durationInMillis")
 }

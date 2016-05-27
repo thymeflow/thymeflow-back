@@ -102,7 +102,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     s"""SELECT ?agent ?sameAs WHERE {
       ?agent a <${Personal.AGENT}> .
       GRAPH <${Personal.NAMESPACE}inverseFunctionalInferencerOutput> {
-        ?agent <${OWL.SAMEAS}> ?sameAs .
+        ?agent <${Personal.SAME_AS}> ?sameAs .
       }
     }"""
   )
@@ -293,7 +293,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             repositoryConnection.begin()
             equalities.foreach {
               case (agent1, agent2, _) =>
-                val statement = valueFactory.createStatement(agent1, OWL.SAMEAS, agent2, inferencerContext)
+                val statement = valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext)
                 if (!repositoryConnection.hasStatement(statement, false)) {
                   repositoryConnection.add(statement)
                 }

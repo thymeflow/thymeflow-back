@@ -22,7 +22,7 @@ class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends A
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
     QueryLanguage.SPARQL,
     s"""SELECT ?facet WHERE {
-      ?facet <${OWL.SAMEAS}>* ?startFacet .
+      ?facet <${Personal.SAME_AS}>* ?startFacet .
       ?facet ?descriptionProperty ?descriptionValue
     } GROUP BY ?facet ORDER BY DESC(COUNT(?descriptionProperty))"""
   )
@@ -30,7 +30,7 @@ class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends A
   override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
     List(diff.added, diff.removed)
-      .map(_.filter(null, OWL.SAMEAS, null))
+      .map(_.filter(null, Personal.SAME_AS, null))
       .flatMap(model => model.subjects().asScala ++ model.objects().asScala)
       .foreach(recomputePrimaryFacetFrom(_, diff))
     repositoryConnection.commit()

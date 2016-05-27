@@ -62,8 +62,8 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
           //We only add the geocoder result if there is only one result
           geocoderResults.foreach(feature => {
             val resource = featureConverter.convert(feature, model)
-            model.add(placeResource, OWL.SAMEAS, resource, inferencerContext)
-            model.add(resource, OWL.SAMEAS, placeResource, inferencerContext)
+            model.add(placeResource, Personal.SAME_AS, resource, inferencerContext)
+            model.add(resource, Personal.SAME_AS, placeResource, inferencerContext)
           })
         } else if (geocoderResults.size > 1) {
           logger.info(s"${geocoderResults.size} results: $geocoderResults")

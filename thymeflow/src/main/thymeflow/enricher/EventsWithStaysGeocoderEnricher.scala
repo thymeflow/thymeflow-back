@@ -36,7 +36,7 @@ class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection
                <${SchemaOrg.NAME}> ?placeName .
 
         FILTER NOT EXISTS {
-          ?place <${OWL.SAMEAS}>*/<${SchemaOrg.GEO}> ?geoPlace .
+          ?place <${Personal.SAME_AS}>*/<${SchemaOrg.GEO}> ?geoPlace .
         }
       }
     }"""
@@ -67,8 +67,8 @@ class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection
         case Left(event) =>
           model.add(event, SchemaOrg.LOCATION, resource, inferencerContext)
         case Right(place) =>
-          model.add(place, OWL.SAMEAS, resource, inferencerContext)
-          model.add(resource, OWL.SAMEAS, place, inferencerContext)
+          model.add(place, Personal.SAME_AS, resource, inferencerContext)
+          model.add(resource, Personal.SAME_AS, place, inferencerContext)
       }
     }))
 

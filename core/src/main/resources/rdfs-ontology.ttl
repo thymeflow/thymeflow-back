@@ -308,6 +308,10 @@ personal:nickname a rdf:Property ;
 personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
 
+personal:sameAs a rdf:Property ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range rdfs:Resource .
+
 personal:time a rdf:Property ;
     rdfs:range rdfs:Literal .
 

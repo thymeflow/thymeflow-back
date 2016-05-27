@@ -30,6 +30,7 @@ object Personal {
   val MAGNITUDE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "magnitude")
   val NICKNAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "nickname")
   val PRIMARY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "primaryRecipient")
+  val SAME_AS: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "sameAs")
   val TIME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "time")
   val UNCERTAINTY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "uncertainty")
   val VELOCITY: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "velocity")

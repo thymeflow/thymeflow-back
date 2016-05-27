@@ -48,8 +48,8 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
             repositoryConnection.getStatements(null, inverseFunctionalProperty, statement1.getObject, true)
           ).flatMap(statement2 =>
           Array(
-            valueFactory.createStatement(statement1.getSubject, OWL.SAMEAS, statement2.getSubject, inferencerContext),
-            valueFactory.createStatement(statement2.getSubject, OWL.SAMEAS, statement1.getSubject, inferencerContext)
+            valueFactory.createStatement(statement1.getSubject, Personal.SAME_AS, statement2.getSubject, inferencerContext),
+            valueFactory.createStatement(statement2.getSubject, Personal.SAME_AS, statement1.getSubject, inferencerContext)
           )
         )
       )

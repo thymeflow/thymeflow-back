@@ -37,7 +37,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
              <${SchemaOrg.START_DATE}> ?start ;
              <${SchemaOrg.END_DATE}> ?end .
       OPTIONAL {
-        ?event <${SchemaOrg.LOCATION}>/<${OWL.SAMEAS}>* ?location .
+        ?event <${SchemaOrg.LOCATION}>/<${Personal.SAME_AS}>* ?location .
         ?location a <${SchemaOrg.PLACE}> ;
                   <${SchemaOrg.GEO}> ?geo .
         ?geo <${SchemaOrg.LATITUDE}> ?lat ;

@@ -112,7 +112,7 @@ trait SparqlService extends StrictLogging {
 
   private def writerFactoryForAccept[FF <: FileFormat, S](writerRegistry: FileFormatServiceRegistry[FF, S], accept: Option[Accept], defaultMimeType: String): Option[S] = {
     val acceptedMimeTypes = accept
-      .map(_.mediaRanges.map(_.value))
+      .map(_.mediaRanges.map(_.value.split(";")(0)))
       .getOrElse(Seq(defaultMimeType))
       .map(mimeType => if (mimeType == "*/*") {
         defaultMimeType

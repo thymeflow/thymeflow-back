@@ -53,6 +53,7 @@ val coreProject = Project(
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-nquads" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-n3" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfjson" % "4.+",
+  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfxml" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trig" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trix" % "4.+",
   libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+",

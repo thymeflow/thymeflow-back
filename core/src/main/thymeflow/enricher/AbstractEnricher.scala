@@ -36,7 +36,18 @@ abstract class AbstractEnricher(repositoryConnection: RepositoryConnection) exte
   }
 
   /**
-    * Removes an inferred statement from the repository if it is existing
+    * Remove inferred statements from the repository if it is existing
+    */
+  protected def removeStatements(diff: ModelDiff, statements: util.Collection[Statement]): Unit = {
+    val existingStatements = statements.asScala
+      .filter(repositoryConnection.hasStatement(_, false))
+      .asJavaCollection
+    diff.remove(existingStatements)
+    repositoryConnection.remove(existingStatements)
+  }
+
+  /**
+    * Remove an inferred statement from the repository if it is existing
     */
   protected def removeStatement(diff: ModelDiff, statement: Statement): Unit = {
     if (repositoryConnection.hasStatement(statement, false)) {

@@ -1,6 +1,6 @@
 package thymeflow.enricher
 
-import org.openrdf.model.vocabulary.{OWL, RDF}
+import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{Resource, Value}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
@@ -29,28 +29,28 @@ class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends A
 
   override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
-    List(diff.added, diff.removed)
+    val equivalentFacetsLists = List(diff.added, diff.removed)
       .map(_.filter(null, Personal.SAME_AS, null))
       .flatMap(model => model.subjects().asScala ++ model.objects().asScala)
-      .foreach(recomputePrimaryFacetFrom(_, diff))
+      .toSet
+      .map(getEquivalentFacetsOrderedByNumberOfDescriptiveTriple)
+
+    addStatements(diff, equivalentFacetsLists
+      .flatMap(_.headOption)
+      .map(repositoryConnection.getValueFactory.createStatement(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+      .asJavaCollection
+    )
+    removeStatements(diff, equivalentFacetsLists
+      .flatMap(_.tail)
+      .flatMap(repositoryConnection.getStatements(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+      .asJavaCollection
+    )
     repositoryConnection.commit()
   }
 
-  private def recomputePrimaryFacetFrom(startFacet: Value, diff: ModelDiff): Unit = {
-    val equivalentFacets = getEquivalentFacetsOrderedByNumberOfDescriptiveTriple(startFacet).map(_.asInstanceOf[Resource])
-    equivalentFacets
-      .find(_ => true)
-      .foreach(facet =>
-        addStatement(diff, repositoryConnection.getValueFactory.createStatement(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
-      )
-    //It removes the possible type from the other facets
-    equivalentFacets.foreach(facet =>
-      removeStatement(diff, repositoryConnection.getValueFactory.createStatement(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
-    )
-  }
-
-  private def getEquivalentFacetsOrderedByNumberOfDescriptiveTriple(startFacet: Value): Iterator[Value] = {
+  private def getEquivalentFacetsOrderedByNumberOfDescriptiveTriple(startFacet: Value): Seq[Resource] = {
     equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery.setBinding("startFacet", startFacet)
-    equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery.evaluate().map(_.getBinding("facet").getValue)
+    equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery.evaluate()
+      .map(_.getBinding("facet").getValue.asInstanceOf[Resource]).toSeq
   }
 }

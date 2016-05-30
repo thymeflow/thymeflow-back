@@ -26,6 +26,7 @@ import scala.concurrent.Await
 /**
   * @author David Montoya
   *         TODO: not nice usage of Await
+  *         TODO: add modified triples to the diff
   */
 class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
 

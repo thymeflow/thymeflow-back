@@ -1,6 +1,5 @@
 package thymeflow.enricher
 
-import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{Model, Statement}
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.rdf.Converters._
@@ -17,7 +16,7 @@ import scala.collection.JavaConverters._
 class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnection)
   extends InferenceCountingInferencer(repositoryConnection) {
 
-  private val inverseFunctionalProperties = Set(SchemaOrg.ADDRESS, SchemaOrg.TELEPHONE, SchemaOrg.EMAIL, SchemaOrg.URL)
+  private val inverseFunctionalProperties = Set(SchemaOrg.TELEPHONE, SchemaOrg.EMAIL, SchemaOrg.URL)
 
   private val valueFactory = repositoryConnection.getValueFactory
 

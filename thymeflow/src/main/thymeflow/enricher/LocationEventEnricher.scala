@@ -4,7 +4,7 @@ import javax.xml.bind.DatatypeConverter
 
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{OWL, XMLSchema}
+import org.openrdf.model.vocabulary.XMLSchema
 import org.openrdf.model.{Literal, Resource}
 import org.openrdf.query.{BindingSet, QueryLanguage}
 import org.openrdf.repository.RepositoryConnection
@@ -23,7 +23,8 @@ import scala.concurrent.duration.Duration
   * @author David Montoya
   *         All times are here stored as miliseconds since the epoch
   */
-class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
+class LocationEventEnricher(repositoryConnection: RepositoryConnection)
+  extends AbstractEnricher(repositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
@@ -68,9 +69,7 @@ class LocationEventEnricher(repositoryConnection: RepositoryConnection) extends 
         .filter(isSharedIntervalBiggerThanRatioOfEvent(stay, _))
         .filter(isNear(stay, _))
         .map(event => {
-          repositoryConnection.begin()
-          repositoryConnection.add(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext)
-          repositoryConnection.commit()
+          addStatement(diff, valueFactory.createStatement(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext))
           event
       }).size
     ).runFold(0)(_ + _).map(addedConnections => {

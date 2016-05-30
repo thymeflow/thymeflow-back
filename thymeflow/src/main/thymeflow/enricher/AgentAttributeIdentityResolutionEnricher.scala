@@ -8,7 +8,6 @@ import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.lucene.search.spell.LevensteinDistance
 import org.openrdf.model.{BNode, IRI, Literal, Resource}
-import org.openrdf.model.vocabulary.OWL
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
@@ -56,7 +55,8 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                                                matchDistanceThreshold: Double = 0.3,
                                                contactRelativeWeight: Option[Double] = Option(0.5),
                                                persistenceThreshold: Double = 0.4d,
-                                               debug: Boolean = false) extends Enricher with StrictLogging {
+                                               debug: Boolean = false)
+  extends AbstractEnricher(repositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
@@ -293,10 +293,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             repositoryConnection.begin()
             equalities.foreach {
               case (agent1, agent2, _) =>
-                val statement = valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext)
-                if (!repositoryConnection.hasStatement(statement, false)) {
-                  repositoryConnection.add(statement)
-                }
+                addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
               case _ =>
             }
             repositoryConnection.commit()

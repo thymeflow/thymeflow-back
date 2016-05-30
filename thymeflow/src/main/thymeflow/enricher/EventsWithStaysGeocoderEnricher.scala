@@ -1,7 +1,6 @@
 package thymeflow.enricher
 
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
@@ -17,7 +16,8 @@ import scala.concurrent.duration.Duration
 /**
   * @author Thomas Pellissier Tanon
   */
-class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder) extends Enricher with StrictLogging {
+class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder)
+  extends AbstractEnricher(repositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val featureConverter = new FeatureConverter(valueFactory)
@@ -72,7 +72,7 @@ class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection
       }
     }))
 
-    repositoryConnection.add(model)
+    addStatements(diff, model)
     repositoryConnection.commit()
   }
 }

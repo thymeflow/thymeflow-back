@@ -1,13 +1,13 @@
 package thymeflow.enricher
 
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{OWL, RDF}
-import org.openrdf.model.{Literal, Model, Resource}
+import org.openrdf.model.vocabulary.RDF
+import org.openrdf.model.{Literal, Resource}
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
-import thymeflow.spatial.geocoding.{Feature, Geocoder}
+import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.spatial.geographic.Geography
 
 import scala.collection.JavaConverters._
@@ -20,7 +20,8 @@ import scala.concurrent.{Await, Future}
   *
   *         TODO: geocode places with no name but an address
   */
-class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder) extends Enricher with StrictLogging {
+class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder)
+  extends AbstractEnricher(repositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val featureConverter = new FeatureConverter(valueFactory)
@@ -71,7 +72,7 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
       }
     )
 
-    repositoryConnection.add(model)
+    addStatements(diff, model)
     repositoryConnection.commit()
   }
 }

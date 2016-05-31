@@ -11,15 +11,19 @@ import scala.collection.mutable
   */
 abstract class InferenceCountingInferencer(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
 
-  private val timesStatementIsInferred = new mutable.HashMap[Int, Int]() //The statement is stored as its hash
+  private val timesStatementIsInferred = mutable.Map[Int, Int]() //The statement is stored as its hash
 
   /**
     * Add an inferred statement to the repository if it is not already existing
     * In any case increment the counter of the number of inferences of this statement
     */
   override protected def addStatement(diff: ModelDiff, statement: Statement): Unit = {
-    timesStatementIsInferred.put(statement.hashCode(), timesStatementIsInferred.getOrElse(statement.hashCode(), 0) + 1)
-    super.addStatement(diff, statement)
+    val key = statement.hashCode()
+    val oldCount = timesStatementIsInferred.getOrElse(key, 0)
+    timesStatementIsInferred.put(key, oldCount + 1)
+    if (oldCount == 0) {
+      super.addStatement(diff, statement)
+    }
   }
 
   /**
@@ -30,10 +34,14 @@ abstract class InferenceCountingInferencer(repositoryConnection: RepositoryConne
     * added from an other inferencer/data source
     */
   override protected def removeStatement(diff: ModelDiff, statement: Statement): Unit = {
-    if (
-      timesStatementIsInferred.put(statement.hashCode(), timesStatementIsInferred.getOrElse(statement.hashCode(), 0) - 1).contains(1)
-    ) {
-      super.addStatement(diff, statement)
-    }
+    val key = statement.hashCode()
+    timesStatementIsInferred.get(key).foreach(oldCount =>
+      if (oldCount == 1) {
+        timesStatementIsInferred.remove(key)
+        super.removeStatement(diff, statement)
+      } else {
+        timesStatementIsInferred.put(key, oldCount - 1)
+      }
+    )
   }
 }

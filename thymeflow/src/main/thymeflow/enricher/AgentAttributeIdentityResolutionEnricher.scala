@@ -289,11 +289,12 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
           case equalities =>
             reportResults(equalities)
             logger.info(s"[agent-attribute-identity-resolution-enricher] - Counts: {filteredAgentCount=$filteredAgentCount, candidatePairCount=$candidatePairCount, candidatePairCountAboveThreshold=$candidatePairCountAboveThreshold, candidatePairAboveThresholdSetSize=${equalities.size}}")
-            // save equalities as owl:sameAs relations in the Repository
+            // save equalities as personal:sameAs relations in the Repository
             repositoryConnection.begin()
             equalities.foreach {
               case (agent1, agent2, _) =>
                 addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
+                addStatement(diff, valueFactory.createStatement(agent2, Personal.SAME_AS, agent1, inferencerContext))
               case _ =>
             }
             repositoryConnection.commit()

@@ -13,6 +13,7 @@ import info.aduna.lang.service.FileFormatServiceRegistry
 import org.openrdf.model.Model
 import org.openrdf.model.vocabulary.{RDF, SD}
 import org.openrdf.query._
+import org.openrdf.query.parser.QueryParserUtil
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
 import org.openrdf.repository.Repository
 import org.openrdf.rio.{RDFWriterRegistry, Rio}
@@ -35,17 +36,24 @@ trait SparqlService extends StrictLogging {
       optionalHeaderValueByType[Accept]() { accept =>
         get {
           parameter('query) { query =>
-            execute(query, accept)
+            executeQuery(query, accept)
           } ~
             executeDescription(accept)
         } ~
           post {
             formField('query) { query =>
-              execute(query, accept)
+              executeQuery(query, accept)
             } ~
+              formField('update) { update =>
+                executeUpdate(update, accept)
+              } ~
               withContentType(`application/sparql-query`) {
-                entity(as[String]) { query =>
-                  execute(query, accept)
+                entity(as[String]) { operation =>
+                  if (isSPARQLQuery(operation)) {
+                    executeQuery(operation, accept)
+                  } else {
+                    executeUpdate(operation, accept)
+                  }
                 }
               }
           } ~
@@ -60,13 +68,13 @@ trait SparqlService extends StrictLogging {
 
   protected def repository: Repository
 
-  private def execute(queryStr: String, accept: Option[Accept]): Route = {
+  private def executeQuery(queryStr: String, accept: Option[Accept]): Route = {
     val repositoryConnection = repository.getConnection
     try {
       repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr) match {
-        case query: BooleanQuery => execute(query, accept)
-        case query: GraphQuery => execute(query, accept)
-        case query: TupleQuery => execute(query, accept)
+        case query: BooleanQuery => executeQuery(query, accept)
+        case query: GraphQuery => executeQuery(query, accept)
+        case query: TupleQuery => executeQuery(query, accept)
       }
     } catch {
       case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
@@ -79,7 +87,7 @@ trait SparqlService extends StrictLogging {
     }
   }
 
-  private def execute(query: BooleanQuery, accept: Option[Accept]): Route = {
+  private def executeQuery(query: BooleanQuery, accept: Option[Accept]): Route = {
     writerFactoryForAccept(BooleanQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json") match {
       case Some(writerFactory) =>
         val outputStream = new ByteArrayOutputStream()
@@ -91,7 +99,7 @@ trait SparqlService extends StrictLogging {
     }
   }
 
-  private def execute(query: GraphQuery, accept: Option[Accept]): Route = {
+  private def executeQuery(query: GraphQuery, accept: Option[Accept]): Route = {
     writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json") match {
       case Some(writerFactory) =>
         val outputStream = new ByteArrayOutputStream()
@@ -103,7 +111,7 @@ trait SparqlService extends StrictLogging {
     }
   }
 
-  private def execute(query: TupleQuery, accept: Option[Accept]): Route = {
+  private def executeQuery(query: TupleQuery, accept: Option[Accept]): Route = {
     writerFactoryForAccept(TupleQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json") match {
       case Some(writerFactory) =>
         val outputStream = new ByteArrayOutputStream()
@@ -112,6 +120,23 @@ trait SparqlService extends StrictLogging {
       case None => complete {
         StatusCodes.UnsupportedMediaType
       }
+    }
+  }
+
+  private def executeUpdate(updateStr: String, accept: Option[Accept]): Route = {
+    val repositoryConnection = repository.getConnection
+    try {
+      repositoryConnection.prepareUpdate(QueryLanguage.SPARQL, updateStr).execute()
+      complete {
+        StatusCodes.OK
+      }
+    } catch {
+      case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
+      case e: UpdateExecutionException =>
+        logger.error("Update execution error: " + e.getMessage, e)
+        complete(StatusCodes.InternalServerError, "Update execution error: " + e.getMessage)
+    } finally {
+      repositoryConnection.close()
     }
   }
 
@@ -194,5 +219,13 @@ trait SparqlService extends StrictLogging {
     }) TODO: remove not extension functions*/
 
     model
+  }
+
+  private def isSPARQLQuery(operation: String): Boolean = {
+    val operationPrefix = QueryParserUtil.removeSPARQLQueryProlog(operation).toUpperCase
+    operationPrefix.startsWith("SELECT") ||
+      operationPrefix.startsWith("CONSTRUCT") ||
+      operationPrefix.startsWith("DESCRIBE") ||
+      operationPrefix.startsWith("ASK")
   }
 }

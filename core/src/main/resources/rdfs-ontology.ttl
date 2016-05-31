@@ -284,6 +284,10 @@ personal:blindCopyRecipient a rdf:Property ;
 personal:copyRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
 
+personal:differentFrom a rdf:Property ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range rdfs:Resource .
+
 personal:domain a rdf:Property ;
     rdfs:domain personal:EmailAddress ;
     rdfs:range rdfs:Literal .

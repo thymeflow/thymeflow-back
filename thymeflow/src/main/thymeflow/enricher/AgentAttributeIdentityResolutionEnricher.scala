@@ -46,6 +46,9 @@ import scala.concurrent.duration.Duration
   *                               must be equal to None or between 0 and 1
   * @param persistenceThreshold   probability threshold above which equalities are saved
   * @param debug                  debug mode
+  *
+  *                               TODO: remove old personal:sameAs and insert new ones in decreasing order of similarity in order to
+  *                               don't block a good same as because of a bad sameAs and a differentFrom
   */
 class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
                                                solveMode: SolveMode = Vanilla,
@@ -291,7 +294,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             logger.info(s"[agent-attribute-identity-resolution-enricher] - Counts: {filteredAgentCount=$filteredAgentCount, candidatePairCount=$candidatePairCount, candidatePairCountAboveThreshold=$candidatePairCountAboveThreshold, candidatePairAboveThresholdSetSize=${equalities.size}}")
             // save equalities as personal:sameAs relations in the Repository
             repositoryConnection.begin()
-            equalities.foreach {
+            equalities.filterNot(tuple => isDifferentFrom(tuple._1, tuple._2)).foreach {
               case (agent1, agent2, _) =>
                 addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
                 addStatement(diff, valueFactory.createStatement(agent2, Personal.SAME_AS, agent1, inferencerContext))

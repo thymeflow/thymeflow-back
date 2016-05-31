@@ -17,9 +17,7 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
   extends InferenceCountingInferencer(repositoryConnection) {
 
   private val inverseFunctionalProperties = Set(SchemaOrg.TELEPHONE, SchemaOrg.EMAIL, SchemaOrg.URL)
-
   private val valueFactory = repositoryConnection.getValueFactory
-
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "inverseFunctionalInferencerOutput")
 
   override def enrich(diff: ModelDiff): Unit = {
@@ -45,10 +43,11 @@ class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnec
           model.filter(null, inverseFunctionalProperty, statement1.getObject).asScala
             ++
             repositoryConnection.getStatements(null, inverseFunctionalProperty, statement1.getObject, true)
-          ).flatMap(statement2 =>
+          ).map(_.getSubject).filterNot(isDifferentFrom(statement1.getSubject, _))
+          .flatMap(subject2 =>
           Array(
-            valueFactory.createStatement(statement1.getSubject, Personal.SAME_AS, statement2.getSubject, inferencerContext),
-            valueFactory.createStatement(statement2.getSubject, Personal.SAME_AS, statement1.getSubject, inferencerContext)
+            valueFactory.createStatement(statement1.getSubject, Personal.SAME_AS, subject2, inferencerContext),
+            valueFactory.createStatement(subject2, Personal.SAME_AS, statement1.getSubject, inferencerContext)
           )
         )
       )

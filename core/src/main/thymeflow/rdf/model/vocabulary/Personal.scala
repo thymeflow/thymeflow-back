@@ -24,6 +24,7 @@ object Personal {
   val ANGLE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "angle")
   val BLIND_COPY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "blindCopyRecipient")
   val COPY_RECIPIENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "copyRecipient")
+  val DIFFERENT_FROM: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "differentFrom")
   val DOMAIN: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "domain")
   val IN_REPLY_TO: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "inReplyTo")
   val LOCAL_PART: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "localPart")

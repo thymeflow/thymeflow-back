@@ -61,11 +61,13 @@ class PlacesGeocoderEnricher(repositoryConnection: RepositoryConnection, geocode
 
         if (geocoderResults.size == 1) {
           //We only add the geocoder result if there is only one result
-          geocoderResults.foreach(feature => {
-            val resource = featureConverter.convert(feature, model)
-            model.add(placeResource, Personal.SAME_AS, resource, inferencerContext)
-            model.add(resource, Personal.SAME_AS, placeResource, inferencerContext)
-          })
+          geocoderResults
+            .map(featureConverter.convert(_, model))
+            .filterNot(isDifferentFrom(_, placeResource))
+            .foreach(resource => {
+              model.add(placeResource, Personal.SAME_AS, resource, inferencerContext)
+              model.add(resource, Personal.SAME_AS, placeResource, inferencerContext)
+            })
         } else if (geocoderResults.size > 1) {
           logger.info(s"${geocoderResults.size} results: $geocoderResults")
         }

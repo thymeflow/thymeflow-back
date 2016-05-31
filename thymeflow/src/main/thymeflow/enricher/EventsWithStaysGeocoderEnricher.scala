@@ -67,8 +67,10 @@ class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection
         case Left(event) =>
           model.add(event, SchemaOrg.LOCATION, resource, inferencerContext)
         case Right(place) =>
-          model.add(place, Personal.SAME_AS, resource, inferencerContext)
-          model.add(resource, Personal.SAME_AS, place, inferencerContext)
+          if (!isDifferentFrom(place, resource)) {
+            model.add(place, Personal.SAME_AS, resource, inferencerContext)
+            model.add(resource, Personal.SAME_AS, place, inferencerContext)
+          }
       }
     }))
 

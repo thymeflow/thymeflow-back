@@ -1,7 +1,7 @@
 package thymeflow.rdf.model
 
 import java.util
-import java.util.Optional
+import java.util.{Collections, Optional}
 
 import org.openrdf.model._
 import org.openrdf.model.impl.SimpleValueFactory
@@ -18,7 +18,9 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     toStatements(subj, pred, obj, contexts).map(add).reduce(_ || _)
   }
 
-  override def getNamespaces: util.Set[Namespace] = ???
+  override def getNamespaces: util.Set[Namespace] = {
+    Collections.emptySet()
+  }
 
   override def unmodifiable(): Model = ???
 

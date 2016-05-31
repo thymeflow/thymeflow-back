@@ -10,12 +10,16 @@ import akka.http.scaladsl.server.{Directive0, Route}
 import com.typesafe.scalalogging.StrictLogging
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
+import org.openrdf.model.Model
+import org.openrdf.model.vocabulary.{RDF, SD}
 import org.openrdf.query._
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
 import org.openrdf.repository.Repository
-import org.openrdf.rio.RDFWriterRegistry
+import org.openrdf.rio.{RDFWriterRegistry, Rio}
 import thymeflow.actors._
+import thymeflow.rdf.model.SimpleHashModel
 
+import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
 
 /**
@@ -32,7 +36,8 @@ trait SparqlService extends StrictLogging {
         get {
           parameter('query) { query =>
             execute(query, accept)
-          }
+          } ~
+            executeDescription(accept)
         } ~
           post {
             formField('query) { query =>
@@ -110,6 +115,18 @@ trait SparqlService extends StrictLogging {
     }
   }
 
+  private def executeDescription(accept: Option[Accept]): Route = {
+    writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json") match {
+      case Some(writerFactory) =>
+        val outputStream = new ByteArrayOutputStream()
+        Rio.write(sparqlServiceDescription, writerFactory.getWriter(outputStream))
+        completeStream(outputStream, writerFactory.getRDFFormat)
+      case None => complete {
+        StatusCodes.UnsupportedMediaType
+      }
+    }
+  }
+
   private def writerFactoryForAccept[FF <: FileFormat, S](writerRegistry: FileFormatServiceRegistry[FF, S], accept: Option[Accept], defaultMimeType: String): Option[S] = {
     val acceptedMimeTypes = accept
       .map(_.mediaRanges.map(_.value.split(";")(0)))
@@ -140,5 +157,42 @@ trait SparqlService extends StrictLogging {
       case Some(contentType) if contentType.contentType.mediaType.equals(expectedContentType.mediaType) => true
       case _ => false
     })
+  }
+
+  private def sparqlServiceDescription: Model = {
+    val valueFactory = repository.getValueFactory
+    val model = new SimpleHashModel(valueFactory)
+
+    val service = valueFactory.createBNode()
+    model.add(service, RDF.TYPE, SD.SERVICE)
+    //TODO model.add(service, SD.ENDPOINT, )
+    model.add(service, SD.FEATURE_PROPERTY, SD.UNION_DEFAULT_GRAPH)
+    model.add(service, SD.FEATURE_PROPERTY, SD.BASIC_FEDERATED_QUERY)
+    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_10_QUERY)
+    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_11_QUERY)
+
+    TupleQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
+      Option(writer.getTupleQueryResultFormat.getStandardURI).foreach(formatURI =>
+        model.add(service, SD.RESULT_FORMAT, formatURI)
+      )
+    )
+    BooleanQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
+      Option(writer.getBooleanQueryResultFormat.getStandardURI).foreach(formatURI =>
+        model.add(service, SD.RESULT_FORMAT, formatURI)
+      )
+    )
+    RDFWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
+      Option(writer.getRDFFormat.getStandardURI).foreach(formatURI =>
+        model.add(service, SD.RESULT_FORMAT, formatURI)
+      )
+    )
+
+    /*FunctionRegistry.getInstance().getKeys.asScala.foreach(sparqlFunction => {
+      val functionURI = valueFactory.createIRI(sparqlFunction)
+      model.add(functionURI, RDF.TYPE, SD.FUNCTION)
+      model.add(service, SD.EXTENSION_FUNCTION, functionURI)
+    }) TODO: remove not extension functions*/
+
+    model
   }
 }

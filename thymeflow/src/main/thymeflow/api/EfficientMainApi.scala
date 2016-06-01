@@ -5,7 +5,8 @@ import java.io.File
 
 import org.openrdf.IsolationLevels
 import thymeflow.enricher._
-import thymeflow.rdf.RepositoryFactory
+import thymeflow.rdf.model.vocabulary.Personal
+import thymeflow.rdf.{FileSynchronization, RepositoryFactory}
 import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.{Pipeline, Thymeflow}
 
@@ -15,7 +16,7 @@ import scala.language.postfixOps
 /**
   * @author David Montoya
   */
-object EfficientMainApi extends thymeflow.api.Api {
+object EfficientMainApi extends Api {
 
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
     snapshotCleanupStore = false,
@@ -47,5 +48,26 @@ object EfficientMainApi extends thymeflow.api.Api {
           diff
         })
     )
+  }
+
+  if (args.length < 1) {
+    logger.info("No file for user graph provided")
+  } else {
+    val file = new File(args(0))
+    if (file.exists() && !file.isFile) {
+      logger.warn(s"$file is not a valid file")
+    } else {
+      val fileSync = FileSynchronization(
+        repository.getConnection,
+        new File(args(0)),
+        repository.getValueFactory.createIRI(Personal.NAMESPACE, "userData")
+      )
+      if (file.exists()) {
+        logger.info(s"Loading user graph from file $file")
+        fileSync.load()
+      }
+      logger.info(s"The user graph will be saved on close to file $file")
+      fileSync.saveOnJvmClose()
+    }
   }
 }

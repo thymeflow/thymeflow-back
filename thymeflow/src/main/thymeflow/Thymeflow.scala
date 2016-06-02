@@ -26,8 +26,7 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.delayedBatchToFlow(10 seconds))
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
-        .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection,
-          solveMode = AgentAttributeIdentityResolutionEnricher.Vanilla)))
+        .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection)))
     )
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)

@@ -42,7 +42,7 @@ object EfficientMainApi extends Api {
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
-        .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.getConnection)))
         .map(diff => {
           logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")

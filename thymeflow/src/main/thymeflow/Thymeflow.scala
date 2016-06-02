@@ -34,7 +34,7 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
-        .via(Pipeline.enricherToFlow(new AgentAttributeIdentityResolutionEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.getConnection)))
     )
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {

@@ -12,7 +12,7 @@ import org.openrdf.query.QueryLanguage
 import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
+import thymeflow.enricher.AgentMatchEnricher._
 import thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimilarity, StringSimilarity}
 import thymeflow.enricher.entityresolution.EntityResolutionEvaluation
 import thymeflow.graph.serialization.GraphML
@@ -61,24 +61,24 @@ import scala.concurrent.duration.Duration
   * TODO: remove old personal:sameAs and insert new ones in decreasing order of similarity in order not to
   *       block a good same as because of a bad sameAs and a differentFrom
   */
-class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
-                                               solveMode: SolveMode = Vanilla,
-                                               protected val baseStringSimilarity: StringSimilarity = LevensteinSimilarity,
-                                               searchMatchPercent: Int = 70,
-                                               searchSize: Int = 10000,
-                                               parallelism: Int = 2,
-                                               protected val matchDistanceThreshold: Double = 1d,
-                                               contactRelativeWeight: Option[Double] = Option(0.5),
-                                               evaluationThreshold: BigDecimal = BigDecimal(0.9),
-                                               persistenceThreshold: BigDecimal = BigDecimal(0.9),
-                                               useIDF: Boolean = true,
-                                               evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
-                                               debug: Boolean = false,
-                                               outputClassSizes: Boolean = false,
-                                               outputFunctionalities: Boolean = false,
-                                               outputSamples: Boolean = false,
-                                               outputSimilarities: Boolean = false,
-                                               outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
+class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
+                         solveMode: SolveMode = Vanilla,
+                         protected val baseStringSimilarity: StringSimilarity = LevensteinSimilarity,
+                         searchMatchPercent: Int = 70,
+                         searchSize: Int = 10000,
+                         parallelism: Int = 2,
+                         protected val matchDistanceThreshold: Double = 1d,
+                         contactRelativeWeight: Option[Double] = Option(0.5),
+                         evaluationThreshold: BigDecimal = BigDecimal(0.9),
+                         persistenceThreshold: BigDecimal = BigDecimal(0.9),
+                         useIDF: Boolean = true,
+                         evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
+                         debug: Boolean = false,
+                         outputClassSizes: Boolean = false,
+                         outputFunctionalities: Boolean = false,
+                         outputSamples: Boolean = false,
+                         outputSimilarities: Boolean = false,
+                         outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
 
   protected val outputFilePrefix = "data/agent-attribute-identity-resolution-enricher"
   private val valueFactory = repositoryConnection.getValueFactory
@@ -1168,7 +1168,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
 
 }
 
-object AgentAttributeIdentityResolutionEnricher {
+object AgentMatchEnricher {
 
   sealed trait SolveMode
 

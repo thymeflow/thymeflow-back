@@ -112,7 +112,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convert(attendee: Attendee): Resource = {
-      val attendeeResource = uuidConverter.createBNode(attendee)
+      val attendeeResource = uuidConverter.createIRI(attendee)
       model.add(attendeeResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(attendee.getCommonName).foreach(name =>
@@ -185,7 +185,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     }
 
     private def convert(organizer: Organizer): Resource = {
-      val organizerResource = uuidConverter.createBNode(organizer)
+      val organizerResource = uuidConverter.createIRI(organizer)
       model.add(organizerResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(organizer.getCommonName).foreach(name =>

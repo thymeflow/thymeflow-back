@@ -1,6 +1,8 @@
 package thymeflow.api
 
 
+import java.io.File
+
 import org.openrdf.IsolationLevels
 import thymeflow.enricher.{AgentAttributeIdentityResolutionEnricher, InverseFunctionalPropertyInferencer, LocationEventEnricher, LocationStayEnricher}
 import thymeflow.rdf.RepositoryFactory
@@ -15,6 +17,7 @@ import scala.language.postfixOps
 object EfficientMainApi extends thymeflow.api.Api {
 
   override protected val repository = RepositoryFactory.initializedMemoryRepository(
+    persistenceDirectory = Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/efficient-main-api-memory")),
     snapshotCleanupStore = false,
     owlInference = false,
     lucene = false,

@@ -30,11 +30,11 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(str: String, context: IRI): Model = {
+  override def convert(str: String, context: Resource): Model = {
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
-  private def convert(calendars: Traversable[ICalendar], context: IRI): Model = {
+  private def convert(calendars: Traversable[ICalendar], context: Resource): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     for (calendar <- calendars) {
@@ -43,11 +43,11 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     model
   }
 
-  override def convert(stream: InputStream, context: IRI): Model = {
+  override def convert(stream: InputStream, context: Resource): Model = {
     convert(Biweekly.parse(stream).all.asScala, context)
   }
 
-  private class ToModelConverter(model: Model, context: IRI) {
+  private class ToModelConverter(model: Model, context: Resource) {
     def convert(calendar: ICalendar) {
       for (event <- calendar.getEvents.asScala) {
         convert(event)

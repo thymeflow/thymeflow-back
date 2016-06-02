@@ -8,7 +8,7 @@ import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.http.client.utils.URIBuilder
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.actors._
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.Synchronizer
@@ -124,7 +124,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     protected def buildMultigetReport(paths: Traversable[String]): SardineReport[Traversable[DavResource]]
 
-    protected def convert(str: String, context: IRI): Model
+    protected def convert(str: String, context: Resource): Model
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))

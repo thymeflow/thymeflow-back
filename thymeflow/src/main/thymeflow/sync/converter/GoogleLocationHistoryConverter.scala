@@ -8,7 +8,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
@@ -50,11 +50,11 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
   private implicit val formats = DefaultFormats
 
   // TODO: MappingException might be thrown by convert methods if JSON is invalid, should we wrap it?
-  override def convert(str: String, context: IRI): Model = {
+  override def convert(str: String, context: Resource): Model = {
     convert(parse(str).extract[LocationHistory], context)
   }
 
-  override def convert(inputStream: InputStream, context: IRI): Model = {
+  override def convert(inputStream: InputStream, context: Resource): Model = {
     try {
       convert(parse(inputStream).extract[LocationHistory], context)
     } catch {
@@ -64,7 +64,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     }
   }
 
-  private def convert(locationHistory: LocationHistory, context: IRI): Model = {
+  private def convert(locationHistory: LocationHistory, context: Resource): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(locationHistory)
@@ -72,7 +72,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     model
   }
 
-  private class ToModelConverter(model: Model, context: IRI) {
+  private class ToModelConverter(model: Model, context: Resource) {
     def convert(locationHistory: LocationHistory): Unit = {
       locationHistory.locations.foreach(convert)
     }

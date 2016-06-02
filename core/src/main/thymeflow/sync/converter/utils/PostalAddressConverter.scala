@@ -1,7 +1,7 @@
 package thymeflow.sync.converter.utils
 
 import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
+import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.rdf.model.vocabulary.SchemaOrg
 import thymeflow.spatial.Address
 
@@ -14,7 +14,7 @@ class PostalAddressConverter(valueFactory: ValueFactory) {
 
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  def convert(address: Address, model: Model, context: IRI): Resource = {
+  def convert(address: Address, model: Model, context: Resource): Resource = {
     val addressResource = uuidConverter.createBNode(address)
     model.add(addressResource, RDF.TYPE, SchemaOrg.POSTAL_ADDRESS, context)
     val countryResource = address.country.map(country => {

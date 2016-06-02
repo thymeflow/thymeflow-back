@@ -7,7 +7,7 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.converter.ICalConverter
 import thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
@@ -52,7 +52,7 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
       new CalendarMultigetReport(paths)
     }
 
-    override protected def convert(str: String, context: IRI): Model = {
+    override protected def convert(str: String, context: Resource): Model = {
       iCalConverter.convert(str, context)
     }
   }

@@ -30,15 +30,15 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: IRI): Model = {
+  override def convert(stream: InputStream, context: Resource): Model = {
     convert(Ezvcard.parse(stream).all.asScala, context)
   }
 
-  override def convert(str: String, context: IRI): Model = {
+  override def convert(str: String, context: Resource): Model = {
     convert(Ezvcard.parse(str).all.asScala, context)
   }
 
-  private def convert(vCards: Traversable[VCard], context: IRI): Model = {
+  private def convert(vCards: Traversable[VCard], context: Resource): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     vCards.foreach(vCard =>
@@ -47,7 +47,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     model
   }
 
-  private class ToModelConverter(model: Model, context: IRI) {
+  private class ToModelConverter(model: Model, context: Resource) {
     def convert(vCard: VCard): Resource = {
       val cardResource = resourceForVCard(vCard)
       model.add(cardResource, RDF.TYPE, Personal.AGENT, context)

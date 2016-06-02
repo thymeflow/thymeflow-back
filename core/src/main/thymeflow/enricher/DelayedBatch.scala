@@ -19,7 +19,7 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
 
   val in = Inlet[In]("DelayedBatch.in")
   val out = Outlet[Out]("DelayedBatch.out")
-  val shape: FlowShape[In, Out] = FlowShape.of(in, out)
+  override val shape: FlowShape[In, Out] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
 
@@ -32,7 +32,9 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
     override def preStart() = {
       if (tickScheduler.isEmpty) {
         tickScheduler = Some(system.scheduler.schedule(delay, delay, getStageActor {
-          case (actorRef, DelayedBatch.Tick) => flush()
+          case (actorRef, DelayedBatch.Tick) =>
+            pull()
+            flush()
         }.ref, DelayedBatch.Tick))
       }
 
@@ -72,10 +74,8 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
             }
         }
 
-        if (isAvailable(out)) {
-          flush()
-        }
-        pull(in)
+        pull()
+        flush()
       }
 
       override def onUpstreamFinish(): Unit = {
@@ -86,10 +86,8 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
     setHandler(out, new OutHandler {
 
       override def onPull(): Unit = {
+        pull()
         flush()
-        if (!isClosed(in) && !hasBeenPulled(in)) {
-          pull(in)
-        }
       }
     })
 
@@ -107,6 +105,12 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
       //We see if we should close the stage
       if (isClosed(in) && agg.isEmpty) {
         completeStage()
+      }
+    }
+
+    private def pull(): Unit = {
+      if (!isClosed(in) && !hasBeenPulled(in)) {
+        pull(in)
       }
     }
 

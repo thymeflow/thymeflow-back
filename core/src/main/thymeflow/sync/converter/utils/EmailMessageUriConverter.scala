@@ -10,25 +10,27 @@ import org.openrdf.model.{IRI, ValueFactory}
   */
 class EmailMessageUriConverter(valueFactory: ValueFactory) {
 
-  private val messageIdPattern = Pattern.compile("^(?://)?(?:%3[cC]|<)(.*)(?:%3[eE]|>)$")
+  private val messageIdPattern = Pattern.compile("^(?://)?(?:%3[cC]|<)(.*)(?:%3[eE]|>).*$")
 
   /**
-    * Creates a EmailMessage resource from a message: URI like "message:<fffffff@gmail.com>"
+    * Creates an email URI from a message: URI like "message:<fffffff@gmail.com>" or "mid:fffff@gmail.com"
     */
   def convert(messageUri: URI): IRI = {
     convert(messageUri.getSchemeSpecificPart)
   }
 
   /**
-    * Creates a EmailMessage resource from a message id like "<fffffff@gmail.com>"
+    * Creates an email IRI from a message id like "<fffffff@gmail.com>" or "fffffff@gmail.com"
     */
   def convert(messageId: String): IRI = {
     var cleanMessageId = messageId
     val matcher = messageIdPattern.matcher(cleanMessageId)
     if (matcher.find) {
       cleanMessageId = matcher.group(1)
+    } else {
+      throw new IllegalArgumentException(s"Invalid email message id: $messageId")
     }
-    val messageResource = valueFactory.createIRI("message:%c3" + cleanMessageId + "%3e")
+    val messageResource = valueFactory.createIRI(new URI("mid", cleanMessageId, null).toString)
     messageResource
   }
 }

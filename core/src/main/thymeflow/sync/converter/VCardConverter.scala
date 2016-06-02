@@ -13,6 +13,7 @@ import org.openrdf.model._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.spatial
 import thymeflow.sync.converter.utils._
 
 import scala.collection.JavaConverters._
@@ -26,6 +27,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, "FR")
   //TODO: guess?
+  private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
   override def convert(stream: InputStream, context: IRI): Model = {
@@ -77,7 +79,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           Option(structuredName.getGiven).foreach(givenName =>
             model.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName), context)
           )
-          structuredName.getAdditional.asScala.foreach(additionalName =>
+          structuredName.getAdditionalNames.asScala.foreach(additionalName =>
             model.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName), context)
           )
           structuredName.getPrefixes.asScala.foreach(prefix =>
@@ -103,7 +105,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
         //TITLE
         case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue), context)
         //UID
-        case _: Uid => //We are already using this field to build the resource ID
+        case _: Uid => //We are already used this field to build the resource ID
         //URL
         case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url, context)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
         //X-SOCIALPROFILE
@@ -116,36 +118,15 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
 
     private def convert(address: Address): Resource = {
-      val addressResource = uuidConverter.createBNode(address)
-      model.add(addressResource, RDF.TYPE, SchemaOrg.POSTAL_ADDRESS, context)
-      //TODO: getExtendedAddresses
-      address.getStreetAddresses.asScala.foreach(street =>
-        model.add(addressResource, SchemaOrg.STREET_ADDRESS, valueFactory.createLiteral(street), context)
-      )
-      address.getLocalities.asScala.foreach(locality => {
-        val localityResource = uuidConverter.createBNode(addressResource.toString + "#locality-" + locality)
-        model.add(localityResource, RDF.TYPE, SchemaOrg.PLACE, context)
-        model.add(localityResource, SchemaOrg.NAME, valueFactory.createLiteral(locality), context)
-        model.add(addressResource, SchemaOrg.ADDRESS_LOCALITY, localityResource, context)
-      })
-      address.getRegions.asScala.foreach(region => {
-        val regionResource = uuidConverter.createBNode(addressResource.toString + "#region-" + region)
-        model.add(regionResource, RDF.TYPE, SchemaOrg.PLACE, context)
-        model.add(regionResource, SchemaOrg.NAME, valueFactory.createLiteral(region), context)
-        model.add(addressResource, SchemaOrg.ADDRESS_REGION, regionResource, context)
-      })
-      address.getCountries.asScala.foreach(country => {
-        val countryResource = uuidConverter.createBNode("country:" + country.toLowerCase)
-        model.add(countryResource, RDF.TYPE, SchemaOrg.COUNTRY, context)
-        model.add(countryResource, RDF.TYPE, SchemaOrg.PLACE, context)
-        model.add(countryResource, SchemaOrg.NAME, valueFactory.createLiteral(country), context)
-        model.add(addressResource, SchemaOrg.ADDRESS_COUNTRY, countryResource, context)
-      })
+      val addressResource = postalAddressConverter.convert(spatial.SimpleAddress(
+        street = Option(address.getStreetAddressFull),
+        locality = Option(address.getLocality),
+        region = Option(address.getRegion),
+        country = Option(address.getCountry),
+        postalCode = Option(address.getPostalCode)
+      ), model, context)
       address.getPoBoxes.asScala.foreach(poBox =>
         model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
-      )
-      address.getPostalCodes.asScala.foreach(postalCode =>
-        model.add(addressResource, SchemaOrg.POSTAL_CODE, valueFactory.createLiteral(postalCode), context)
       )
       address.getTypes.asScala.foreach(addressType =>
         model.add(addressResource, RDF.TYPE, classForAddressType(addressType), context)

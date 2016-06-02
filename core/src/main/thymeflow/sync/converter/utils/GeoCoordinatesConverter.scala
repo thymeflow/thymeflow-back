@@ -1,41 +1,43 @@
 package thymeflow.sync.converter.utils
 
-import java.util.regex.{Matcher, Pattern}
-
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.RDF
+import ezvcard.util.GeoUri
+import org.openrdf.model.vocabulary.{GEO, RDF}
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+
+import scala.language.implicitConversions
 
 /**
   * @author Thomas Pellissier Tanon
   */
 class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging {
 
-  private val geoUriPattern = Pattern.compile("^geo:([+-]?\\d+(?:\\.\\d+)?),([+-]?\\d+(?:\\.\\d+)?)$")
-
   /**
-    * Parses simple geo: URI following the pattern geo:LATITUDE,LONGITUDE
+    * Parses geo: URI
     */
   def convertGeoUri(geoUri: String, model: Model): Option[IRI] = {
-    val matcher: Matcher = geoUriPattern.matcher(geoUri)
-    if (!matcher.find) {
-      logger.warn("The geo URI " + geoUri + " is invalid")
-      return None
-    }
+    implicit def doubleToOption(double: java.lang.Double): Option[Double] = Option(double).map(_.doubleValue())
 
-    val latitude = matcher.group(1).toFloat
-    val longitude = matcher.group(2).toFloat
-    Some(convert(longitude, latitude, None, None, model))
+    try {
+      val uri = GeoUri.parse(geoUri)
+      Some(convert(uri.getCoordB, uri.getCoordA, uri.getCoordC, uri.getUncertainty, model))
+    } catch {
+      case _: IllegalArgumentException =>
+        logger.warn(s"The geo URI $geoUri is invalid")
+        None
+    }
   }
 
   /**
     * Creates a simple geo from a (longitude,latitude,elevation,accuracy) tuple
     */
   def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Double], model: Model): IRI = {
-    val elevationSuffix = elevationOption.map(x => s",${x.toString}").getOrElse("")
-    val accuracySuffix = uncertaintyOption.map(x => s";u=${x.toString}").getOrElse("")
-    val geoResource = valueFactory.createIRI(s"geo:${latitude.toString},${longitude.toString}$elevationSuffix$accuracySuffix")
+    val uriBuilder = new GeoUri.Builder(latitude, longitude)
+    elevationOption.foreach(uriBuilder.coordC(_))
+    uncertaintyOption.foreach(uriBuilder.uncertainty(_))
+
+    val geoResource = valueFactory.createIRI(uriBuilder.build().toString())
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))
@@ -44,6 +46,11 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     )
     elevationOption.foreach(elevation =>
         model.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation))
+    )
+    model.add(
+      geoResource,
+      GEO.AS_WKT,
+      valueFactory.createLiteral(s"POINT ($longitude $latitude)", GEO.WKT_LITERAL)
     )
     geoResource
   }

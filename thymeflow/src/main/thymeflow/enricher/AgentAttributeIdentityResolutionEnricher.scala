@@ -9,9 +9,8 @@ import java.util.function.Consumer
 import akka.stream.scaladsl.Source
 import com.opencsv.CSVReader
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.impl.SimpleLiteral
 import org.openrdf.model.vocabulary.OWL
-import org.openrdf.model.{BNode, IRI, Resource}
+import org.openrdf.model.{BNode, IRI, Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
@@ -63,6 +62,9 @@ import scala.util.Random
   * @param outputSamples          generate and output samples for later annotation and evaluation
   * @param outputSimilarities     output similarities between agents
   * @param outputAgents           output the list of agents
+  *
+  * TODO: remove old personal:sameAs and insert new ones in decreasing order of similarity in order not to
+  *       block a good same as because of a bad sameAs and a differentFrom
   */
 class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
                                                solveMode: SolveMode = Vanilla,
@@ -81,7 +83,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                                                outputFunctionalities: Boolean = false,
                                                outputSamples: Boolean = false,
                                                outputSimilarities: Boolean = false,
-                                               outputAgents: Boolean = false) extends Enricher with EntityResolution with StrictLogging {
+                                               outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolution with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
@@ -90,7 +92,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     s"""SELECT ?agent ?sameAs WHERE {
       ?agent a <${Personal.AGENT}> .
       GRAPH <${Personal.NAMESPACE}inverseFunctionalInferencerOutput> {
-        ?agent <${OWL.SAMEAS}> ?sameAs .
+        ?agent <${Personal.SAME_AS}> ?sameAs .
       }
     }"""
   )
@@ -322,14 +324,12 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }
             reportStatistics(equalities, buckets)
             logger.info(s"[agent-attribute-identity-resolution-enricher] - Counts: {filteredAgentCount=$filteredAgentCount, candidatePairCount=$candidatePairCount, candidatePairCountAboveThreshold=$candidatePairCountAboveThreshold, candidatePairAboveThresholdSetSize=${equalities.size}}")
-            // save equalities as owl:sameAs relations in the Repository
+            // save equalities as personal:sameAs relations in the Repository
             repositoryConnection.begin()
-            equalities.foreach {
-              case (agent1, agent2, probability) if probability >= persistenceThreshold =>
-                val statement1 = valueFactory.createStatement(agent1, OWL.SAMEAS, agent2, inferencerContext)
-                val statement2 = valueFactory.createStatement(agent2, OWL.SAMEAS, agent1, inferencerContext)
-                repositoryConnection.add(statement1)
-                repositoryConnection.add(statement2)
+            equalities.filterNot(tuple => isDifferentFrom(tuple._1, tuple._2)).foreach {
+              case (agent1, agent2, _)  if probability >= persistenceThreshold =>
+                addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
+                addStatement(diff, valueFactory.createStatement(agent2, Personal.SAME_AS, agent1, inferencerContext))
               case _ =>
             }
             repositoryConnection.commit()
@@ -1225,7 +1225,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       (
         Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
         Option(bindingSet.getValue("name")).map(_.stringValue()),
-        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[SimpleLiteral].longValue())
+        Option(bindingSet.getValue("msgCount")).map(_.asInstanceOf[Literal].longValue())
         ) match {
         case (Some(agent), Some(name), Some(msgCount)) =>
           val agentRepresentative = getAgentRepresentative(agent)

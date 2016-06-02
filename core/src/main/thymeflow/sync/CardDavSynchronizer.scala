@@ -9,7 +9,6 @@ import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import thymeflow.rdf.model.document.Document
-import thymeflow.sync.Synchronizer.Sync
 import thymeflow.sync.converter.VCardConverter
 import thymeflow.sync.dav._
 
@@ -28,7 +27,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
     override def receive: Receive = {
-      case Request(_) | Sync =>
+      case Request(_) =>
         deliverWaitingDocuments()
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))

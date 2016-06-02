@@ -59,7 +59,6 @@ class FullTextSearchServer[T] private(indexName: String,
   }
 
   def add(valuedEntities: Traversable[(T, String)]): Future[Unit] = {
-    implicit val formats = org.json4s.DefaultFormats
     val bulkRequest = esClient.prepareBulk()
     valuedEntities.foreach {
       case (entity, value) =>

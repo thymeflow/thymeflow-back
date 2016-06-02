@@ -6,7 +6,7 @@
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix schema: <http://schema.org/> .
-@prefix personal: <http://thomas.pellissier-tanon.fr/personal#> .
+@prefix personal: <http://thymeflow.com/personal#> .
 
 
 # schema.org classes
@@ -90,9 +90,9 @@ schema:birthPlace a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range schema:Place .
 
-schema:dateCreated a rdf:Property ;
-    rdfs:domain schema:CreativeWork ;
-    rdfs:range rdfs:Literal .
+schema:containedInPlace a rdf:Property ;
+    rdfs:domain schema:Place ;
+    rdfs:range schema:Place .
 
 schema:dateReceived a rdf:Property ;
     rdfs:domain schema:Message ;
@@ -239,17 +239,23 @@ personal:Address a rdfs:Class ;
 personal:Agent a rdfs:Class ;
     rdfs:subClassOf schema:Thing .
 
-personal:EmailAddress a rdfs:Class ;
-    rdfs:subClassOf personal:Address .
-
 personal:CellphoneNumber a rdfs:Class ;
     rdfs:subClassOf personal:PhoneNumber .
+
+personal:EmailAddress a rdfs:Class ;
+    rdfs:subClassOf personal:Address .
 
 personal:FaxNumber a rdfs:Class ;
     rdfs:subClassOf personal:PhoneNumber .
 
+personal:GeoVector a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
 personal:HomeAddress a rdfs:Class ;
     rdfs:subClassOf personal:Address .
+
+personal:Location a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
 
 personal:PhoneNumber a rdfs:Class ;
     rdfs:subClassOf personal:Address .
@@ -259,11 +265,18 @@ personal:PreferredAddress a rdfs:Class ;
 
 personal:PrimaryFacet a rdfs:Class .
 
+personal:Stay a rdfs:Class ;
+    rdfs:subClassOf schema:Thing .
+
 personal:WorkAddress a rdfs:Class ;
     rdfs:subClassOf personal:Address .
 
 
 # personal properties
+
+personal:angle a rdf:Property ;
+    rdfs:domain personal:GeoVector ;
+    rdfs:range rdfs:Literal .
 
 personal:blindCopyRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
@@ -271,12 +284,24 @@ personal:blindCopyRecipient a rdf:Property ;
 personal:copyRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
 
+personal:differentFrom a rdf:Property ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range rdfs:Resource .
+
 personal:domain a rdf:Property ;
     rdfs:domain personal:EmailAddress ;
     rdfs:range rdfs:Literal .
 
+personal:inReplyTo a rdf:Property ;
+    rdfs:domain schema:Message ;
+    rdfs:range schema:Message .
+
 personal:localPart a rdf:Property ;
     rdfs:domain personal:EmailAddress ;
+    rdfs:range rdfs:Literal .
+
+personal:magnitude a rdf:Property ;
+    rdfs:domain personal:GeoVector ;
     rdfs:range rdfs:Literal .
 
 personal:nickname a rdf:Property ;
@@ -287,6 +312,21 @@ personal:nickname a rdf:Property ;
 personal:primaryRecipient a rdf:Property ;
     rdfs:subPropertyOf schema:recipient .
 
-personal:inReplyTo a rdf:Property ;
-    rdfs:domain schema:Message ;
-    rdfs:range schema:Message .
+personal:sameAs a rdf:Property ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range rdfs:Resource .
+
+personal:time a rdf:Property ;
+    rdfs:range rdfs:Literal .
+
+personal:magnitude a rdf:Property ;
+    rdfs:domain personal:GeoVector ;
+    rdfs:range rdfs:Literal .
+
+personal:uncertainty a rdf:Property ;
+    rdfs:domain schema:GeoCoordinates ;
+    rdfs:range rdfs:Literal .
+
+personal:velocity a rdf:Property ;
+    rdfs:domain personal:Location ;
+    rdfs:range personal:GeoVector .

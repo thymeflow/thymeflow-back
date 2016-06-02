@@ -12,7 +12,6 @@ import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
-import thymeflow.sync.Synchronizer.Sync
 import thymeflow.sync._
 
 import scala.collection.JavaConverters._
@@ -30,8 +29,6 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Flow[Model
     .via(enrichers)
     .to(Sink.ignore)
     .run()
-
-  actorRefs.foreach(system.scheduler.schedule(1 second, 1 second, _, Sync))
 
   def addSource[T](sourceConfig: T): Unit = {
     actorRefs.foreach(_ ! sourceConfig)

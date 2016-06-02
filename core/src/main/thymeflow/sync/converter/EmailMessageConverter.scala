@@ -113,7 +113,11 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       ))
 
       Option(message.getHeader("In-Reply-To", null)).map(inReplyTo =>
-        model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
+        try {
+          model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
+        } catch {
+          case e: IllegalArgumentException =>
+        }
       )
 
       //addPart(message, messageResource)

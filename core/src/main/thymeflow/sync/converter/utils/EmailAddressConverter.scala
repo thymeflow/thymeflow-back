@@ -41,6 +41,10 @@ class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
     * Create a EmailAddress resource from an email address
     */
   def convert(address: String, model: Model): Option[IRI] = {
+    if (address == "undisclosed-recipients:;") {
+      None
+    }
+
     try {
       Some(AddressBuilder.DEFAULT.parseMailbox(address)).flatMap(x => Option(x.getLocalPart).map((x, _))) match {
         case Some((mailbox, localPart)) =>

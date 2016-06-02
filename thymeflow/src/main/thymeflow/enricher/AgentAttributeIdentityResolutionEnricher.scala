@@ -327,7 +327,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             // save equalities as personal:sameAs relations in the Repository
             repositoryConnection.begin()
             equalities.filterNot(tuple => isDifferentFrom(tuple._1, tuple._2)).foreach {
-              case (agent1, agent2, _)  if probability >= persistenceThreshold =>
+              case (agent1, agent2, probability) if probability >= persistenceThreshold =>
                 addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
                 addStatement(diff, valueFactory.createStatement(agent2, Personal.SAME_AS, agent1, inferencerContext))
               case _ =>

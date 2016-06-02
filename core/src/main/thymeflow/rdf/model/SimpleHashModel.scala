@@ -71,7 +71,7 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
     doFilter(subj, pred, obj, contexts)
   }
 
-  private def doFilter(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): SimpleHashModel = {
+  private def doFilter(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): Model = {
     new SimpleHashModel(valueFactory, this.asScala.filter(statement =>
       (subj == null || statement.getSubject == subj) &&
         (pred == null || statement.getPredicate == pred) &&
@@ -90,5 +90,24 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
 }
 
 object SimpleHashModel {
-  private val emptySet = new util.HashSet[Statement]()
+  val empty = new util.HashSet[Statement] with Model {
+    override def filter(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Model = this
+    override def subjects(): util.Set[Resource] = Collections.emptySet()
+    override def predicates(): util.Set[IRI] = Collections.emptySet()
+    override def objects(): util.Set[Value] = Collections.emptySet()
+    override def clear(context: Resource*): Boolean = throw new UnsupportedOperationException
+    override def removeNamespace(prefix: String): Optional[Namespace] = throw new UnsupportedOperationException
+    override def remove(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean =
+      throw new UnsupportedOperationException
+    override def contains(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean =
+      throw new UnsupportedOperationException
+    override def setNamespace(namespace: Namespace): Unit = throw new UnsupportedOperationException
+    override def unmodifiable(): Model = this
+    override def getNamespaces: util.Set[Namespace] = Collections.emptySet()
+    override def add(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean =
+      throw new UnsupportedOperationException
+    override def `match`(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): util.Iterator[Statement] =
+      Collections.emptyIterator()
+    override def getValueFactory: ValueFactory = SimpleValueFactory.getInstance()
+  }
 }

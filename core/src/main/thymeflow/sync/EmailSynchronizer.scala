@@ -147,7 +147,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
               Document(context, emailMessageConverter.convert(action.message, context))
           }
         case action: RemovedMessage =>
-          Document(messageContext(action.message), new SimpleHashModel())
+          Document(messageContext(action.message), SimpleHashModel.empty)
       }
     }
 

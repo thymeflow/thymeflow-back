@@ -1,19 +1,24 @@
 package thymeflow.enricher
 
+import java.io._
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.util.Locale
+import java.util.function.Consumer
 
 import akka.stream.scaladsl.Source
+import com.opencsv.CSVReader
 import com.typesafe.scalalogging.StrictLogging
-import org.apache.lucene.search.spell.LevensteinDistance
 import org.openrdf.model.impl.SimpleLiteral
 import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{BNode, IRI, Resource}
 import org.openrdf.query.QueryLanguage
+import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
 import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
+import thymeflow.enricher.entityresolution.EntityResolution
+import thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimilarity, StringSimilarity}
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.mathematics.probability.{DiscreteRand, Rand}
@@ -21,14 +26,13 @@ import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.alignment.TextAlignment
-import thymeflow.text.distances.BipartiteMatchingDistance
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
+import thymeflow.utilities.IO
 import thymeflow.utilities.email.EmailProviderDomainList
-import thymeflow.utilities.text.Normalization
-import thymeflow.utilities.{IO, Memoize}
 
+import scala.collection.JavaConverters._
 import scala.collection.immutable.NumericRange
-import scala.collection.mutable
+import scala.collection.{SeqView, mutable}
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import scala.util.Random
@@ -38,11 +42,11 @@ import scala.util.Random
   */
 
 /**
-  *
   * Depends on @InverseFunctionalPropertyInferencer
   *
   * @param repositoryConnection   a connection to the knowledge base
   * @param solveMode              resolution algorithm
+  * @param baseStringSimilarity   the base string similarity to use
   * @param searchMatchPercent     the term percent match required for candidate equalities
   * @param searchSize             the number of candidate results for each term
   * @param parallelism            the concurrency level when looking up for candidate equalities
@@ -51,58 +55,36 @@ import scala.util.Random
   *                               must be equal to None or between 0 and 1
   * @param evaluationThreshold    probability threshold above which evaluation is performed
   * @param persistenceThreshold   probability threshold above which equalities are saved
+  * @param useIDF                 use Term IDF adjustment
+  * @param evaluationSamplesFiles sample files (with ground truth) to evaluate from
   * @param debug                  debug mode
+  * @param outputClassSizes       output equivalent class sizes to a file
+  * @param outputFunctionalities  output functionalities
+  * @param outputSamples          generate and output samples for later annotation and evaluation
+  * @param outputSimilarities     output similarities between agents
+  * @param outputAgents           output the list of agents
   */
 class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryConnection,
                                                solveMode: SolveMode = Vanilla,
+                                               protected val baseStringSimilarity: StringSimilarity = LevensteinSimilarity,
                                                searchMatchPercent: Int = 70,
                                                searchSize: Int = 10000,
                                                parallelism: Int = 2,
-                                               matchDistanceThreshold: Double = 1d,
+                                               protected val matchDistanceThreshold: Double = 1d,
                                                contactRelativeWeight: Option[Double] = Option(0.5),
-                                               evaluationThreshold: BigDecimal = BigDecimal(0),
-                                               persistenceThreshold: BigDecimal = BigDecimal(0),
-                                               debug: Boolean = false) extends Enricher with StrictLogging {
+                                               evaluationThreshold: BigDecimal = BigDecimal(0.9),
+                                               persistenceThreshold: BigDecimal = BigDecimal(0.9),
+                                               useIDF: Boolean = true,
+                                               evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
+                                               debug: Boolean = false,
+                                               outputClassSizes: Boolean = false,
+                                               outputFunctionalities: Boolean = false,
+                                               outputSamples: Boolean = false,
+                                               outputSimilarities: Boolean = false,
+                                               outputAgents: Boolean = false) extends Enricher with EntityResolution with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
-  private val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
-  /**
-    * term similarity using the Levenstein distance
-    */
-  private val termSimilarity = {
-    val levensteinDistance = new LevensteinDistance()
-    (term1: String, term2: String) => {
-      levensteinDistance.getDistance(normalizeTerm(term1), normalizeTerm(term2))
-    }
-  }
-
-  /**
-    * term sequence matching functions, used to match "Alice Wonders" with "Wondrs Alice"
-    */
-  private val (getMatchingTermSimilarities, getMatchingTermIndicesWithSimilarities, getMatchingTermIndices) = {
-    val bipartiteMatchingDistance = new BipartiteMatchingDistance((s1, s2) => 1d - termSimilarity(s1, s2), matchDistanceThreshold)
-    def getIndicesWithSimilarities(terms1: IndexedSeq[String], terms2: IndexedSeq[String]) = {
-      bipartiteMatchingDistance.matchIndices(terms1, terms2).map {
-        case (subTerms1, subTerms2, distance) => (subTerms1, subTerms2, 1d - distance)
-      }
-    }
-    def getSimilarities(terms1: IndexedSeq[String], terms2: IndexedSeq[String]) = {
-      bipartiteMatchingDistance.getDistance(terms1, terms2).map {
-        case (subTerms1, subTerms2, distance) => (subTerms1, subTerms2, 1d - distance)
-      }
-    }
-    def getIndices(terms1: IndexedSeq[String], terms2: IndexedSeq[String]) = {
-      bipartiteMatchingDistance.matchIndices(terms1, terms2).map {
-        case (subTerms1, subTerms2, distance) => (subTerms1, subTerms2)
-      }
-    }
-    (getSimilarities _, getIndicesWithSimilarities _, getIndices _)
-  }
-
-  // \u2022 is the bullet character
-  private val tokenSeparator =
-    """[\p{Punct}\s\u2022]+""".r
 
   private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?sameAs WHERE {
@@ -146,7 +128,20 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }"""
   )
 
+  private val agentsNameEmailQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    """
+      |SELECT ?s ?email ?name
+      |WHERE {
+      |?s a <http://thomas.pellissier-tanon.fr/personal#Agent> .
+      |OPTIONAL { ?s <http://schema.org/email>/<http://schema.org/name> ?email } .
+      |OPTIONAL{ ?s <http://schema.org/name> ?name }
+      |}
+    """.stripMargin)
+
   override def enrich(diff: ModelDiff): Unit = {
+    if (outputAgents) {
+      saveAgentsNameEmails()
+    }
     // get a map assigning to each agent facet its representative in the "shared id" equivalence class
     val agentRepresentativeMap = getSharedIdRepresentativeByAgent
     // get the list email addresses for each agent
@@ -210,7 +205,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       }
 
     // compute inverse document frequency of each term, when considering each agent as a document, where each term has a probability to be in the document.
-    val termIDFs = computeTermIDFs(agentAndNormalizedNameTerms.view.map(_._2)).compose(normalizeTerm)
+    val termIDFs: String => Double = if (useIDF) {
+      computeTermIDFs(agentAndNormalizedNameTerms.view.map(_._2)).compose(normalizeTerm)
+    } else {
+      _ => 1d
+    }
 
     // a map from an agent's stringValue to the agent (for deserialization)
     val agentRepresentativeIRIToResourceMap = (agentRepresentativeMatchNames.keys ++ agentRepresentativeEmailAddresses.keys).map {
@@ -292,14 +291,36 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
             }
         }).map {
           case equalities =>
-            val buckets = samplingBuckets()
-            val baseAgentRepresentative = (agentRepresentativeMap.keySet ++ agentRepresentativeIRIToResourceMap.values.toSet).map {
+            lazy val buckets = samplingBuckets()
+            lazy val baseAgentRepresentative = (agentRepresentativeMap.keySet ++ agentRepresentativeIRIToResourceMap.values.toSet).map {
               agent => (agent, agentRepresentativeMap(agent))
             }
-            val samples = generateSamples(baseAgentRepresentative, equalities, buckets, 100)
-            saveSamplesToFile(samples)
+            lazy val equivalentClasses = generateEquivalentClasses(baseAgentRepresentative, buckets, equalities)
+            lazy val agentEmails = getAgentEmails(identity)
+            if (outputClassSizes) {
+              saveClassSizes(equivalentClasses.map(x => (x._1, x._3)), agentEmails)
+            }
+            if (outputFunctionalities) {
+              saveFunctionalities(equivalentClasses.map(x => (x._1, x._3)), agentRepresentativeMatchNames, agentEmails)
+            }
+            evaluationSamplesFiles.foreach {
+              path =>
+                val uriStringToResource = baseAgentRepresentative.view.map {
+                  case (agent, _) =>
+                    (agent.stringValue(), agent)
+                }.toMap
+                val samples = parseSamplesFromFile(path, uriStringToResource)
+                val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
+                saveEvaluationToFile(evaluatedSamples)
+            }
+            if (outputSamples) {
+              val samples = generateSamples(equivalentClasses, 100)
+              saveSamplesToFile(samples)
+            }
+            if (outputSimilarities) {
+              saveResultsToFile(equalities)
+            }
             reportStatistics(equalities, buckets)
-            saveResultsToFile(equalities)
             logger.info(s"[agent-attribute-identity-resolution-enricher] - Counts: {filteredAgentCount=$filteredAgentCount, candidatePairCount=$candidatePairCount, candidatePairCountAboveThreshold=$candidatePairCountAboveThreshold, candidatePairAboveThresholdSetSize=${equalities.size}}")
             // save equalities as owl:sameAs relations in the Repository
             repositoryConnection.begin()
@@ -317,18 +338,174 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     Await.result(result, Duration.Inf)
   }
 
-  private def generateSamples(baseAgentRepresentative: Traversable[(Resource, Resource)],
-                              equalities: IndexedSeq[(Resource, Resource, Double)],
-                              buckets: NumericRange[BigDecimal],
-                              nSamples: Int) = {
-    implicit val random = Random
-    val (agentEquivalenceClassMap, agentEquivalenceClasses) = equalityRelationEquivalentClasses(baseAgentRepresentative, Traversable.empty, BigDecimal(0))
-    val baseMap: Map[Resource, Set[Resource]] = Map().withDefault(Set(_))
-    (IndexedSeq((None: Option[BigDecimal], agentEquivalenceClassMap, agentEquivalenceClasses)).view ++ buckets.reverse.view.map {
+  private def saveAgentsNameEmails() = {
+    val stream = new FileOutputStream(s"data/agent-attribute-identity-resolution-enricher_agents_${IO.pathTimestamp}.csv")
+    val writer = new SPARQLResultsCSVWriter(stream)
+    agentsNameEmailQuery.evaluate(writer)
+    stream.close()
+  }
+
+  def saveEvaluationToFile(evaluatedSamples: SeqView[(Option[BigDecimal], Option[BigDecimal], Resource, Resource, Boolean), Seq[_]]) = {
+    val results = evaluatedSamples.map {
+      case (threshold, sampleThreshold, resource1, resource2, truth) =>
+        Vector(threshold.map(_.toString).getOrElse(""),
+          sampleThreshold.map(_.toString).getOrElse(""),
+          resource1.stringValue(),
+          resource2.stringValue(),
+          truth.toString).mkString(",")
+    }
+    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_evaluation_${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}_${IO.pathTimestamp}.csv")
+    Files.write(path, results.asJava, StandardCharsets.UTF_8)
+  }
+
+  private def saveFunctionalities(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
+                                  agentRepresentativeMatchNames: Map[Resource, IndexedSeq[(String, Double)]],
+                                  emailAddressForAgent: Resource => Traversable[String]) = {
+    val functionalities = equivalentClasses.view.map {
+      case (threshold, classes) =>
+        val emailRelation = classes.zipWithIndex.map {
+          case (clazz, index) => index -> clazz.flatMap(emailAddressForAgent.apply)
+        }
+        val (emailFunc, emailInvFunc) = (computeFunctionality(emailRelation), computeInverseFunctionality(emailRelation))
+        val nameRelation = classes.zipWithIndex.map {
+          case (clazz, index) => index -> clazz.flatMap(x => agentRepresentativeMatchNames.apply(x).map(y => normalizeTerm(y._1)))
+        }
+        val (nameFunc, nameInvFunc) = (computeFunctionality(nameRelation), computeInverseFunctionality(nameRelation))
+        IndexedSeq(threshold.getOrElse(""), emailFunc, emailInvFunc, nameFunc, nameInvFunc).map(_.toString).mkString(",")
+    }
+    val functionalitiesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_functionalities_${IO.pathTimestamp}.csv")
+    Files.write(functionalitiesPath, functionalities.asJava, StandardCharsets.UTF_8)
+  }
+
+  def computeFunctionality[X, Y](instances: Traversable[(X, Traversable[Y])]) = {
+    instances.count(_._2.nonEmpty).toDouble / Math.max(instances.map(_._2.size).sum, 1).toDouble
+  }
+
+  def computeInverseFunctionality[X, Y](instances: Traversable[(X, Traversable[Y])]) = {
+    computeFunctionality(instances.view.flatMap {
+      case (x, yS) => yS.map {
+        y => (y, x)
+      }
+    }.groupBy(_._1).map {
+      case (y, g) => y -> g.map(_._2).toSet.toIndexedSeq
+    })
+  }
+
+  private def saveClassSizes(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
+                             emailAddressForAgent: Resource => Traversable[String]) = {
+    def save(classSizes: IndexedSeq[(Option[BigDecimal], Int, Int)], suffix: String = "") {
+      val results = classSizes.view.map {
+        case (threshold, classSize, classCount) =>
+          Vector(threshold.map(_.toString).getOrElse(""), classSize, classCount).mkString(",")
+      }
+      val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_class-sizes${suffix}_${IO.pathTimestamp}.csv")
+      Files.write(path, results.asJava, StandardCharsets.UTF_8)
+    }
+    var classSizesBuilder = IndexedSeq.newBuilder[(Option[BigDecimal], Int, Int)]
+    var uniqueClassSizesBuilder = IndexedSeq.newBuilder[(Option[BigDecimal], Int, Int)]
+    equivalentClasses.foreach {
+      case (threshold, classes) =>
+        classSizesBuilder ++= buildClassSizes(threshold, classes)
+        uniqueClassSizesBuilder ++= buildUniqueEmailClassSizes(threshold, classes, emailAddressForAgent)
+    }
+    save(classSizesBuilder.result())
+    save(uniqueClassSizesBuilder.result(), "_unique-emails")
+  }
+
+  private def buildUniqueEmailClassSizes(threshold: Option[BigDecimal],
+                                         classes: IndexedSeq[Set[Resource]],
+                                         emailAddress: Resource => Traversable[String]) = {
+    val emailClasses = classes.map {
+      clazz => clazz.flatMap(emailAddress)
+    }
+    val distinctEmails = emailClasses.flatten.distinct.sorted
+    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_distinct-emails_${threshold}_${IO.pathTimestamp}.csv")
+    Files.write(path, distinctEmails.asJava, StandardCharsets.UTF_8)
+    classes.map {
+      clazz =>
+        val clazzEmailAddresses = clazz.toIndexedSeq.map(emailAddress)
+        clazzEmailAddresses.flatten.distinct.size
+    }.groupBy(identity).map {
+      case (classSize, classesForClassSize) =>
+        (threshold, classSize, classesForClassSize.size)
+    }.toIndexedSeq.sortBy(_._2)
+  }
+
+  private def buildClassSizes(threshold: Option[BigDecimal], classes: IndexedSeq[Set[Resource]]) = {
+    classes.groupBy(_.size).map {
+      case (classSize, classesForClassSize) =>
+        (threshold, classSize, classesForClassSize.size)
+    }.toIndexedSeq.sortBy(_._2)
+  }
+
+  private def generateEquivalentClasses(baseAgentRepresentative: Traversable[(Resource, Resource)],
+                                        buckets: NumericRange[BigDecimal],
+                                        equalities: IndexedSeq[(Resource, Resource, Double)]): Seq[(Option[BigDecimal], Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])] = {
+    val (agentEquivalenceClassMap, agentEquivalenceClasses) =
+      equalityRelationEquivalentClasses(baseAgentRepresentative, Traversable.empty, BigDecimal(0))
+    val classOfEverything = agentEquivalenceClasses.flatten.toSet
+    val mapOfEverything: Map[Resource, Set[Resource]] = Map().withDefault(_ => classOfEverything)
+    (IndexedSeq((None: Option[BigDecimal], agentEquivalenceClassMap, agentEquivalenceClasses)).view
+      ++ buckets.reverse.view.map {
       threshold =>
         val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold)
         (Some(threshold), map, classes)
-    }).foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], Long, IndexedSeq[(Resource, Resource)])], baseMap)) {
+    } ++ IndexedSeq((Some(BigDecimal("-0.05")), mapOfEverything, IndexedSeq(classOfEverything)))
+      )
+  }
+
+  private def equalityRelationEquivalentClasses(representatives: Traversable[(Resource, Resource)],
+                                                equalities: Traversable[(Resource, Resource, Double)],
+                                                threshold: BigDecimal) = {
+    val e = equalities.view.filter(_._3 >= threshold).map(x => (x._1, x._2)) ++ representatives
+    val neighbors = (e ++ e.map(x => (x._2, x._1))).groupBy(_._1).map {
+      case (instance1, instances) => (instance1, instances.map(_._2).toSet)
+    }
+    val connectedComponents = ConnectedComponents.compute[Resource](neighbors.keys, neighbors.getOrElse(_, Traversable.empty))
+
+    (connectedComponents.flatMap(connectedComponent => connectedComponent.view.map {
+      _ -> connectedComponent
+    })
+      .toMap
+      .withDefault(Set(_)), connectedComponents)
+  }
+
+  private def parseSamplesFromFile(path: String,
+                                   uriStringToResource: String => Resource) = {
+    val reader = new CSVReader(new BufferedReader(new InputStreamReader(new FileInputStream(path), "UTF-8"), 4096))
+    val builder = IndexedSeq.newBuilder[(Option[BigDecimal], Resource, Resource)]
+    reader.forEach(new Consumer[Array[String]] {
+      override def accept(t: Array[String]): Unit = {
+        val rawThreshold = t(0)
+        val threshold = if (rawThreshold.isEmpty) {
+          None
+        } else {
+          Some(BigDecimal(rawThreshold))
+        }
+        val agent1 = uriStringToResource(t(1))
+        val agent2 = uriStringToResource(t(2))
+        builder += ((threshold, agent1, agent2))
+      }
+    })
+    builder.result()
+  }
+
+  private def evaluateSamples(samples: IndexedSeq[(Option[BigDecimal], Resource, Resource)],
+                              equivalentClasses: Seq[(Option[BigDecimal], Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])]) = {
+    equivalentClasses.view.flatMap {
+      case (threshold, map, classes) =>
+        samples.map {
+          case (sampleThreshold, resource1, resource2) =>
+            (threshold, sampleThreshold, resource1, resource2, map(resource1) == map(resource2))
+        }
+    }
+  }
+
+  private def generateSamples(equivalentClasses: Seq[(Option[BigDecimal], Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])],
+                              nSamples: Int) = {
+    implicit val random = Random
+    val baseMap: Map[Resource, Set[Resource]] = Map().withDefault(Set(_))
+    equivalentClasses.foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], Long, IndexedSeq[(Resource, Resource)])], baseMap)) {
       case ((v, previousMap), (threshold, map, classes)) =>
         val (samples, sampleGroupSize) = equalitySampler(previousMap, classes).map {
           case (sampler, samplerSize) =>
@@ -393,22 +570,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
         }
       }, cumulative.size))
     }
-  }
-
-  private def equalityRelationEquivalentClasses(representatives: Traversable[(Resource, Resource)],
-                                                equalities: Traversable[(Resource, Resource, Double)],
-                                                threshold: BigDecimal) = {
-    val e = equalities.view.filter(_._3 >= threshold).map(x => (x._1, x._2)) ++ representatives
-    val neighbors = (e ++ e.map(x => (x._2, x._1))).groupBy(_._1).map {
-      case (instance1, instances) => (instance1, instances.map(_._2).toSet)
-    }
-    val connectedComponents = ConnectedComponents.compute[Resource](neighbors.keys, neighbors.getOrElse(_, Traversable.empty))
-
-    (connectedComponents.flatMap(connectedComponent => connectedComponent.view.map {
-      _ -> connectedComponent
-    })
-      .toMap
-      .withDefault(Set(_)), connectedComponents)
   }
 
   /**
@@ -760,28 +921,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    * Parses a token list out of some text by splitting at separators
-    *
-    * @param content the text to parse
-    * @return a list of matched tokens (Left) and separators (Right)
-    */
-  private def entitySplitParts(content: String) = {
-    var index = 0
-    val parts = Vector.newBuilder[Either[String, String]]
-    for (m <- tokenSeparator.findAllMatchIn(content)) {
-      if (index != m.start) {
-        parts += Left(content.substring(index, m.start))
-      }
-      parts += Right(m.matched)
-      index = m.end
-    }
-    if (index != content.length) {
-      parts += Left(content.substring(index, content.length))
-    }
-    parts.result()
-  }
-
-  /**
     *
     * @return a map [emailAddress -> (localPart, domain)]
     */
@@ -965,62 +1104,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }
   }
 
-  private def getNamesEqualityProbability[RESOURCE](names1: Traversable[(String, Double)],
-                                                    names2: Traversable[(String, Double)],
-                                                    termIDFs: String => Double,
-                                                    termSimilarityMatch: (IndexedSeq[String], IndexedSeq[String]) => Seq[(Seq[String], Seq[String], Double)]) = {
-    var weight = 0d
-    var normalization = 0d
-    names1.foreach {
-      case (name1, name1Weight) =>
-        names2.foreach {
-          case (name2, name2Weight) =>
-            val terms1 = extractTerms(name1)
-            val terms2 = extractTerms(name2)
-            if (terms1.nonEmpty && terms2.nonEmpty) {
-              val similarities = termSimilarityMatch(terms1, terms2)
-              val maxWeight = normalizedSoftTFIDF(termIDFs, termIDFs)(terms1, terms2, similarities)
-              weight += (name1Weight * name2Weight) * maxWeight
-              normalization += (name1Weight * name2Weight)
-            }
-        }
-    }
-    val equalityProbability = if (normalization != 0.0) {
-      Math.min(weight / normalization, 1d)
-    } else {
-      0.0
-    }
-    equalityProbability
-  }
-
-  /**
-    *
-    * @param text1TFIDF tf-idf for the first text
-    * @param text2TFIDF tf-idf for the second text
-    * @tparam T the term type
-    * @return the distance between two text sequences using cosine similarity over their TFIDF space
-    */
-  private def normalizedSoftTFIDF[T](text1TFIDF: T => Double, text2TFIDF: T => Double) = (text1: Seq[T], text2: Seq[T], similarities: Seq[(Seq[T], Seq[T], Double)]) => {
-    val denominator = text1.map(text1TFIDF).sum + text2.map(text2TFIDF).sum
-    if (denominator == 0d) {
-      0d
-    } else {
-      val numerator = similarities.map {
-        case (terms1, terms2, similarity) =>
-          (terms1.map(text1TFIDF).sum + terms2.map(text2TFIDF).sum) * similarity
-      }.sum
-      Math.min(numerator / denominator, 1d)
-    }
-  }
-
-  /**
-    *
-    * @param content to extract terms from
-    * @return a list of extracted terms, in their order of appearance
-    */
-  private def extractTerms(content: String) = {
-    tokenSeparator.split(content).toIndexedSeq.filter(_.nonEmpty)
-  }
 
   /**
     * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
@@ -1220,54 +1303,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
   }
 
   /**
-    * Computes term inverse document frequencies (IDFs) from a collection of documents
-    *
-    * @param documents a collection of documents, each document is given by a list of terms, and their respective appearance probability (between 0 and 1)
-    * @return a TERM -> IDF map
-    */
-  private def computeTermIDFs(documents: Traversable[Traversable[(String, Double)]]) = {
-    val n = documents.size
-    val idfs = documents.flatten.groupBy(_._1).map {
-      case (term, terms) =>
-        term -> math.log(n / terms.map(_._2).sum)
-    }
-    idfs
-  }
-
-  /**
-    *
-    * @param terms1                     term sequence 1
-    * @param terms2                     term sequence 2
-    * @param termIDFs                   term IDFs
-    * @param termSimilarityMatchIndices a function for matching term sequences
-    * @return the equality probability of the two term sequences
-    */
-  private def getNameTermsEqualityProbability(terms1: IndexedSeq[(String, Double)],
-                                              terms2: IndexedSeq[(String, Double)],
-                                              termIDFs: String => Double,
-                                              termSimilarityMatchIndices: (IndexedSeq[String], IndexedSeq[String]) => Seq[(Seq[Int], Seq[Int], Double)]) = {
-    if (terms1.nonEmpty && terms2.nonEmpty) {
-      val similarityIndices = termSimilarityMatchIndices(terms1.map(_._1), terms2.map(_._1))
-      def termsTFIDFs(terms: IndexedSeq[(String, Double)]) = (index: Int) => {
-        val (term, weight) = terms(index)
-        weight * termIDFs(term)
-      }
-      normalizedSoftTFIDF(termsTFIDFs(terms1), termsTFIDFs(terms2))(terms1.indices, terms2.indices, similarityIndices)
-    } else {
-      0d
-    }
-  }
-
-  /**
-    *
-    * @param binSize size of the bucket
-    * @return a range from 0 to 1 (inclusive) in steps of binSize
-    */
-  private def samplingBuckets(binSize: BigDecimal = BigDecimal("0.05")) = {
-    Range.BigDecimal.inclusive(start = BigDecimal(0) + binSize, end = BigDecimal(1), step = binSize)
-  }
-
-  /**
     * @param equalities a map from a Set(agent1, agent2) to its equality probability
     * @param range      a list of threshold
     */
@@ -1301,10 +1336,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     val sortedEqualities = equalities.toIndexedSeq.sortBy(_._3)(implicitly[Ordering[Double]].reverse)
     val results = sortedEqualities.view.map {
       case (agent1, agent2, probability) =>
-        Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",") + "\n"
+        Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
     }
     val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
-    import scala.collection.JavaConverters._
     Files.write(path, results.asJava, StandardCharsets.UTF_8)
   }
 
@@ -1349,15 +1383,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     }.toIndexedSeq.sortBy(_._2)(ordering)
   }
 
-  /** *
-    * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
-    *
-    * @param term term to normalize
-    * @return normalized term
-    */
-  private def uncachedNormalizeTerm(term: String) = {
-    Normalization.removeDiacriticalMarks(term).toLowerCase(Locale.ROOT)
-  }
 }
 
 object AgentAttributeIdentityResolutionEnricher {
@@ -1396,10 +1421,16 @@ object AgentAttributeIdentityResolutionEnricher {
 
   case class AgentQualifiedNamePartNode(agent: Resource, namePart: String, namePartTypes: Set[IRI]) extends AgentNamePartNode
 
-  object Vanilla extends SolveMode
+  object Vanilla extends SolveMode {
+    override def toString = "Vanilla"
+  }
 
-  object VanillaDeduplicateAgentNameParts extends DeduplicateAgentNameParts
+  object VanillaDeduplicateAgentNameParts extends DeduplicateAgentNameParts {
+    override def toString = "VanillaDeduplicateAgentNameParts"
+  }
 
-  object DeduplicateAgentNamePartsAndSolvePartTypes extends DeduplicateAgentNameParts
+  object DeduplicateAgentNamePartsAndSolvePartTypes extends DeduplicateAgentNameParts {
+    override def toString = "DeduplicateAgentNamePartsAndSolvePartTypes"
+  }
 
 }

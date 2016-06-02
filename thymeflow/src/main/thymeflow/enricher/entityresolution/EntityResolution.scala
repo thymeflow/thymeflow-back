@@ -161,15 +161,6 @@ trait EntityResolution {
     parts.result()
   }
 
-  /**
-    *
-    * @param binSize size of the bucket
-    * @return a range from 0 to 1 (inclusive) in steps of binSize
-    */
-  protected def samplingBuckets(binSize: BigDecimal = BigDecimal("0.05")) = {
-    Range.BigDecimal.inclusive(start = BigDecimal(0) + binSize, end = BigDecimal(1), step = binSize)
-  }
-
   /** *
     * Normalizes terms by removing their accents (diacritical marks) and changing them to lower case
     *

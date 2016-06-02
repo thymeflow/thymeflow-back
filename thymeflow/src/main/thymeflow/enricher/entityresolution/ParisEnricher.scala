@@ -1,18 +1,14 @@
 package thymeflow.enricher.entityresolution
 
-import java.io.{BufferedReader, FileInputStream, InputStreamReader}
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths}
-import java.util.function.Consumer
+import java.nio.file.Paths
 
 import akka.stream.scaladsl.Source
-import com.opencsv.CSVReader
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.Enricher
+import thymeflow.enricher.AbstractEnricher
 import thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimilarity, StringSimilarity}
 import thymeflow.enricher.entityresolution.ParisEnricher.{EqualityStore, ParisLiteral}
 import thymeflow.graph.ConnectedComponents
@@ -20,10 +16,8 @@ import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.text.search.elasticsearch.FullTextSearchServer
-import thymeflow.utilities.{IO, TimeExecution}
+import thymeflow.utilities.TimeExecution
 
-import scala.collection.JavaConverters._
-import scala.collection.SeqView
 import scala.collection.immutable.NumericRange
 import scala.concurrent.Await
 
@@ -40,6 +34,7 @@ import scala.concurrent.Await
   * @param matchDistanceThreshold         maximum distance for a term to be considered as match
   * @param evaluationSamplesFiles         sample files (with ground truth) to evaluate from
   * @param parallelism                    the concurrency level when looking up for candidate equalities
+  * @param persistenceThreshold           probability threshold above which equalities are saved
   * @param propertiesInverseFunctionality a map from properties to their inverse functionality value
   * @param propertiesFunctionality        a map from properties to their functionality value
   */
@@ -51,13 +46,19 @@ class ParisEnricher(repositoryConnection: RepositoryConnection,
                     protected val matchDistanceThreshold: Double = 0.3d,
                     evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
                     parallelism: Int = 2,
+                    persistenceThreshold: BigDecimal = BigDecimal(0.9),
                     propertiesInverseFunctionality: Map[Resource, Double] = Map(
                       SchemaOrg.NAME -> 0.9700722394220846,
                       SchemaOrg.EMAIL -> 0.99),
                     propertiesFunctionality: Map[Resource, Double] = Map(
                       SchemaOrg.EMAIL -> 0.8731440162271805,
                       SchemaOrg.NAME -> 0.8043465064044194)
-                   ) extends Enricher with EntityResolution with StrictLogging {
+                   ) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
+
+
+  protected val outputFilePrefix = "data/paris-enricher"
+  private val valueFactory = repositoryConnection.getValueFactory
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "ParisEnricher")
 
   private val agentNamesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?name WHERE {
@@ -166,8 +167,17 @@ class ParisEnricher(repositoryConnection: RepositoryConnection,
                 }.toMap.withDefault(repositoryConnection.getValueFactory.createIRI(_))
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
-                saveEvaluationToFile(Paths.get(path).getFileName.toString, evaluatedSamples)
+                saveEvaluationToFile(s"${Paths.get(path).getFileName.toString}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
+                  evaluatedSamples)
             }
+            repositoryConnection.begin()
+            equalities.definedEqualities.filterNot(tuple => isDifferentFrom(tuple._1, tuple._2)).foreach {
+              case (agent1, agent2, probability) if probability >= persistenceThreshold =>
+                addStatement(diff, valueFactory.createStatement(agent1, Personal.SAME_AS, agent2, inferencerContext))
+                addStatement(diff, valueFactory.createStatement(agent2, Personal.SAME_AS, agent1, inferencerContext))
+              case _ =>
+            }
+            repositoryConnection.commit()
         }
     }
     result.onFailure {
@@ -264,57 +274,12 @@ class ParisEnricher(repositoryConnection: RepositoryConnection,
     })
   }
 
-  def saveEvaluationToFile(prefix: String,
-                           evaluatedSamples: SeqView[(BigDecimal, Option[BigDecimal], Resource, Resource, Boolean), Seq[_]]) = {
-    val results = evaluatedSamples.map {
-      case (threshold, sampleThreshold, resource1, resource2, truth) =>
-        Vector(threshold.toString,
-          sampleThreshold.map(_.toString).getOrElse(""),
-          resource1.stringValue(),
-          resource2.stringValue(),
-          truth.toString).mkString(",")
-    }
-    val path = Paths.get(s"data/paris-enricher_evaluation_${prefix}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}_${IO.pathTimestamp}.csv")
-    Files.write(path, results.asJava, StandardCharsets.UTF_8)
-  }
-
-  private def evaluateSamples(samples: IndexedSeq[(Option[BigDecimal], Resource, Resource)],
-                              equivalentClasses: Seq[(BigDecimal, Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])]) = {
-    equivalentClasses.view.flatMap {
-      case (threshold, map, classes) =>
-        samples.map {
-          case (sampleThreshold, resource1, resource2) =>
-            (threshold, sampleThreshold, resource1, resource2, map(resource1) == map(resource2))
-        }
-    }
-  }
-
-  private def parseSamplesFromFile(path: String,
-                                   uriStringToResource: String => Resource) = {
-    val reader = new CSVReader(new BufferedReader(new InputStreamReader(new FileInputStream(path), "UTF-8"), 4096))
-    val builder = IndexedSeq.newBuilder[(Option[BigDecimal], Resource, Resource)]
-    reader.forEach(new Consumer[Array[String]] {
-      override def accept(t: Array[String]): Unit = {
-        val rawThreshold = t(0)
-        val threshold = if (rawThreshold.isEmpty) {
-          None
-        } else {
-          Some(BigDecimal(rawThreshold))
-        }
-        val agent1 = uriStringToResource(t(1))
-        val agent2 = uriStringToResource(t(2))
-        builder += ((threshold, agent1, agent2))
-      }
-    })
-    builder.result()
-  }
-
   private def generateEquivalentClasses[INSTANCE](buckets: NumericRange[BigDecimal],
-                                                  equalities: Traversable[(INSTANCE, INSTANCE, Double)]): Seq[(BigDecimal, Map[INSTANCE, Set[INSTANCE]], IndexedSeq[Set[INSTANCE]])] = {
+                                                  equalities: Traversable[(INSTANCE, INSTANCE, Double)]): Seq[(Option[BigDecimal], Map[INSTANCE, Set[INSTANCE]], IndexedSeq[Set[INSTANCE]])] = {
     buckets.reverse.view.map {
       threshold =>
         val (map, classes) = equalityRelationEquivalentClasses(equalities, threshold)
-        (threshold, map, classes)
+        (Some(threshold), map, classes)
     }
   }
 

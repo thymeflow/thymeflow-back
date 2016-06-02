@@ -4,23 +4,19 @@ import java.io._
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Paths}
 import java.util.Locale
-import java.util.function.Consumer
 
 import akka.stream.scaladsl.Source
-import com.opencsv.CSVReader
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.OWL
 import org.openrdf.model.{BNode, IRI, Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
 import thymeflow.enricher.AgentAttributeIdentityResolutionEnricher._
-import thymeflow.enricher.entityresolution.EntityResolution
 import thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimilarity, StringSimilarity}
+import thymeflow.enricher.entityresolution.EntityResolutionEvaluation
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
-import thymeflow.mathematics.probability.{DiscreteRand, Rand}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -31,10 +27,9 @@ import thymeflow.utilities.email.EmailProviderDomainList
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.NumericRange
-import scala.collection.{SeqView, mutable}
+import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.util.Random
 
 /**
   * @author David Montoya
@@ -83,8 +78,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                                                outputFunctionalities: Boolean = false,
                                                outputSamples: Boolean = false,
                                                outputSimilarities: Boolean = false,
-                                               outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolution with StrictLogging {
+                                               outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
 
+  protected val outputFilePrefix = "data/agent-attribute-identity-resolution-enricher"
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
 
@@ -313,7 +309,9 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
                 }.toMap
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
-                saveEvaluationToFile(evaluatedSamples)
+                saveEvaluationToFile(
+                  s"${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}",
+                  evaluatedSamples)
             }
             if (outputSamples) {
               val samples = generateSamples(equivalentClasses, 100)
@@ -338,104 +336,11 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     Await.result(result, Duration.Inf)
   }
 
-  private def saveAgentsNameEmails() = {
-    val stream = new FileOutputStream(s"data/agent-attribute-identity-resolution-enricher_agents_${IO.pathTimestamp}.csv")
+  protected def saveAgentsNameEmails() = {
+    val stream = new FileOutputStream(s"${outputFilePrefix}_agents_${IO.pathTimestamp}.csv")
     val writer = new SPARQLResultsCSVWriter(stream)
     agentsNameEmailQuery.evaluate(writer)
     stream.close()
-  }
-
-  def saveEvaluationToFile(evaluatedSamples: SeqView[(Option[BigDecimal], Option[BigDecimal], Resource, Resource, Boolean), Seq[_]]) = {
-    val results = evaluatedSamples.map {
-      case (threshold, sampleThreshold, resource1, resource2, truth) =>
-        Vector(threshold.map(_.toString).getOrElse(""),
-          sampleThreshold.map(_.toString).getOrElse(""),
-          resource1.stringValue(),
-          resource2.stringValue(),
-          truth.toString).mkString(",")
-    }
-    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_evaluation_${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}_${IO.pathTimestamp}.csv")
-    Files.write(path, results.asJava, StandardCharsets.UTF_8)
-  }
-
-  private def saveFunctionalities(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
-                                  agentRepresentativeMatchNames: Map[Resource, IndexedSeq[(String, Double)]],
-                                  emailAddressForAgent: Resource => Traversable[String]) = {
-    val functionalities = equivalentClasses.view.map {
-      case (threshold, classes) =>
-        val emailRelation = classes.zipWithIndex.map {
-          case (clazz, index) => index -> clazz.flatMap(emailAddressForAgent.apply)
-        }
-        val (emailFunc, emailInvFunc) = (computeFunctionality(emailRelation), computeInverseFunctionality(emailRelation))
-        val nameRelation = classes.zipWithIndex.map {
-          case (clazz, index) => index -> clazz.flatMap(x => agentRepresentativeMatchNames.apply(x).map(y => normalizeTerm(y._1)))
-        }
-        val (nameFunc, nameInvFunc) = (computeFunctionality(nameRelation), computeInverseFunctionality(nameRelation))
-        IndexedSeq(threshold.getOrElse(""), emailFunc, emailInvFunc, nameFunc, nameInvFunc).map(_.toString).mkString(",")
-    }
-    val functionalitiesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_functionalities_${IO.pathTimestamp}.csv")
-    Files.write(functionalitiesPath, functionalities.asJava, StandardCharsets.UTF_8)
-  }
-
-  def computeFunctionality[X, Y](instances: Traversable[(X, Traversable[Y])]) = {
-    instances.count(_._2.nonEmpty).toDouble / Math.max(instances.map(_._2.size).sum, 1).toDouble
-  }
-
-  def computeInverseFunctionality[X, Y](instances: Traversable[(X, Traversable[Y])]) = {
-    computeFunctionality(instances.view.flatMap {
-      case (x, yS) => yS.map {
-        y => (y, x)
-      }
-    }.groupBy(_._1).map {
-      case (y, g) => y -> g.map(_._2).toSet.toIndexedSeq
-    })
-  }
-
-  private def saveClassSizes(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
-                             emailAddressForAgent: Resource => Traversable[String]) = {
-    def save(classSizes: IndexedSeq[(Option[BigDecimal], Int, Int)], suffix: String = "") {
-      val results = classSizes.view.map {
-        case (threshold, classSize, classCount) =>
-          Vector(threshold.map(_.toString).getOrElse(""), classSize, classCount).mkString(",")
-      }
-      val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_class-sizes${suffix}_${IO.pathTimestamp}.csv")
-      Files.write(path, results.asJava, StandardCharsets.UTF_8)
-    }
-    var classSizesBuilder = IndexedSeq.newBuilder[(Option[BigDecimal], Int, Int)]
-    var uniqueClassSizesBuilder = IndexedSeq.newBuilder[(Option[BigDecimal], Int, Int)]
-    equivalentClasses.foreach {
-      case (threshold, classes) =>
-        classSizesBuilder ++= buildClassSizes(threshold, classes)
-        uniqueClassSizesBuilder ++= buildUniqueEmailClassSizes(threshold, classes, emailAddressForAgent)
-    }
-    save(classSizesBuilder.result())
-    save(uniqueClassSizesBuilder.result(), "_unique-emails")
-  }
-
-  private def buildUniqueEmailClassSizes(threshold: Option[BigDecimal],
-                                         classes: IndexedSeq[Set[Resource]],
-                                         emailAddress: Resource => Traversable[String]) = {
-    val emailClasses = classes.map {
-      clazz => clazz.flatMap(emailAddress)
-    }
-    val distinctEmails = emailClasses.flatten.distinct.sorted
-    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_distinct-emails_${threshold}_${IO.pathTimestamp}.csv")
-    Files.write(path, distinctEmails.asJava, StandardCharsets.UTF_8)
-    classes.map {
-      clazz =>
-        val clazzEmailAddresses = clazz.toIndexedSeq.map(emailAddress)
-        clazzEmailAddresses.flatten.distinct.size
-    }.groupBy(identity).map {
-      case (classSize, classesForClassSize) =>
-        (threshold, classSize, classesForClassSize.size)
-    }.toIndexedSeq.sortBy(_._2)
-  }
-
-  private def buildClassSizes(threshold: Option[BigDecimal], classes: IndexedSeq[Set[Resource]]) = {
-    classes.groupBy(_.size).map {
-      case (classSize, classesForClassSize) =>
-        (threshold, classSize, classesForClassSize.size)
-    }.toIndexedSeq.sortBy(_._2)
   }
 
   private def generateEquivalentClasses(baseAgentRepresentative: Traversable[(Resource, Resource)],
@@ -468,108 +373,6 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
     })
       .toMap
       .withDefault(Set(_)), connectedComponents)
-  }
-
-  private def parseSamplesFromFile(path: String,
-                                   uriStringToResource: String => Resource) = {
-    val reader = new CSVReader(new BufferedReader(new InputStreamReader(new FileInputStream(path), "UTF-8"), 4096))
-    val builder = IndexedSeq.newBuilder[(Option[BigDecimal], Resource, Resource)]
-    reader.forEach(new Consumer[Array[String]] {
-      override def accept(t: Array[String]): Unit = {
-        val rawThreshold = t(0)
-        val threshold = if (rawThreshold.isEmpty) {
-          None
-        } else {
-          Some(BigDecimal(rawThreshold))
-        }
-        val agent1 = uriStringToResource(t(1))
-        val agent2 = uriStringToResource(t(2))
-        builder += ((threshold, agent1, agent2))
-      }
-    })
-    builder.result()
-  }
-
-  private def evaluateSamples(samples: IndexedSeq[(Option[BigDecimal], Resource, Resource)],
-                              equivalentClasses: Seq[(Option[BigDecimal], Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])]) = {
-    equivalentClasses.view.flatMap {
-      case (threshold, map, classes) =>
-        samples.map {
-          case (sampleThreshold, resource1, resource2) =>
-            (threshold, sampleThreshold, resource1, resource2, map(resource1) == map(resource2))
-        }
-    }
-  }
-
-  private def generateSamples(equivalentClasses: Seq[(Option[BigDecimal], Map[Resource, Set[Resource]], IndexedSeq[Set[Resource]])],
-                              nSamples: Int) = {
-    implicit val random = Random
-    val baseMap: Map[Resource, Set[Resource]] = Map().withDefault(Set(_))
-    equivalentClasses.foldLeft((IndexedSeq(): IndexedSeq[(Option[BigDecimal], Long, IndexedSeq[(Resource, Resource)])], baseMap)) {
-      case ((v, previousMap), (threshold, map, classes)) =>
-        val (samples, sampleGroupSize) = equalitySampler(previousMap, classes).map {
-          case (sampler, samplerSize) =>
-            val samples = if (nSamples >= samplerSize) {
-              val s = sampler.all().toIndexedSeq
-              assert(s.size == samplerSize)
-              s
-            } else {
-              (1 to nSamples).map {
-                _ => sampler.draw()
-              }
-            }
-            assert(samples.map { case (agent1, agent2) => map(agent1) == map(agent2) }.forall(identity))
-            (samples, samplerSize)
-        }.getOrElse((IndexedSeq.empty, 0L))
-        (v :+(threshold, sampleGroupSize, samples), map)
-    }._1
-  }
-
-  private def equalitySampler(previousEquivalenceMap: Map[Resource, Set[Resource]],
-                              classes: IndexedSeq[Set[Resource]])(implicit random: Random): Option[(DiscreteRand[(Resource, Resource)], Long)] = {
-    val subClassSamplers = classes.flatMap {
-      case clazz =>
-        val subClasses = clazz.map(previousEquivalenceMap).toIndexedSeq.map {
-          case subClass => (Rand.uniform(subClass.toIndexedSeq), subClass.size.toLong)
-        }
-        if (subClasses.size >= 2) {
-          val (randomSubClassPair, count) = Rand.shuffleTwoWeightedOrdered(subClasses)
-          Some((new DiscreteRand[(Resource, Resource)] {
-            override def draw(): (Resource, Resource) = randomSubClassPair.draw() match {
-              case (class1, class2) => (class1.draw(), class2.draw())
-            }
-
-            override def all(): Traversable[(Resource, Resource)] = {
-              randomSubClassPair.all().flatMap {
-                case (e1Sampler, e2Sampler) =>
-                  e1Sampler.all().flatMap {
-                    e1 => e2Sampler.all().map {
-                      e2 => (e1, e2)
-                    }
-                  }
-              }
-            }
-          }, count))
-        } else {
-          None
-        }
-    }
-    if (subClassSamplers.isEmpty) {
-      None
-    } else {
-      val cumulative = Rand.cumulative(subClassSamplers)
-      Some((new DiscreteRand[(Resource, Resource)] {
-        override def draw(): (Resource, Resource) = {
-          cumulative.draw().draw()
-        }
-
-        def all(): Traversable[(Resource, Resource)] = {
-          cumulative.all().flatMap {
-            _.all()
-          }
-        }
-      }, cumulative.size))
-    }
   }
 
   /**
@@ -817,7 +620,7 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       ("content", "content", "string")
     ))
 
-    GraphML.write(Paths.get(s"data/agent-attribute-identity-resolution-enricher_name-part-types_${IO.pathTimestamp}.graphml"),
+    GraphML.write(Paths.get(s"${outputFilePrefix}_name-part-types_${IO.pathTimestamp}.graphml"),
       GraphML.graph("nameParts", directed = false, keys, serializedNodes, serializedEdges))
   }
 
@@ -1338,30 +1141,10 @@ class AgentAttributeIdentityResolutionEnricher(repositoryConnection: RepositoryC
       case (agent1, agent2, probability) =>
         Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
     }
-    val path = Paths.get(s"data/agent-attribute-identity-resolution-enricher_${IO.pathTimestamp}.csv")
+    val path = Paths.get(s"$outputFilePrefix${IO.pathTimestamp}.csv")
     Files.write(path, results.asJava, StandardCharsets.UTF_8)
   }
 
-
-  private def saveSamplesToFile(samples: Traversable[(Option[BigDecimal], Long, Traversable[(Resource, Resource)])]) {
-    val timestamp = IO.pathTimestamp
-    val sampleEqualitiesOutput = samples.flatMap {
-      case (threshold, size, samplesForThreshold) =>
-        samplesForThreshold.groupBy(identity).map {
-          case ((resource1, resource2), g) => (threshold.map(_.toString).getOrElse("Infinity"),
-            resource1.stringValue(),
-            resource2.stringValue(),
-            g.size.toString).productIterator.mkString(",")
-        }
-    }.mkString("\n")
-    val sampleEqualitiesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_samples_$timestamp.csv")
-    Files.write(sampleEqualitiesPath, sampleEqualitiesOutput.getBytes(StandardCharsets.UTF_8))
-    val sampleGroupSizes = samples.map {
-      case (threshold, size, _) => (threshold.map(_.toString).getOrElse("Infinity"), size.toString).productIterator.mkString(",")
-    }.mkString("\n")
-    val sampleGroupSizesPath = Paths.get(s"data/agent-attribute-identity-resolution-enricher_samples-group-sizes_$timestamp.csv")
-    Files.write(sampleGroupSizesPath, sampleGroupSizes.getBytes(StandardCharsets.UTF_8))
-  }
 
   /**
     *

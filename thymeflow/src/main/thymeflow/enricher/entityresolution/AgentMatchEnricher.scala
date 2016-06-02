@@ -80,9 +80,9 @@ class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
                          outputSimilarities: Boolean = false,
                          outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
 
-  protected val outputFilePrefix = "data/agent-attribute-identity-resolution-enricher"
+  protected val outputFilePrefix = "data/agent-match-enricher"
   private val valueFactory = repositoryConnection.getValueFactory
-  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentAttributeIdentityResolutionEnricher")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentMatchEnricher")
 
   private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?sameAs WHERE {

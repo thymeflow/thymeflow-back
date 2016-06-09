@@ -63,7 +63,8 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def getStoreFolders(store: Store): Iterable[Folder] = {
-      Seq(store.getFolder("INBOX")) //TODO: import all folders?
+      store.getDefaultFolder.list().filter(holdsInterestingMessages)
+      //Seq(store.getFolder("INBOX")) //TODO: import all folders?
     }
 
     private def holdsInterestingMessages(folder: Folder): Boolean = {
@@ -112,22 +113,19 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def deliverAction(action: ImapAction): Unit = {
+      queue.enqueue(action)
       deliverWaitingActions()
-
-      if (waitingForData && queue.isEmpty) {
-        onNext(documentForAction(action))
-      } else {
-        queue.enqueue(action)
-      }
     }
 
     private def deliverWaitingActions(): Unit = {
-      val queueWasNonEmpty = queue.nonEmpty
-      while (waitingForData && queue.nonEmpty) {
-        onNext(documentForAction(queue.dequeue()))
-      }
-      if (queueWasNonEmpty && queue.isEmpty) {
-        logger.info(s"Emails importation finished with $numberOfSent messages imported")
+      synchronized { //TODO: avoid
+        val queueWasNonEmpty = queue.nonEmpty
+        while (waitingForData && queue.nonEmpty) {
+          onNext(documentForAction(queue.dequeue()))
+        }
+        if (queueWasNonEmpty && queue.isEmpty) {
+          logger.info(s"Emails importation finished with $numberOfSent messages imported")
+        }
       }
     }
 

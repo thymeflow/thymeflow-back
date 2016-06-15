@@ -8,6 +8,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{StatusCodes, Uri}
 import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
+import com.typesafe.config.ConfigFactory
 import org.apache.commons.io.IOUtils
 import org.openrdf.repository.Repository
 import thymeflow.Pipeline
@@ -21,12 +22,13 @@ import scala.concurrent.duration.Duration
   */
 trait Api extends App with SparqlService {
 
-  private val redirectionTarget = Uri("http://localhost:4200")
-  //TODO: avoid to hardcode the URI
-  private val googleOAuth = OAuth2.Google("http://localhost:8080/oauth/google/token")
-  //TODO: avoid to hardcode the URI
-  private val microsoftOAuth = OAuth2.Microsoft("http://localhost:8080/oauth/microsoft/token")
-  //TODO: avoid to hardcode the URI
+  private val config = ConfigFactory.load()
+
+  private val backendUri = Uri(s"${config.getString("thymeflow.http.backend-uri")}")
+  private val frontendUri = Uri(s"${config.getString("thymeflow.http.frontend-uri")}")
+  private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
+  private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
+
   private val route = {
     path("sparql") {
       sparqlRoute
@@ -45,7 +47,7 @@ trait Api extends App with SparqlService {
               parameter('code) { code =>
                 logger.info(s"Google token received at time $durationSinceStart")
                 googleOAuth.getAccessToken(code).foreach(tokenRenewal(_, onGoogleToken))
-                redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+                redirect(frontendUri, StatusCodes.TemporaryRedirect)
               }
             }
         } ~
@@ -57,7 +59,7 @@ trait Api extends App with SparqlService {
                 parameter('code) { code =>
                   logger.info(s"Microsoft token received at time $durationSinceStart")
                   microsoftOAuth.getAccessToken(code).foreach(tokenRenewal(_, onMicrosoftToken))
-                  redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+                  redirect(frontendUri, StatusCodes.TemporaryRedirect)
                 }
               }
           }
@@ -78,7 +80,7 @@ trait Api extends App with SparqlService {
               case e: MessagingException => logger.error(e.getLocalizedMessage, e)
                 complete(StatusCodes.InternalServerError, "IMAP error: " + e.getLocalizedMessage)
             }
-            redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+            redirect(frontendUri, StatusCodes.TemporaryRedirect)
           }
         }
       } ~
@@ -89,7 +91,7 @@ trait Api extends App with SparqlService {
             pipeline.addSource(
               FileSynchronizer.Config(file, Some(fileInfo.contentType.mediaType.value))
             )
-            redirect(redirectionTarget, StatusCodes.TemporaryRedirect)
+            redirect(frontendUri, StatusCodes.TemporaryRedirect)
         }
       }
   }
@@ -98,9 +100,7 @@ trait Api extends App with SparqlService {
 
   protected def repository: Repository
 
-  Http().bindAndHandle(route, "localhost", 8080)
-
-  //TODO: make it configurable
+  Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
 
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)

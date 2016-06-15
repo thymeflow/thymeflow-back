@@ -6,6 +6,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
+import com.typesafe.config.ConfigFactory
 import spray.json.DefaultJsonProtocol
 import thymeflow.actors._
 
@@ -14,19 +15,21 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 object OAuth2 {
+  private val config = ConfigFactory.load()
+
   def Google(redirectUri: String) = new OAuth2(
     "https://accounts.google.com/o/oauth2/v2/auth",
     "https://www.googleapis.com/oauth2/v4/token",
-    "503500000487-nutchjm39fo3p5l171cqo1k5lsprjpau.apps.googleusercontent.com",
-    "39tNR9btCqLNKIriJFY28Yop", //TODO: remove before making the repository public
+    clientId = config.getString("thymeflow.oauth.google.client-id"),
+    clientSecret = config.getString("thymeflow.oauth.google.client-secret"),
     redirectUri
   )
 
   def Microsoft(redirectUri: String) = new OAuth2(
     "https://login.live.com/oauth20_authorize.srf", //https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     "https://login.live.com/oauth20_token.srf", //"https://login.microsoftonline.com/common/oauth2/v2.0/token",
-    "0000000044185A2B",
-    "O0RVtj-cfkiINpVVdc-LrF-3euqHf2cW", //TODO: remove before making the repository public
+    clientId = config.getString("thymeflow.oauth.microsoft.client-id"),
+    clientSecret = config.getString("thymeflow.oauth.microsoft.client-secret"),
     redirectUri
   )
 

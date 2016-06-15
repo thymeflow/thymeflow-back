@@ -15,3 +15,6 @@ project/plugins/project/
 .idea
 
 /data
+
+# TypeSafe Config
+application.conf

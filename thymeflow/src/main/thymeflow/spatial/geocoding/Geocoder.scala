@@ -36,7 +36,7 @@ object Geocoder {
     * @param geocoder the geocoder to cache
     * @return a Geocoder that caches responses
     */
-  def cached(geocoder: Geocoder, persistantCacheFile: Option[File] = None) = new CachedGeocoder(geocoder, persistantCacheFile)
+  def cached(geocoder: Geocoder, persistentCacheFile: Option[File] = None) = new CachedGeocoder(geocoder, persistentCacheFile)
 
   /**
     * Geocoder client for Google Maps API

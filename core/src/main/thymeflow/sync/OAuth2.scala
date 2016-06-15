@@ -6,7 +6,6 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import com.typesafe.config.ConfigFactory
 import spray.json.DefaultJsonProtocol
 import thymeflow.actors._
 
@@ -15,7 +14,8 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 object OAuth2 {
-  private val config = ConfigFactory.load()
+
+  private val config = thymeflow.config.default
 
   def Google(redirectUri: String) = new OAuth2(
     "https://accounts.google.com/o/oauth2/v2/auth",

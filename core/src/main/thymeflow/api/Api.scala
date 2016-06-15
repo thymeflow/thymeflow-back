@@ -8,7 +8,6 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{StatusCodes, Uri}
 import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
-import com.typesafe.config.ConfigFactory
 import org.apache.commons.io.IOUtils
 import org.openrdf.repository.Repository
 import thymeflow.Pipeline
@@ -22,7 +21,7 @@ import scala.concurrent.duration.Duration
   */
 trait Api extends App with SparqlService {
 
-  private val config = ConfigFactory.load()
+  private val config = thymeflow.config.default
 
   private val backendUri = Uri(s"${config.getString("thymeflow.http.backend-uri")}")
   private val frontendUri = Uri(s"${config.getString("thymeflow.http.frontend-uri")}")

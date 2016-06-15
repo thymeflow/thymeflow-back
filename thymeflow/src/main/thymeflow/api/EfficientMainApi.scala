@@ -8,6 +8,7 @@ import thymeflow.enricher._
 import thymeflow.rdf.model.vocabulary.Personal
 import thymeflow.rdf.{FileSynchronization, RepositoryFactory}
 import thymeflow.spatial.geocoding.Geocoder
+import thymeflow.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 import thymeflow.{Pipeline, Thymeflow}
 
 import scala.concurrent.duration._
@@ -36,6 +37,12 @@ object EfficientMainApi extends Api {
     Thymeflow.setupSynchronizers()
     new Pipeline(
       repository.getConnection,
+      List(
+        FileSynchronizer.source(repository.getValueFactory),
+        CalDavSynchronizer.source(repository.getValueFactory),
+        CardDavSynchronizer.source(repository.getValueFactory),
+        EmailSynchronizer.source(repository.getValueFactory)
+      ),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))

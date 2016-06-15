@@ -28,6 +28,7 @@ object Thymeflow extends StrictLogging {
     setupSynchronizers()
     val pipeline = new Pipeline(
       repository.getConnection,
+      List(FileSynchronizer.source(repository.getValueFactory)),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))

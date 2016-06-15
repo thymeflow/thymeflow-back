@@ -12,7 +12,6 @@ import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
-import thymeflow.sync._
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
@@ -21,7 +20,7 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Flow[ModelDiff, ModelDiff, _])
+class Pipeline(repositoryConnection: RepositoryConnection, sources: Traversable[Source[Document, ActorRef]], enrichers: Flow[ModelDiff, ModelDiff, _])
   extends StrictLogging {
 
   private val actorRefs = buildSource()
@@ -35,22 +34,17 @@ class Pipeline(repositoryConnection: RepositoryConnection, enrichers: Flow[Model
   }
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
-    //TODO: find a way to not hardcode synchronizers
-    val valueFactory = repositoryConnection.getValueFactory
+    sources
+      .map(_.mapMaterializedValue(List(_)))
+      .reduce[Source[Document, List[ActorRef]]](joinSources[Document, ActorRef]) //TODO: balanced tree?
+  }
 
-    val files = FileSynchronizer.source(valueFactory)
-    val calDav = CalDavSynchronizer.source(valueFactory)
-    val cardDav = CardDavSynchronizer.source(valueFactory)
-    val emails = EmailSynchronizer.source(valueFactory)
-    Source.fromGraph[Document, List[ActorRef]](GraphDSL.create(files, calDav, cardDav, emails)(List(_, _, _, _)) { implicit builder =>
-      (files, calDav, cardDav, emails) =>
-        val merge = builder.add(Merge[Document](4))
-        files ~> merge
-        calDav ~> merge
-        cardDav ~> merge
-        emails ~> merge
-
-        SourceShape(merge.out)
+  private def joinSources[Out, Mat](s1: Source[Out, List[Mat]], s2: Source[Out, List[Mat]]): Source[Out, List[Mat]] = {
+    Source.fromGraph[Out, List[Mat]](GraphDSL.create(s1, s2)(_ ++ _) { implicit builder => (s1, s2) =>
+      val merge = builder.add(Merge[Out](2))
+      s1 ~> merge
+      s2 ~> merge
+      SourceShape(merge.out)
     })
   }
 

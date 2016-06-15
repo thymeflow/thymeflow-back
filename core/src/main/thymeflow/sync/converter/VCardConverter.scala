@@ -25,8 +25,8 @@ import scala.collection.JavaConverters._
 class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
-  private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, "FR")
-  //TODO: guess?
+  // TODO: Guess the phone number region
+  private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, thymeflow.config.default.getString("thymeflow.converter.vcard.phone-number-default-region"))
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 

@@ -1,6 +1,6 @@
 package thymeflow.graph
 
-import thymeflow.utilities.pqueue.FiedlerFibonacciHeap
+import thymeflow.utilities.pqueue.FibonacciHeap
 
 import scala.collection.mutable
 
@@ -50,7 +50,7 @@ object FlowAlgorithms {
     var totalFlow = 0d
     var totalCost = 0d
     val ordering = implicitly[Ordering[Double]]
-    val q = new FiedlerFibonacciHeap[NODE, Double]()(ordering)
+    val q = new FibonacciHeap[NODE, Double]()(ordering)
     var b = true
     while (b && totalFlow < maxFlow) {
       q.clear()

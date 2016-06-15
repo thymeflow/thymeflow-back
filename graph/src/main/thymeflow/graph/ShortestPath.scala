@@ -1,7 +1,7 @@
 package thymeflow.graph
 
 import com.typesafe.scalalogging.StrictLogging
-import thymeflow.utilities.pqueue.FiedlerFibonacciHeap
+import thymeflow.utilities.pqueue.FibonacciHeap
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -219,7 +219,7 @@ class ShortestPath[NODE, EDGE_OPTIONAL, @specialized(Int, Double) W] private
       heuristic(heuristicTargets)
     }
     // initialize PriorityQueue
-    val priorityQueue = new FiedlerFibonacciHeap[NODE, W]
+    val priorityQueue = new FibonacciHeap[NODE, W]
     // set of NODES that have been visited, we assume the heuristic is MONOTONIC
     val visited = new java.util.HashSet[NODE]().asScala
     // NODE -> Distance Map
@@ -227,7 +227,7 @@ class ShortestPath[NODE, EDGE_OPTIONAL, @specialized(Int, Double) W] private
     // NODE -> PARENT_NODE Map in Shortest-Path Tree
     val parent = new mutable.OpenHashMap[NODE, T]()
 
-    val priorityQueueGraphNodeToPQueueNodeMap = new mutable.OpenHashMap[NODE, FiedlerFibonacciHeap.Node[NODE, W]]()
+    val priorityQueueGraphNodeToPQueueNodeMap = new mutable.OpenHashMap[NODE, FibonacciHeap.Node[NODE, W]]()
 
     startNodes.foreach {
       startNode =>

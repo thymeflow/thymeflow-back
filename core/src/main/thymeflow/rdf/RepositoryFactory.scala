@@ -16,8 +16,8 @@ import org.openrdf.sail.lucene4.LuceneIndex
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
 import org.openrdf.{IsolationLevel, IsolationLevels}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 import thymeflow.rdf.query.algebra.evaluation.function
+import thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 
 import scala.concurrent.duration.Duration
 
@@ -26,33 +26,31 @@ import scala.concurrent.duration.Duration
   */
 object RepositoryFactory extends StrictLogging {
 
-  private val storePersistenceSyncDelay = 1000
-
-  def initializedMemoryRepository(
-                                   snapshotCleanupStore: Boolean = true,
-                                   owlInference: Boolean = true,
-                                   lucene: Boolean = true,
-                                   persistenceDirectory: Option[File] = None,
-                                   isolationLevel: IsolationLevel = IsolationLevels.NONE
-                                 ): Repository = {
+  def initializedMemoryRepository(snapshotCleanupStore: Boolean = true,
+                                  owlInference: Boolean = true,
+                                  fullTextSearch: Boolean = true,
+                                  dataDirectory: File,
+                                  persistToDisk: Boolean = false,
+                                  persistenceSyncDelay: Long = 1000,
+                                  isolationLevel: IsolationLevel = IsolationLevels.NONE): Repository = {
     val initializationStart = System.currentTimeMillis()
     logger.info("Start initializing memory store")
 
     val store = if (snapshotCleanupStore) {
       val store = new MemoryStore()
-      store.setPersist(persistenceDirectory.isDefined)
-      store.setSyncDelay(storePersistenceSyncDelay)
+      store.setPersist(persistToDisk)
+      store.setSyncDelay(persistenceSyncDelay)
       store
     } else {
       val store = new SimpleMemoryStore()
-      store.setPersist(persistenceDirectory.isDefined)
-      store.setSyncDelay(storePersistenceSyncDelay)
+      store.setPersist(persistToDisk)
+      store.setSyncDelay(persistenceSyncDelay)
       store
     }
     store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = new SailRepository(addLucene(addInferencer(store, owlInference), lucene))
-    persistenceDirectory.foreach(repository.setDataDir)
+    val repository = new SailRepository(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch))
+    repository.setDataDir(dataDirectory)
     repository.initialize()
 
     val repositoryConnection = repository.getConnection
@@ -65,8 +63,8 @@ object RepositoryFactory extends StrictLogging {
     repository
   }
 
-  private def addLucene(store: NotifyingSail, withElasticSearch: Boolean): NotifyingSail = {
-    if (withElasticSearch) {
+  private def addFullTextSearch(store: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {
+    if (withFullTextSearch) {
       val luceneSail = new LuceneSail()
       luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
       luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")

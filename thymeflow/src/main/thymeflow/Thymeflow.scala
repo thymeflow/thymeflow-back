@@ -1,15 +1,17 @@
 package thymeflow
 
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.StrictLogging
+import org.openrdf.repository.Repository
 import thymeflow.enricher._
 import thymeflow.rdf.RepositoryFactory
 import thymeflow.spatial.geocoding.Geocoder
-import thymeflow.sync.FileSynchronizer
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
+import thymeflow.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
-import scala.concurrent.duration._
+import scala.concurrent.duration.{Duration, _}
 import scala.language.postfixOps
 
 /**
@@ -19,16 +21,36 @@ import scala.language.postfixOps
 object Thymeflow extends StrictLogging {
 
   def main(args: Array[String]) {
+    val config = thymeflow.config.default
+    val repository = RepositoryFactory.initializedMemoryRepository(
+      dataDirectory = new File(config.getString("thymeflow.cli.repository.data-directory")),
+      persistToDisk = config.getBoolean("thymeflow.cli.repository.persist-to-disk"),
+      fullTextSearch = config.getBoolean("thymeflow.cli.repository.full-text-search"),
+      snapshotCleanupStore = config.getBoolean("thymeflow.cli.repository.snapshot-cleanup-store"),
+      owlInference = config.getBoolean("thymeflow.cli.repository.owl-inference")
+    )
+    val pipeline = initializePipeline(repository)
+    args.map(x => FileSynchronizer.Config(new File(x))).foreach {
+      config => pipeline.addSource(config)
+    }
+  }
+
+  def initializePipeline(repository: Repository) = {
     val geocoder = Geocoder.cached(
       Geocoder.googleMaps(),
       Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/geocoder-google-cache"))
     )
 
-    val repository = RepositoryFactory.initializedMemoryRepository(snapshotCleanupStore = false, owlInference = false, lucene = false)
     setupSynchronizers()
-    val pipeline = new Pipeline(
+    val pipelineStartTime = System.currentTimeMillis()
+    new Pipeline(
       repository.getConnection,
-      List(FileSynchronizer.source(repository.getValueFactory)),
+      List(
+        FileSynchronizer.source(repository.getValueFactory),
+        CalDavSynchronizer.source(repository.getValueFactory),
+        CardDavSynchronizer.source(repository.getValueFactory),
+        EmailSynchronizer.source(repository.getValueFactory)
+      ),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))
@@ -37,10 +59,12 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
         .via(Pipeline.enricherToFlow(new AgentMatchEnricher(repository.getConnection)))
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.getConnection)))
+        .map(diff => {
+          val durationSinceStart = Duration(System.currentTimeMillis() - pipelineStartTime, TimeUnit.MILLISECONDS)
+          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")
+          diff
+        })
     )
-    args.map(x => FileSynchronizer.Config(new File(x))).foreach {
-      config => pipeline.addSource(config)
-    }
   }
 
   def setupSynchronizers() = {

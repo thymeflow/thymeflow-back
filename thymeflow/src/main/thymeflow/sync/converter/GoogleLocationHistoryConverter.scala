@@ -3,12 +3,11 @@ package thymeflow.sync.converter
 import java.io.InputStream
 import java.time.Instant
 
-import com.fasterxml.jackson.databind.SerializationFeature
 import com.typesafe.scalalogging.StrictLogging
-import org.json4s._
-import org.json4s.jackson.JsonMethods._
+import org.apache.commons.io.IOUtils
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{Model, Resource, ValueFactory}
+import spray.json.{DefaultJsonProtocol, DeserializationException, JsValue, JsonParser}
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.sync.converter.utils.GeoCoordinatesConverter
@@ -17,48 +16,26 @@ import thymeflow.utilities.ExceptionUtils
 /**
   * @author David Montoya
   */
-// The following classes (Location/LocationHistory) must not be within an object/class scope
-// otherwise Json4s won't be able to parse extract them using Reflection.
-private case class Location(timestampMs: String,
-                            latitudeE7: Long,
-                            longitudeE7: Long,
-                            accuracy: Option[Float],
-                            velocity: Option[Float],
-                            altitude: Option[Double],
-                            heading: Option[Float]) {
-  def longitude = longitudeE7 / 1e7
-
-  def latitude = latitudeE7 / 1e7
-
-  def time =
-    try {
-      Some(Instant.ofEpochMilli(timestampMs.toLong))
-    } catch {
-      case e: NumberFormatException => None
-    }
-}
-
-private case class LocationHistory(locations: Seq[Location])
-
-
-class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
+class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging with DefaultJsonProtocol {
 
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
-  // Do not close inputStreams by default
-  org.json4s.jackson.JsonMethods.mapper.configure(SerializationFeature.CLOSE_CLOSEABLE, false)
 
-  private implicit val formats = DefaultFormats
+  implicit val locationFormat = jsonFormat7(Location)
+  implicit val locationHistoryFormat = jsonFormat1(LocationHistory)
 
-  // TODO: MappingException might be thrown by convert methods if JSON is invalid, should we wrap it?
   override def convert(str: String, context: Resource): Model = {
-    convert(parse(str).extract[LocationHistory], context)
+    convert(JsonParser(str), context)
   }
 
   override def convert(inputStream: InputStream, context: Resource): Model = {
+    convert(JsonParser(IOUtils.toByteArray(inputStream)), context)
+  }
+
+  private def convert(json: JsValue, context: Resource): Model = {
     try {
-      convert(parse(inputStream).extract[LocationHistory], context)
+      convert(json.convertTo[LocationHistory], context)
     } catch {
-      case e: MappingException =>
+      case e: DeserializationException =>
         logger.error(ExceptionUtils.getUnrolledStackTrace(e))
         new SimpleHashModel(valueFactory)
     }
@@ -68,7 +45,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
     converter.convert(locationHistory)
-    logger.info("Extraction of " + locationHistory.locations.size + " locations done.")
+    logger.info("Extraction of " + locationHistory.locations.length + " locations done.")
     model
   }
 
@@ -102,3 +79,24 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
     }
   }
 }
+
+private[converter] case class Location(timestampMs: String,
+                                       latitudeE7: Long,
+                                       longitudeE7: Long,
+                                       accuracy: Option[Float],
+                                       velocity: Option[Float],
+                                       altitude: Option[Double],
+                                       heading: Option[Float]) {
+  def longitude = longitudeE7 / 1e7
+
+  def latitude = latitudeE7 / 1e7
+
+  def time =
+    try {
+      Some(Instant.ofEpochMilli(timestampMs.toLong))
+    } catch {
+      case e: NumberFormatException => None
+    }
+}
+
+private[converter] case class LocationHistory(locations: Array[Location])

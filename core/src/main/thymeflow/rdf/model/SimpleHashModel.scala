@@ -11,7 +11,7 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance(), statements: util.Set[Statement] = SimpleHashModel.empty)
+class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance(), statements: util.Set[Statement] = Collections.emptySet())
   extends util.HashSet[Statement](statements) with Model {
 
   override def add(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {

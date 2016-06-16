@@ -24,6 +24,7 @@ import scala.language.postfixOps
 object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   private val ignoredFolderNames = Array("Junk", "Deleted", "Deleted Messages", "Spam")
+
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
@@ -32,7 +33,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
   private class Publisher(valueFactory: ValueFactory) extends BasePublisher {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val queue = new mutable.Queue[ImapAction]
+    private val actionsQueue = new mutable.Queue[ImapAction]
     private val folders = new mutable.HashMap[URLName, Folder]()
     private val fetchProfile = {
       val profile = new FetchProfile()
@@ -113,17 +114,21 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def deliverAction(action: ImapAction): Unit = {
-      queue.enqueue(action)
+      actionsQueue.enqueue(action)
       deliverWaitingActions()
     }
 
     private def deliverWaitingActions(): Unit = {
       synchronized { //TODO: avoid
-        val queueWasNonEmpty = queue.nonEmpty
-        while (waitingForData && queue.nonEmpty) {
-          onNext(documentForAction(queue.dequeue()))
+        if (!waitingForData) {
+          return
         }
-        if (queueWasNonEmpty && queue.isEmpty) {
+        val queuesWereNonEmpty = actionsQueue.nonEmpty
+        (1L to math.min(totalDemand, actionsQueue.size))
+          .map(_ => actionsQueue.dequeue())
+          .par.map(documentForAction).seq
+          .foreach(onNext)
+        if (queuesWereNonEmpty && actionsQueue.isEmpty) {
           logger.info(s"Emails importation finished with $numberOfSent messages imported")
         }
       }

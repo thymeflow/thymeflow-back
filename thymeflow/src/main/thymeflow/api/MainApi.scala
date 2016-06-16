@@ -3,7 +3,6 @@ package thymeflow.api
 
 import java.io.File
 
-import org.openrdf.IsolationLevels
 import thymeflow.Thymeflow
 import thymeflow.rdf.model.vocabulary.Personal
 import thymeflow.rdf.{FileSynchronization, RepositoryFactory}
@@ -15,14 +14,21 @@ import scala.language.postfixOps
   */
 object MainApi extends Api {
 
-  override protected lazy val repository = RepositoryFactory.initializedMemoryRepository(
-    dataDirectory = new File(config.getString("thymeflow.api.repository.data-directory")),
-    persistToDisk = config.getBoolean("thymeflow.api.repository.persist-to-disk"),
-    fullTextSearch = config.getBoolean("thymeflow.api.repository.full-text-search"),
-    snapshotCleanupStore = config.getBoolean("thymeflow.api.repository.snapshot-cleanup-store"),
-    owlInference = config.getBoolean("thymeflow.api.repository.owl-inference"),
-    isolationLevel = IsolationLevels.NONE
-  )
+  override protected lazy val repository = if (config.getBoolean("thymeflow.api.repository.disk")) {
+    RepositoryFactory.initializedDiskRepository(
+      dataDirectory = new File(config.getString("thymeflow.api.repository.data-directory")),
+      fullTextSearch = config.getBoolean("thymeflow.api.repository.full-text-search"),
+      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference")
+    )
+  } else {
+    RepositoryFactory.initializedMemoryRepository(
+      dataDirectory = new File(config.getString("thymeflow.api.repository.data-directory")),
+      persistToDisk = config.getBoolean("thymeflow.api.repository.persist-to-disk"),
+      fullTextSearch = config.getBoolean("thymeflow.api.repository.full-text-search"),
+      snapshotCleanupStore = config.getBoolean("thymeflow.api.repository.snapshot-cleanup-store"),
+      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference")
+    )
+  }
   override protected lazy val pipeline = Thymeflow.initializePipeline(repository)
   protected val config = thymeflow.config.default
 

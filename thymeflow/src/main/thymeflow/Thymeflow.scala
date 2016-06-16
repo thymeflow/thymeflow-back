@@ -11,7 +11,7 @@ import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
 import thymeflow.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
 
-import scala.concurrent.duration.{Duration, _}
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
@@ -22,13 +22,21 @@ object Thymeflow extends StrictLogging {
 
   def main(args: Array[String]) {
     val config = thymeflow.config.default
-    val repository = RepositoryFactory.initializedMemoryRepository(
-      dataDirectory = new File(config.getString("thymeflow.cli.repository.data-directory")),
-      persistToDisk = config.getBoolean("thymeflow.cli.repository.persist-to-disk"),
-      fullTextSearch = config.getBoolean("thymeflow.cli.repository.full-text-search"),
-      snapshotCleanupStore = config.getBoolean("thymeflow.cli.repository.snapshot-cleanup-store"),
-      owlInference = config.getBoolean("thymeflow.cli.repository.owl-inference")
-    )
+    val repository = if (config.getBoolean("thymeflow.cli.repository.disk")) {
+      RepositoryFactory.initializedDiskRepository(
+        dataDirectory = new File(config.getString("thymeflow.cli.repository.data-directory")),
+        fullTextSearch = config.getBoolean("thymeflow.cli.repository.full-text-search"),
+        owlInference = config.getBoolean("thymeflow.cli.repository.owl-inference")
+      )
+    } else {
+      RepositoryFactory.initializedMemoryRepository(
+        dataDirectory = new File(config.getString("thymeflow.cli.repository.data-directory")),
+        persistToDisk = config.getBoolean("thymeflow.cli.repository.persist-to-disk"),
+        fullTextSearch = config.getBoolean("thymeflow.cli.repository.full-text-search"),
+        snapshotCleanupStore = config.getBoolean("thymeflow.cli.repository.snapshot-cleanup-store"),
+        owlInference = config.getBoolean("thymeflow.cli.repository.owl-inference")
+      )
+    }
     val pipeline = initializePipeline(repository)
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
       config => pipeline.addSource(config)

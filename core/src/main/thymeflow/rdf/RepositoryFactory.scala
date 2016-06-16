@@ -14,6 +14,7 @@ import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.lucene.LuceneSail
 import org.openrdf.sail.lucene4.LuceneIndex
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
+import org.openrdf.sail.nativerdf.NativeStore
 import org.openrdf.{IsolationLevel, IsolationLevels}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.query.algebra.evaluation.function
@@ -49,17 +50,39 @@ object RepositoryFactory extends StrictLogging {
     }
     store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = new SailRepository(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch))
-    repository.setDataDir(dataDirectory)
-    repository.initialize()
-
-    val repositoryConnection = repository.getConnection
-    addNamespacesToRepository(repositoryConnection)
-    loadOntology(repositoryConnection)
-    repositoryConnection.close()
+    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory)
 
     logger.info(s"Memory store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
 
+    repository
+  }
+
+  def initializedDiskRepository(owlInference: Boolean = true,
+                                fullTextSearch: Boolean = true,
+                                dataDirectory: File,
+                                isolationLevel: IsolationLevel = IsolationLevels.NONE): Repository = {
+    val initializationStart = System.currentTimeMillis()
+    logger.info("Start initializing memory store")
+
+    val store = new NativeStore()
+    store.setDefaultIsolationLevel(isolationLevel)
+
+    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory)
+
+    logger.info(s"Disk store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
+
+    repository
+  }
+
+  private def initializeRepository(store: NotifyingSail,
+                                   owlInference: Boolean = true,
+                                   fullTextSearch: Boolean = true,
+                                   dataDirectory: File): Repository = {
+
+    val repository = new SailRepository(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch))
+    repository.setDataDir(dataDirectory)
+    repository.initialize()
+    addBasicsToRepository(repository)
     repository
   }
 
@@ -81,6 +104,14 @@ object RepositoryFactory extends StrictLogging {
     } else {
       store
     }
+  }
+
+
+  private def addBasicsToRepository(repository: Repository): Unit = {
+    val repositoryConnection = repository.getConnection
+    addNamespacesToRepository(repositoryConnection)
+    loadOntology(repositoryConnection)
+    repositoryConnection.close()
   }
 
   private def addNamespacesToRepository(repositoryConnection: RepositoryConnection): Unit = {

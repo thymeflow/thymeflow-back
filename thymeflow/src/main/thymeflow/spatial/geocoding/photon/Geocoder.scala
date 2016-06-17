@@ -10,8 +10,8 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.{Unmarshal, Unmarshaller}
 import akka.stream.Materializer
 import com.typesafe.scalalogging.StrictLogging
-import org.json4s._
-import org.json4s.jackson.JsonMethods._
+import org.apache.commons.io.IOUtils
+import spray.json._
 import thymeflow.spatial.geographic.{Geography, Point}
 import thymeflow.spatial.{SimpleAddress, geocoding}
 
@@ -63,49 +63,44 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
     * @return a Traversable of Features
     */
   protected def parseResponse(data: InputStream): Traversable[geocoding.Feature] = {
-    // TODO: Use spray/akka.json instead of json4s here
-    val featureCollection = parse(data)
+    val featureCollection = JsonParser(IOUtils.toByteArray(data))
     val featureBuilder = Array.newBuilder[Feature]
-    featureCollection \ "features" match {
-      case JArray(features) =>
+    featureCollection.asJsObject.fields("features") match {
+      case JsArray(features) =>
         features.foreach {
-          featureJson =>
-            implicit val formats = org.json4s.DefaultFormats
-            val coordinates = (featureJson \ "geometry" \ "coordinates").extract[Seq[Double]]
+          case featureJson: JsObject =>
+            import DefaultJsonProtocol._
+            val coordinates = featureJson.fields("geometry").asJsObject.fields("coordinates").convertTo[Seq[Double]]
             val point = Geography.point(coordinates.head, coordinates.last)
             var address = SimpleAddress()
             var source = Photon()
             var feature = Feature(point = point, address = address, source = source)
-            featureJson \ "properties" match {
-              case JObject(properties) =>
-                properties.foreach {
-                  case ("osm_key", string: JString) =>
-                    source = source.copy(osmKey = string.s)
-                  case ("osm_id", int: JInt) =>
-                    source = source.copy(osmId = int.num.toLong)
-                  case ("osm_type", string: JString) =>
-                    source = source.copy(osmType = string.s)
-                  case ("osm_value", string: JString) =>
-                    source = source.copy(osmValue = string.s)
-                  case ("country", string: JString) =>
-                    address = address.copy(country = Some(string.s))
-                  case ("name", string: JString) =>
-                    feature = feature.copy(name = Some(string.s))
-                  case ("housenumber", string: JString) =>
-                    address = address.copy(houseNumber = Some(string.s))
-                  case ("city", string: JString) =>
-                    address = address.copy(locality = Some(string.s))
-                  case ("street", string: JString) =>
-                    address = address.copy(street = Some(string.s))
-                  case ("postcode", string: JString) =>
-                    address = address.copy(postalCode = Some(string.s))
-                  case ("state", string: JString) =>
-                    address = address.copy(region = Some(string.s))
+            featureJson.fields("properties").asJsObject.fields.foreach {
+              case ("osm_key", string: JsString) =>
+                source = source.copy(osmKey = string.value)
+              case ("osm_id", int: JsNumber) =>
+                source = source.copy(osmId = int.value.toLong)
+              case ("osm_type", string: JsString) =>
+                source = source.copy(osmType = string.value)
+              case ("osm_value", string: JsString) =>
+                source = source.copy(osmValue = string.value)
+              case ("country", string: JsString) =>
+                address = address.copy(country = Some(string.value))
+              case ("name", string: JsString) =>
+                feature = feature.copy(name = Some(string.value))
+              case ("housenumber", string: JsString) =>
+                address = address.copy(houseNumber = Some(string.value))
+              case ("city", string: JsString) =>
+                address = address.copy(locality = Some(string.value))
+              case ("street", string: JsString) =>
+                address = address.copy(street = Some(string.value))
+              case ("postcode", string: JsString) =>
+                address = address.copy(postalCode = Some(string.value))
+              case ("state", string: JsString) =>
+                address = address.copy(region = Some(string.value))
                   case s =>
                   //logger.info(s"${s._1} -> ${write(s._2)}")
                 }
-              case _ => throw new Error("Invalid GeoJSON.")
-            }
             feature = feature.copy(address = address).copy(source = source)
             if (feature.isValid) {
               featureBuilder += feature

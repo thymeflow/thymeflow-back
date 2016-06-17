@@ -78,6 +78,5 @@ val thymeflowProject = Project (
   id="thymeflow",
   base=file("thymeflow")
 ).settings(commonSettings:_*).settings(
-  libraryDependencies += "org.json4s" %% "json4s-jackson" % "3.3.+",
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 ).dependsOn(coreProject, graphProject, spatialProject)

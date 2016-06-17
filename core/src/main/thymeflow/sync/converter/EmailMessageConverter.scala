@@ -120,7 +120,9 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         }
       )
 
-      //addPart(message, messageResource)
+      if (thymeflow.config.default.getBoolean("thymeflow.converter.email.convert-email-content")) {
+        addPart(message, messageResource)
+      }
     }
 
     private def addPart(part: Part, messageResource: Resource): Unit = {

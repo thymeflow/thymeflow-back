@@ -106,17 +106,12 @@ trait Api extends App with SparqlService {
   }
 
   private def tokenRenewal[T <: OAuth2.RenewableToken[T], R](token: T, onNewToken: (T => R)): Unit = {
-    var currentToken = token
-    onNewToken(currentToken)
-
-    token.onShouldBeRenewed(currentToken.renew().foreach(newToken => {
-      currentToken = newToken
-      onNewToken(currentToken)
-    }))
+    onNewToken(token)
+    token.onRefresh(() => onNewToken(token))
   }
 
   private def onGoogleToken(token: googleOAuth.Token): Unit = {
-    val sardine = new SardineImpl(token.access_token)
+    val sardine = new SardineImpl(token.accessToken)
 
     //Get user email
     val gmailAddress = IOUtils.toString(sardine.get("https://www.googleapis.com/userinfo/email"))
@@ -139,7 +134,7 @@ trait Api extends App with SparqlService {
 
     try {
       val store = Session.getInstance(props).getStore("imap")
-      store.connect("imap.gmail.com", gmailAddress, token.access_token)
+      store.connect("imap.gmail.com", gmailAddress, token.accessToken)
       pipeline.addSource(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
@@ -155,7 +150,7 @@ trait Api extends App with SparqlService {
 
     try {
       val store = Session.getInstance(props).getStore("imap")
-      store.connect("imap-mail.outlook.com", token.user_id.get, token.access_token)
+      store.connect("imap-mail.outlook.com", token.user_id.get, token.accessToken)
       pipeline.addSource(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)

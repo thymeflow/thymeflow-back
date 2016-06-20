@@ -107,7 +107,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
             } else {
               logger.error(s"Invalid feature $feature")
             }
-
+          case _ => throw new Error("Invalid JSON.")
         }
       case _ => throw new Error("Invalid GeoJSON.")
     }

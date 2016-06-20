@@ -23,14 +23,14 @@ import scala.concurrent.duration.Duration
   * @author David Montoya
   *         All times are here stored as miliseconds since the epoch
   */
-class LocationEventEnricher(repositoryConnection: RepositoryConnection)
+class LocationEventEnricher(
+                             repositoryConnection: RepositoryConnection,
+                             overlapMinRatio: Double = 0.2,
+                             maxLocationDistance: Double = 1000)
   extends AbstractEnricher(repositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationEventEnricher")
-
-  private val overlapMinRatio = 0.2
-  private val maxLocationDistance = 1000
 
   private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?event ?start ?end ?lat ?lon WHERE {

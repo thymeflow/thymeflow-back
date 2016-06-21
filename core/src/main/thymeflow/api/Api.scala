@@ -101,6 +101,8 @@ trait Api extends App with SparqlService {
 
   Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
 
+  logger.info(s"Thymeflow API setup at ${backendUri}.")
+
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
   }

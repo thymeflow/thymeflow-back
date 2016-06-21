@@ -45,7 +45,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     system.scheduler.schedule(1 minute, 1 minute)({
-      Tick
+      this.self ! Tick
     })
 
     protected def deliverWaitingDocuments(): Unit = {

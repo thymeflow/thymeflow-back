@@ -13,6 +13,7 @@ import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.converter.EmailMessageConverter
 import thymeflow.sync.publisher.ScrollDocumentPublisher
+import thymeflow.utilities.ExceptionUtils
 
 import scala.collection.mutable
 import scala.concurrent.Future
@@ -75,36 +76,85 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         removeMessages(messages, folder)
       case Tick =>
         if (currentScrollOption.isEmpty && waitingForData) {
-          watchedFolders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+          val foldersToRemove = watchedFolders.values.map {
+            folder => try {
+              if (!folder.isOpen) {
+                folder.open(Folder.READ_ONLY)
+              }
+              folder.getMessageCount //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+              (folder, false)
+            } catch {
+              case e: MessagingException =>
+                logger.error(s"Error reading folder ${folder.getFullName}, retrying later.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                (folder, false)
+              case e: FolderNotFoundException =>
+                logger.error(s"Cannot find folder ${folder.getFullName}, skipping.")
+                (folder, true)
+            }
+          }
+          foldersToRemove.foreach {
+            case (folder, true) =>
+              watchedFolders.remove(folder.getURLName)
+            case _ =>
+          }
         }
     }
 
     override protected def queryBuilder: ((Option[(Folder, Int, Int)], Vector[Folder], Vector[Config]), Long) => Future[Result] = {
-      case ((currentOption, remainingFolders, queuedConfigs), demand) =>
+      case (state@(currentOption, remainingFolders, queuedConfigs), demand) =>
         val result = currentOption match {
           case Some((currentFolder, position, max)) =>
-            val end = Math.min(position + Math.min(demand * 16L, Int.MaxValue).toInt - 1, max)
-            val messages = currentFolder.getMessages(position, end)
-            currentFolder.fetch(messages, fetchProfile)
-            val documents = messages.map(x => documentForAction(AddedMessage(x)))
-            if (end == max) {
-              logger.info(s"Email folder ${currentFolder.getFullName} fully imported ($max messages).")
-              Result(Some((None, remainingFolders, queuedConfigs)), documents)
-            } else {
-              Result(Some((Some((currentFolder, end + 1, max)), remainingFolders, queuedConfigs)), documents)
+            try {
+              val end = Math.min(position + Math.min(demand * 32L, Int.MaxValue).toInt - 1, max)
+              if (!currentFolder.isOpen) {
+                currentFolder.open(Folder.READ_ONLY)
+              }
+              val messages = currentFolder.getMessages(position, end)
+              currentFolder.fetch(messages, fetchProfile)
+              val documents = messages.map(x => documentForAction(AddedMessage(x)))
+              if (end == max) {
+                logger.info(s"Email folder ${currentFolder.getFullName} fully imported ($max messages).")
+                Result(Some((None, remainingFolders, queuedConfigs)), documents)
+              } else {
+                Result(Some((Some((currentFolder, end + 1, max)), remainingFolders, queuedConfigs)), documents)
+              }
+            } catch {
+              case e: MessagingException =>
+                logger.error(s"Error reading messages from folder ${currentFolder.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                Result(Some(state), Vector.empty)
+              case e: FolderNotFoundException =>
+                logger.error(s"Cannot find folder ${currentFolder.getFullName}, skipping.")
+                watchedFolders.remove(currentFolder.getURLName)
+                Result(Some((None, remainingFolders, queuedConfigs)), Vector.empty)
             }
           case None =>
             remainingFolders match {
               case head +: tail =>
-                processFolder(head)
-                val messageCount = head.getMessageCount
-                logger.info(s"Importing email folder ${head.getFullName} fully imported ($messageCount messages).")
-                Result(Some((Some((head, 1, messageCount)), tail, queuedConfigs)), Vector.empty)
+                try {
+                  processFolder(head)
+                  val messageCount = head.getMessageCount
+                  logger.info(s"Importing email folder ${head.getFullName} ($messageCount messages).")
+                  Result(Some((Some((head, 1, messageCount)), tail, queuedConfigs)), Vector.empty)
+                } catch {
+                  case e: MessagingException =>
+                    logger.error(s"Error opening folder ${head.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                    Result(Some(state), Vector.empty)
+                  case e: FolderNotFoundException =>
+                    logger.error(s"Cannot find folder ${head.getFullName}, skipping.")
+                    watchedFolders.remove(head.getURLName)
+                    Result(Some((None, tail, queuedConfigs)), Vector.empty)
+                }
               case _ =>
                 queuedConfigs match {
                   case headConfig +: tailConfigs =>
-                    val folders = getStoreFolders(headConfig.store)
-                    Result(Some(None, folders, tailConfigs), Vector.empty)
+                    try {
+                      val folders = getStoreFolders(headConfig.store)
+                      Result(Some(None, folders, tailConfigs), Vector.empty)
+                    } catch {
+                      case e: MessagingException =>
+                        logger.error(s"Error reading folders from ${headConfig.store}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                        Result(Some(None, Vector.empty, tailConfigs), Vector.empty)
+                    }
                   case _ =>
                     logger.info(s"Email import finished with $numberOfEmailMessageAdded messages imported.")
                     Result(None, Vector.empty)
@@ -157,8 +207,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     def processFolder(folder: Folder) = {
-      folder.open(Folder.READ_ONLY)
-
       folder.addMessageCountListener(new MessageCountListener {
         override def messagesAdded(e: MessageCountEvent): Unit = {
           Publisher.this.self ! AddedMessages(e.getMessages, folder)
@@ -168,6 +216,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
           Publisher.this.self ! RemovedMessages(e.getMessages, folder)
         }
       })
+      folder.open(Folder.READ_ONLY)
       watchedFolders.put(folder.getURLName, folder)
     }
 

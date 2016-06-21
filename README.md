@@ -33,5 +33,5 @@ For Knowledge representation, Thymeflow uses the http://schema.org ontology wher
  
 ## License/Copyright 
 
-Copyright is described in COPYRIGHT.txt
-AGPL v3, as described in LICENSE.txt 
+ - Copyright is described in `COPYRIGHT.txt`.
+ - License: AGPL v3, as described in `LICENSE.txt`.

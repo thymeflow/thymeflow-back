@@ -28,7 +28,17 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
+  sealed trait ImapAction
+
   case class Config(store: Store)
+
+  case class AddedMessage(message: Message) extends ImapAction
+
+  case class RemovedMessage(message: Message) extends ImapAction
+
+  case class AddedMessages(messages: Array[Message], folder: Folder)
+
+  case class RemovedMessages(messages: Array[Message], folder: Folder)
 
   private class Publisher(valueFactory: ValueFactory) extends BasePublisher {
 
@@ -42,7 +52,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       profile.add(FetchProfile.Item.CONTENT_INFO)
       profile
     }
-    private var numberOfSent = 0
+    private var numberOfEmailMessageAdded = 0
 
     system.scheduler.schedule(1 minute, 1 minute)({
       this.self ! Tick
@@ -70,8 +80,8 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def getStoreFolders(store: Store): Iterable[Folder] = {
+      //TODO: import all folders?
       store.getDefaultFolder.list().filter(holdsInterestingMessages)
-      //Seq(store.getFolder("INBOX")) //TODO: import all folders?
     }
 
     private def holdsInterestingMessages(folder: Folder): Boolean = {
@@ -134,7 +144,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         .par.map(documentForAction).seq
         .foreach(onNext)
       if (actionsQueueWasNonEmpty && actionsQueue.isEmpty) {
-        logger.info(s"Email importing finished with $numberOfSent messages imported")
+        logger.info(s"Email importing finished with $numberOfEmailMessageAdded messages imported")
       }
     }
 
@@ -143,9 +153,9 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         case action: AddedMessage =>
           val context = messageContext(action.message)
           try {
-            numberOfSent += 1
-            if (numberOfSent % 100 == 0) {
-              logger.info(s"$numberOfSent email messages imported")
+            numberOfEmailMessageAdded += 1
+            if (numberOfEmailMessageAdded % 100 == 0) {
+              logger.info(s"$numberOfEmailMessageAdded email messages imported")
             }
             Document(context, emailMessageConverter.convert(action.message, context))
           } catch {
@@ -170,16 +180,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         case _ => null
       }
     }
-
-    class ImapAction
-
-    case class AddedMessage(message: Message) extends ImapAction
-
-    case class RemovedMessage(message: Message) extends ImapAction
-
-    case class AddedMessages(messages: Array[Message], folder: Folder)
-
-    case class RemovedMessages(messages: Array[Message], folder: Folder)
   }
 
   object Tick

@@ -1,11 +1,14 @@
 import sbt.Keys._
 
-val commonSettings = Seq(
+val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
   libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
-  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+",
+  libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+"
+)
+
+val commonSettings = rootSettings ++ Seq(
   scalaSource in Compile := baseDirectory.value / "src/main",
   scalaSource in Test := baseDirectory.value / "src/test",
   javaSource in Compile := baseDirectory.value / "src/main",
@@ -74,9 +77,20 @@ val coreProject = Project(
   libraryDependencies += "org.apache.lucene" % "lucene-suggest" % "4.+"
 ).dependsOn(utilitiesProject)
 
+// TODO: Consider making thymeflowProject the root one.
 val thymeflowProject = Project (
   id="thymeflow",
   base=file("thymeflow")
 ).settings(commonSettings:_*).settings(
+  mainClass in Compile := Some("thymeflow.api.MainApi"),
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 ).dependsOn(coreProject, graphProject, spatialProject)
+
+// rootProject configuration is required to avoid downloading multiple Scala versions
+// rootProject aggregates all other projects, which is convenient for running global SBT tasks (e.g. test)
+val rootProject = Project(
+  id = "thymeflow-back",
+  base = file(".")
+).settings(rootSettings: _*).aggregate(
+  utilitiesProject, mathematicsProject, graphProject, spatialProject, coreProject, thymeflowProject
+)

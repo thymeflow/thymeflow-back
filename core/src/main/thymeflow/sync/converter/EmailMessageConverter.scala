@@ -168,7 +168,12 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
       message match {
         case mimeMessage: MimeMessage =>
           Option(mimeMessage.getMessageID).map(messageId =>
-            emailMessageUriConverter.convert(messageId)
+            try {
+              emailMessageUriConverter.convert(messageId)
+            } catch {
+              case _: IllegalArgumentException =>
+                valueFactory.createBNode()
+            }
           ).getOrElse(valueFactory.createBNode())
         case _ => valueFactory.createBNode()
       }

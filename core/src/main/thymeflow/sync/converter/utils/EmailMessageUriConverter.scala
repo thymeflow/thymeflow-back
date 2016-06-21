@@ -1,6 +1,6 @@
 package thymeflow.sync.converter.utils
 
-import java.net.URI
+import java.net.{URI, URISyntaxException}
 import java.util.regex.Pattern
 
 import org.openrdf.model.{IRI, ValueFactory}
@@ -30,7 +30,12 @@ class EmailMessageUriConverter(valueFactory: ValueFactory) {
     } else {
       throw new IllegalArgumentException(s"Invalid email message id: $messageId")
     }
-    val messageResource = valueFactory.createIRI(new URI("mid", cleanMessageId, null).toString)
-    messageResource
+    try {
+      val messageResource = valueFactory.createIRI(new URI("mid", cleanMessageId, null).toString)
+      messageResource
+    } catch {
+      case _: URISyntaxException =>
+        throw new IllegalArgumentException(s"Invalid email message id: $messageId")
+    }
   }
 }

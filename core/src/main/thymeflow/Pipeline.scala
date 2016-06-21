@@ -12,6 +12,7 @@ import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import thymeflow.utilities.VectorExtensions
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
@@ -36,9 +37,11 @@ class Pipeline(repositoryConnection: RepositoryConnection,
   }
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
-    sources
-      .map(Source.fromGraph(_).mapMaterializedValue(List(_)))
-      .reduce[Source[Document, List[ActorRef]]](joinSources[Document, ActorRef]) //TODO: balanced tree?
+    val vectorSources = sources.map(Source.fromGraph(_).mapMaterializedValue(List(_))).toVector
+    if (vectorSources.isEmpty) {
+      throw new IllegalArgumentException("Pipeline requires at least one source.")
+    }
+    VectorExtensions.reduceLeftTree(vectorSources)(joinSources)
   }
 
   private def joinSources[Out, Mat](s1: Source[Out, List[Mat]], s2: Source[Out, List[Mat]]): Source[Out, List[Mat]] = {

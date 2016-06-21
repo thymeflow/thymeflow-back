@@ -45,9 +45,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     private var numberOfSent = 0
 
     system.scheduler.schedule(1 minute, 1 minute)({
-      if (waitingForData) {
-        folders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
-      }
+      this.self ! Tick
     })
 
     override def receive: Receive = {
@@ -57,6 +55,14 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         onNewStore(config.store)
       case Cancel =>
         context.stop(self)
+      case AddedMessages(messages, folder) =>
+        addMessages(messages, folder)
+      case RemovedMessages(messages, folder) =>
+        removeMessages(messages, folder)
+      case Tick =>
+        if (waitingForData) {
+          folders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+        }
     }
 
     private def onNewStore(store: Store, importFolders: Boolean = false) = {
@@ -81,11 +87,11 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
       folder.addMessageCountListener(new MessageCountListener {
         override def messagesAdded(e: MessageCountEvent): Unit = {
-          addMessages(e.getMessages, folder)
+          Publisher.this.self ! AddedMessages(e.getMessages, folder)
         }
 
         override def messagesRemoved(e: MessageCountEvent): Unit = {
-          removeMessages(e.getMessages, folder)
+          Publisher.this.self ! RemovedMessages(e.getMessages, folder)
         }
       })
 
@@ -119,18 +125,16 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def deliverWaitingActions(): Unit = {
-      synchronized { //TODO: avoid
-        if (!waitingForData) {
-          return
-        }
-        val queuesWereNonEmpty = actionsQueue.nonEmpty
-        (1L to math.min(totalDemand, actionsQueue.size))
-          .map(_ => actionsQueue.dequeue())
-          .par.map(documentForAction).seq
-          .foreach(onNext)
-        if (queuesWereNonEmpty && actionsQueue.isEmpty) {
-          logger.info(s"Emails importation finished with $numberOfSent messages imported")
-        }
+      if (!waitingForData) {
+        return
+      }
+      val actionsQueueWasNonEmpty = actionsQueue.nonEmpty
+      (1L to math.min(totalDemand, actionsQueue.size))
+        .map(_ => actionsQueue.dequeue())
+        .par.map(documentForAction).seq
+        .foreach(onNext)
+      if (actionsQueueWasNonEmpty && actionsQueue.isEmpty) {
+        logger.info(s"Email importing finished with $numberOfSent messages imported")
       }
     }
 
@@ -172,5 +176,11 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     case class AddedMessage(message: Message) extends ImapAction
 
     case class RemovedMessage(message: Message) extends ImapAction
+
+    case class AddedMessages(messages: Array[Message], folder: Folder)
+
+    case class RemovedMessages(messages: Array[Message], folder: Folder)
   }
+
+  object Tick
 }

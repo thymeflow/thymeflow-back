@@ -74,7 +74,7 @@ trait Api extends App with SparqlService {
             try {
               val store = Session.getInstance(props).getStore("imap")
               store.connect(fields.get("host").get, fields.get("user").get, fields.get("password").get)
-              pipeline.addSource(EmailSynchronizer.Config(store))
+              pipeline.addSourceConfig(EmailSynchronizer.Config(store))
             } catch {
               case e: MessagingException => logger.error(e.getLocalizedMessage, e)
                 complete(StatusCodes.InternalServerError, "IMAP error: " + e.getLocalizedMessage)
@@ -87,7 +87,7 @@ trait Api extends App with SparqlService {
         uploadedFile("file") {
           case (fileInfo, file) =>
             logger.info(s"File $file received at time $durationSinceStart")
-            pipeline.addSource(
+            pipeline.addSourceConfig(
               FileSynchronizer.Config(file, Some(fileInfo.contentType.mediaType.value))
             )
             redirect(frontendUri, StatusCodes.TemporaryRedirect)
@@ -118,12 +118,12 @@ trait Api extends App with SparqlService {
       .split("&")(0).split("=")(1) //The result has the format "email=foo@gmail.com&..."
 
     //CardDav
-    pipeline.addSource(
+    pipeline.addSourceConfig(
       CardDavSynchronizer.Config(sardine, "https://www.googleapis.com/.well-known/carddav")
     )
 
     //CalDav
-    pipeline.addSource(
+    pipeline.addSourceConfig(
       CalDavSynchronizer.Config(sardine, "https://apidata.googleusercontent.com/caldav/v2/" + gmailAddress + "/events/")
     )
 
@@ -135,7 +135,7 @@ trait Api extends App with SparqlService {
     try {
       val store = Session.getInstance(props).getStore("imap")
       store.connect("imap.gmail.com", gmailAddress, token.accessToken)
-      pipeline.addSource(EmailSynchronizer.Config(store))
+      pipeline.addSourceConfig(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
         complete(StatusCodes.InternalServerError, "Google IMAP error: " + e.getLocalizedMessage)
@@ -151,7 +151,7 @@ trait Api extends App with SparqlService {
     try {
       val store = Session.getInstance(props).getStore("imap")
       store.connect("imap-mail.outlook.com", token.user_id.get, token.accessToken)
-      pipeline.addSource(EmailSynchronizer.Config(store))
+      pipeline.addSourceConfig(EmailSynchronizer.Config(store))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
         complete(StatusCodes.InternalServerError, "Microsoft IMAP error: " + e.getLocalizedMessage)

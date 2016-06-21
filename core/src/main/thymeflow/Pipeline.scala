@@ -21,36 +21,19 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection,
-               sources: Traversable[Graph[SourceShape[Document], ActorRef]],
-               enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
+class Pipeline private(repositoryConnection: RepositoryConnection,
+                       source: Source[Document, Any => Unit],
+                       enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
   extends StrictLogging {
 
-  private val actorRefs = buildSource()
+  private val sourceConfigurator = source
     .via(buildRepositoryInsertion())
     .via(enrichers)
     .to(Sink.ignore)
     .run()
 
-  def addSource[T](sourceConfig: T): Unit = {
-    actorRefs.foreach(_ ! sourceConfig)
-  }
-
-  private def buildSource(): Source[Document, List[ActorRef]] = {
-    val vectorSources = sources.map(Source.fromGraph(_).mapMaterializedValue(List(_))).toVector
-    if (vectorSources.isEmpty) {
-      throw new IllegalArgumentException("Pipeline requires at least one source.")
-    }
-    VectorExtensions.reduceLeftTree(vectorSources)(joinSources)
-  }
-
-  private def joinSources[Out, Mat](s1: Source[Out, List[Mat]], s2: Source[Out, List[Mat]]): Source[Out, List[Mat]] = {
-    Source.fromGraph[Out, List[Mat]](GraphDSL.create(s1, s2)(_ ++ _) { implicit builder => (s1, s2) =>
-      val merge = builder.add(Merge[Out](2))
-      s1 ~> merge
-      s2 ~> merge
-      SourceShape(merge.out)
-    })
+  def addSourceConfig(sourceConfig: Any): Unit = {
+    sourceConfigurator(sourceConfig)
   }
 
   private def buildRepositoryInsertion(): Flow[Document, ModelDiff, NotUsed] = {
@@ -88,6 +71,33 @@ class Pipeline(repositoryConnection: RepositoryConnection,
 }
 
 object Pipeline {
+
+  def create(repositoryConnection: RepositoryConnection,
+             sources: Traversable[Graph[SourceShape[Document], ActorRef]],
+             enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _]) = {
+    val sourcesVector = sources.map(Source.fromGraph(_).mapMaterializedValue(List(_))).toVector
+    if (sourcesVector.isEmpty) {
+      throw new IllegalArgumentException("Pipeline requires at least one source.")
+    }
+    val source = VectorExtensions.reduceLeftTree(sourcesVector)(mergeSources).mapMaterializedValue {
+      actorRefs => {
+        (sourceConfig: Any) => actorRefs.foreach(_ ! sourceConfig)
+      }
+    }
+    new Pipeline(repositoryConnection,
+      source,
+      enrichers)
+  }
+
+  private def mergeSources[Out, Mat](s1: Source[Out, List[Mat]], s2: Source[Out, List[Mat]]): Source[Out, List[Mat]] = {
+    Source.fromGraph[Out, List[Mat]](GraphDSL.create(s1, s2)(_ ++ _) { implicit builder => (s1, s2) =>
+      val merge = builder.add(Merge[Out](2))
+      s1 ~> merge
+      s2 ~> merge
+      SourceShape(merge.out)
+    })
+  }
+
   def delayedBatchToFlow(delay: FiniteDuration) = Flow[ModelDiff].via(DelayedBatch[ModelDiff]((diff1, diff2) => {
     diff1.apply(diff2)
     diff1

@@ -39,7 +39,7 @@ object Thymeflow extends StrictLogging {
     }
     val pipeline = initializePipeline(repository)
     args.map(x => FileSynchronizer.Config(new File(x))).foreach {
-      config => pipeline.addSource(config)
+      config => pipeline.addSourceConfig(config)
     }
   }
 
@@ -51,7 +51,7 @@ object Thymeflow extends StrictLogging {
 
     setupSynchronizers()
     val pipelineStartTime = System.currentTimeMillis()
-    new Pipeline(
+    Pipeline.create(
       repository.getConnection,
       List(
         FileSynchronizer.source(repository.getValueFactory),

@@ -3,6 +3,7 @@ package thymeflow.sync.dav
 import java.net.SocketException
 import javax.xml.namespace.QName
 
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
@@ -32,6 +33,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     private val queue = new mutable.Queue[Document]
 
     override def receive: Receive = {
+      case Request(_) =>
+        deliverWaitingDocuments()
+      case Cancel =>
+        context.stop(self)
       case Tick =>
         if (waitingForData) {
           fetchers.values.foreach(retrieveDocuments)

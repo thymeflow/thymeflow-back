@@ -3,7 +3,6 @@ package thymeflow.sync
 import javax.xml.namespace.QName
 
 import akka.actor.Props
-import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
@@ -29,10 +28,6 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
     override def receive: Receive = {
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
-      case Request(_) =>
-        deliverWaitingDocuments()
-      case Cancel =>
-        context.stop(self)
       case msg => super.receive(msg)
     }
   }

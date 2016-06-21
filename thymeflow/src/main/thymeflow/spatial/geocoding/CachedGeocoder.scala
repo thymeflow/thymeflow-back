@@ -25,7 +25,6 @@ class CachedGeocoder(geocoder: Geocoder, persistantCacheFile: Option[File] = Non
       DBMaker.newMemoryDirectDB
     })
     .compressionEnable()
-    .transactionDisable()
     .closeOnJvmShutdown()
     .make()
   private val reverseCache: java.util.Map[Point, Traversable[Feature]] = mapDb.getHashMap("geocoder-reverse")

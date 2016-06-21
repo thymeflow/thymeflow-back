@@ -24,10 +24,9 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
   private class Publisher(valueFactory: ValueFactory)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
-    override def receive: Receive = {
+    override def receive: Receive = super.receive orElse {
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
-      case msg => super.receive(msg)
     }
   }
 

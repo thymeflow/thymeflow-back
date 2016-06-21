@@ -20,7 +20,9 @@ import scala.language.postfixOps
 /**
   * @author Thomas Pellissier Tanon
   */
-class Pipeline(repositoryConnection: RepositoryConnection, sources: Traversable[Source[Document, ActorRef]], enrichers: Flow[ModelDiff, ModelDiff, _])
+class Pipeline(repositoryConnection: RepositoryConnection,
+               sources: Traversable[Graph[SourceShape[Document], ActorRef]],
+               enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
   extends StrictLogging {
 
   private val actorRefs = buildSource()
@@ -35,7 +37,7 @@ class Pipeline(repositoryConnection: RepositoryConnection, sources: Traversable[
 
   private def buildSource(): Source[Document, List[ActorRef]] = {
     sources
-      .map(_.mapMaterializedValue(List(_)))
+      .map(Source.fromGraph(_).mapMaterializedValue(List(_)))
       .reduce[Source[Document, List[ActorRef]]](joinSources[Document, ActorRef]) //TODO: balanced tree?
   }
 

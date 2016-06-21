@@ -3,6 +3,7 @@ package thymeflow.sync.publisher
 import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import com.typesafe.scalalogging.StrictLogging
+import thymeflow.utilities.ExceptionUtils
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -23,30 +24,27 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
       buf ++= hits
       deliverBuf()
       if (!(buf.isEmpty && currentScrollOption.isEmpty)) {
-        if (isActive && totalDemand > 0) {
-          nextResults(totalDemand)
-        }
+        nextResults(totalDemand)
       }
     case Failure(failure) =>
+      // Necessary to log this error because of https://github.com/akka/akka/issues/18359
+      logger.error(ExceptionUtils.getUnrolledStackTrace(failure))
       onError(failure)
       processing = false
     case Request(requestCount) =>
       deliverBuf()
-      if (isActive) {
-        if (currentScrollOption.nonEmpty && totalDemand > 0) {
-          nextResults(requestCount)
-        }
+      if (currentScrollOption.nonEmpty) {
+        nextResults(requestCount)
       }
     case Cancel =>
       context.stop(self)
-    case _ =>
   }
 
   protected def queryBuilder: (SCROLL, Long) => Future[Result]
 
   protected def nextResults(requestCount: Long): Unit = {
     try {
-      if (!processing) {
+      if (isActive && totalDemand > 0 && !processing) {
         currentScrollOption match {
           case Some(currentScroll) =>
             processing = true

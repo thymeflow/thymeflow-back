@@ -54,7 +54,7 @@ object FileSynchronizer extends Synchronizer {
         k -> converter(valueFactory)
     }
 
-    override def receive: Receive = {
+    override def receive: Receive = super.receive orElse {
       case config: Config =>
         currentScrollOption = Some(currentScrollOption match {
           case Some(queuedConfigs) =>
@@ -63,8 +63,6 @@ object FileSynchronizer extends Synchronizer {
             Vector(config)
         })
         nextResults(totalDemand)
-      case message =>
-        super.receive(message)
     }
 
     override protected def queryBuilder = {

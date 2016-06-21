@@ -5,7 +5,6 @@ import javax.mail.internet.MimeMessage
 import javax.mail.{FolderClosedException, _}
 
 import akka.actor.Props
-import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
@@ -13,13 +12,16 @@ import thymeflow.actors._
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.converter.EmailMessageConverter
+import thymeflow.sync.publisher.ScrollDocumentPublisher
 
 import scala.collection.mutable
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
 object EmailSynchronizer extends Synchronizer with StrictLogging {
 
@@ -40,16 +42,16 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   case class RemovedMessages(messages: Array[Message], folder: Folder)
 
-  private class Publisher(valueFactory: ValueFactory) extends BasePublisher {
+  private class Publisher(valueFactory: ValueFactory) extends ScrollDocumentPublisher[Document, (Option[(Folder, Int, Int)], Vector[Folder], Vector[Config])] {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val actionsQueue = new mutable.Queue[ImapAction]
-    private val folders = new mutable.HashMap[URLName, Folder]()
+    private val watchedFolders = new mutable.HashMap[URLName, Folder]()
     private val fetchProfile = {
       val profile = new FetchProfile()
       profile.add(FetchProfile.Item.FLAGS)
       profile.add(FetchProfile.Item.ENVELOPE)
       profile.add(FetchProfile.Item.CONTENT_INFO)
+      profile.add("In-Reply-To")
       profile
     }
     private var numberOfEmailMessageAdded = 0
@@ -58,30 +60,63 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       this.self ! Tick
     })
 
-    override def receive: Receive = {
-      case Request(_) =>
-        deliverWaitingActions()
+    override def receive: Receive = super.receive orElse {
       case config: Config =>
-        onNewStore(config.store)
-      case Cancel =>
-        context.stop(self)
+        currentScrollOption = Some(currentScrollOption match {
+          case Some((currentFolderOption, folders, queuedConfigs)) =>
+            (currentFolderOption, folders, queuedConfigs :+ config)
+          case None =>
+            (None, Vector.empty, Vector(config))
+        })
+        nextResults(totalDemand)
       case AddedMessages(messages, folder) =>
         addMessages(messages, folder)
       case RemovedMessages(messages, folder) =>
         removeMessages(messages, folder)
       case Tick =>
-        if (waitingForData) {
-          folders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
+        if (currentScrollOption.isEmpty && waitingForData) {
+          watchedFolders.values.foreach(_.getMessageCount) //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
         }
     }
 
-    private def onNewStore(store: Store, importFolders: Boolean = false) = {
-      getStoreFolders(store).foreach(onNewFolder)
+    override protected def queryBuilder: ((Option[(Folder, Int, Int)], Vector[Folder], Vector[Config]), Long) => Future[Result] = {
+      case ((currentOption, remainingFolders, queuedConfigs), demand) =>
+        val result = currentOption match {
+          case Some((currentFolder, position, max)) =>
+            val end = Math.min(position + Math.min(demand * 16L, Int.MaxValue).toInt - 1, max)
+            val messages = currentFolder.getMessages(position, end)
+            currentFolder.fetch(messages, fetchProfile)
+            val documents = messages.map(x => documentForAction(AddedMessage(x)))
+            if (end == max) {
+              logger.info(s"Email folder ${currentFolder.getFullName} fully imported ($max messages).")
+              Result(Some((None, remainingFolders, queuedConfigs)), documents)
+            } else {
+              Result(Some((Some((currentFolder, end + 1, max)), remainingFolders, queuedConfigs)), documents)
+            }
+          case None =>
+            remainingFolders match {
+              case head +: tail =>
+                processFolder(head)
+                val messageCount = head.getMessageCount
+                logger.info(s"Importing email folder ${head.getFullName} fully imported ($messageCount messages).")
+                Result(Some((Some((head, 1, messageCount)), tail, queuedConfigs)), Vector.empty)
+              case _ =>
+                queuedConfigs match {
+                  case headConfig +: tailConfigs =>
+                    val folders = getStoreFolders(headConfig.store)
+                    Result(Some(None, folders, tailConfigs), Vector.empty)
+                  case _ =>
+                    logger.info(s"Email import finished with $numberOfEmailMessageAdded messages imported.")
+                    Result(None, Vector.empty)
+                }
+            }
+        }
+        Future.successful(result)
     }
 
-    private def getStoreFolders(store: Store): Iterable[Folder] = {
+    private def getStoreFolders(store: Store): Vector[Folder] = {
       //TODO: import all folders?
-      store.getDefaultFolder.list().filter(holdsInterestingMessages)
+      store.getDefaultFolder.list().filter(holdsInterestingMessages).toVector
     }
 
     private def holdsInterestingMessages(folder: Folder): Boolean = {
@@ -90,62 +125,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private def holdsMessages(folder: Folder): Boolean = {
       (folder.getType & javax.mail.Folder.HOLDS_MESSAGES) != 0
-    }
-
-    private def onNewFolder(folder: Folder) = {
-      folder.open(Folder.READ_ONLY)
-
-      folder.addMessageCountListener(new MessageCountListener {
-        override def messagesAdded(e: MessageCountEvent): Unit = {
-          Publisher.this.self ! AddedMessages(e.getMessages, folder)
-        }
-
-        override def messagesRemoved(e: MessageCountEvent): Unit = {
-          Publisher.this.self ! RemovedMessages(e.getMessages, folder)
-        }
-      })
-
-      val oldFolderOption = folders.put(folder.getURLName, folder)
-      if (oldFolderOption.isEmpty) {
-        importFolder(folder) //We import the folder
-      } else {
-        oldFolderOption.foreach(_.close(false)) //We close the old folder. It assumes that we have finished to retrieve messages from this folder
-      }
-    }
-
-    private def importFolder(folder: Folder) = {
-      addMessages(folder.getMessages(), folder)
-    }
-
-    private def addMessages(messages: Array[Message], folder: Folder) = {
-      folder.fetch(messages, fetchProfile)
-      messages.foreach(message => {
-        deliverAction(AddedMessage(message))
-      })
-      logger.info(s"End of folder ${folder.getFullName}")
-    }
-
-    private def removeMessages(messages: Array[Message], folder: Folder) = {
-      messages.foreach(message => deliverAction(RemovedMessage(message)))
-    }
-
-    private def deliverAction(action: ImapAction): Unit = {
-      actionsQueue.enqueue(action)
-      deliverWaitingActions()
-    }
-
-    private def deliverWaitingActions(): Unit = {
-      if (!waitingForData) {
-        return
-      }
-      val actionsQueueWasNonEmpty = actionsQueue.nonEmpty
-      (1L to math.min(totalDemand, actionsQueue.size))
-        .map(_ => actionsQueue.dequeue())
-        .par.map(documentForAction).seq
-        .foreach(onNext)
-      if (actionsQueueWasNonEmpty && actionsQueue.isEmpty) {
-        logger.info(s"Email importing finished with $numberOfEmailMessageAdded messages imported")
-      }
     }
 
     private def documentForAction(action: ImapAction): Document = {
@@ -168,10 +147,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
-    }
-
     private def messageContext(message: Message): IRI = {
       message match {
         case message: MimeMessage => Option(message.getMessageID).map(messageId =>
@@ -179,6 +154,36 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         ).orNull
         case _ => null
       }
+    }
+
+    def processFolder(folder: Folder) = {
+      folder.open(Folder.READ_ONLY)
+
+      folder.addMessageCountListener(new MessageCountListener {
+        override def messagesAdded(e: MessageCountEvent): Unit = {
+          Publisher.this.self ! AddedMessages(e.getMessages, folder)
+        }
+
+        override def messagesRemoved(e: MessageCountEvent): Unit = {
+          Publisher.this.self ! RemovedMessages(e.getMessages, folder)
+        }
+      })
+      watchedFolders.put(folder.getURLName, folder)
+    }
+
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
+    }
+
+    private def addMessages(messages: Array[Message], folder: Folder) = {
+      folder.fetch(messages, fetchProfile)
+      buf ++= messages.map(message => documentForAction(AddedMessage(message)))
+      deliverBuf()
+    }
+
+    private def removeMessages(messages: Array[Message], folder: Folder) = {
+      buf ++= messages.map(message => documentForAction(RemovedMessage(message)))
+      deliverBuf()
     }
   }
 

@@ -20,8 +20,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
   def source(valueFactory: ValueFactory) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
-  case class Config(sardine: Sardine, baseUri: String) {
-  }
+  case class Config(sardine: Sardine, baseUri: String)
 
   private class Publisher(valueFactory: ValueFactory)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
@@ -33,6 +32,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
       case Cancel =>
         context.stop(self)
+      case msg => super.receive(msg)
     }
   }
 

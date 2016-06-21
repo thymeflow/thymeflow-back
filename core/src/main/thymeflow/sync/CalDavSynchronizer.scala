@@ -27,12 +27,13 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
     override def receive: Receive = {
-      case Request(_) =>
-        deliverWaitingDocuments()
       case config: Config =>
         addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
+      case Request(_) =>
+        deliverWaitingDocuments()
       case Cancel =>
         context.stop(self)
+      case msg => super.receive(msg)
     }
   }
 

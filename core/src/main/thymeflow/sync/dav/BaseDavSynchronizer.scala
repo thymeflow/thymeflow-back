@@ -12,6 +12,7 @@ import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.actors._
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.Synchronizer
+import thymeflow.sync.dav.BaseDavSynchronizer._
 import thymeflow.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
@@ -30,21 +31,17 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     private val fetchers = new mutable.HashMap[String, DocumentFetcher]()
     private val queue = new mutable.Queue[Document]
 
-    system.scheduler.schedule(1 minute, 1 minute)({
-      if (waitingForData) {
-        fetchers.values.foreach(retrieveDocuments)
-      }
-      deliverWaitingDocuments()
-    })
-
-    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
-      //If it is a fetcher for the same base URI we only updates Sardine
-      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
-      newFetcher.updateSardine(fetcher.sardine)
-
-      deliverWaitingDocuments()
-      retrieveDocuments(newFetcher)
+    override def receive: Receive = {
+      case Tick =>
+        if (waitingForData) {
+          fetchers.values.foreach(retrieveDocuments)
+        }
+        deliverWaitingDocuments()
     }
+
+    system.scheduler.schedule(1 minute, 1 minute)({
+      Tick
+    })
 
     protected def deliverWaitingDocuments(): Unit = {
       while (waitingForData && queue.nonEmpty) {
@@ -65,6 +62,15 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     private def waitingForData: Boolean = {
       isActive && totalDemand > 0
     }
+
+    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
+      //If it is a fetcher for the same base URI we only updates Sardine
+      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
+      newFetcher.updateSardine(fetcher.sardine)
+
+      deliverWaitingDocuments()
+      retrieveDocuments(newFetcher)
+    }
   }
 
   protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, var sardine: Sardine, val baseUri: String) {
@@ -74,10 +80,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     def newDocuments: Traversable[Document] = {
       paths.flatMap(newDocumentsFromDirectory)
-    }
-
-    def updateSardine(newSardine: Sardine): Unit = {
-      sardine = newSardine
     }
 
     private def newDocumentsFromDirectory(directoryUri: String): Traversable[Document] = {
@@ -118,6 +120,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       })
     }
 
+    def updateSardine(newSardine: Sardine): Unit = {
+      sardine = newSardine
+    }
+
     protected def dataNodeName: QName
 
     protected def buildQueryReport(withData: Boolean): SardineReport[Traversable[DavResource]]
@@ -134,4 +140,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       new URIBuilder(base).setPath(path).toString
     }
   }
+}
+
+object BaseDavSynchronizer {
+
+  object Tick
+
 }

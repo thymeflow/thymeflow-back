@@ -1,10 +1,9 @@
 package thymeflow.sync.dav
 
-import java.net.SocketException
+import java.io.IOException
 import javax.xml.namespace.QName
 
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
-import com.github.sardine.impl.SardineException
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.typesafe.scalalogging.StrictLogging
@@ -48,10 +47,23 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       this.self ! Tick
     })
 
+    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
+      //If it is a fetcher for the same base URI we only updates Sardine
+      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
+      newFetcher.updateSardine(fetcher.sardine)
+
+      deliverWaitingDocuments()
+      retrieveDocuments(newFetcher)
+    }
+
     protected def deliverWaitingDocuments(): Unit = {
       while (waitingForData && queue.nonEmpty) {
         onNext(queue.dequeue())
       }
+    }
+
+    private def waitingForData: Boolean = {
+      isActive && totalDemand > 0
     }
 
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
@@ -62,19 +74,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           queue.enqueue(document)
         }
       )
-    }
-
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
-    }
-
-    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
-      //If it is a fetcher for the same base URI we only updates Sardine
-      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
-      newFetcher.updateSardine(fetcher.sardine)
-
-      deliverWaitingDocuments()
-      retrieveDocuments(newFetcher)
     }
   }
 
@@ -108,10 +107,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           }
         }
       } catch {
-        case e: SardineException =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(e))
-          None
-        case e: SocketException =>
+        case e: IOException =>
           logger.error(ExceptionUtils.getUnrolledStackTrace(e))
           None
       }

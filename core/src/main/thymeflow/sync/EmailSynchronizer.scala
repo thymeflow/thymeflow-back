@@ -43,7 +43,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   case class RemovedMessages(messages: Array[Message], folder: Folder)
 
-  private class Publisher(valueFactory: ValueFactory) extends ScrollDocumentPublisher[Document, (Option[(Folder, Int, Int)], Vector[Folder], Vector[Config])] {
+  private class Publisher(valueFactory: ValueFactory) extends ScrollDocumentPublisher[Document, (Option[(Folder, Int, Array[Message])], Vector[Folder], Vector[Config])] {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val watchedFolders = new mutable.HashMap[URLName, Folder]()
@@ -55,7 +55,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       profile.add("In-Reply-To")
       profile
     }
-    private var numberOfEmailMessageAdded = 0
 
     system.scheduler.schedule(1 minute, 1 minute)({
       this.self ! Tick
@@ -84,12 +83,12 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
               folder.getMessageCount //hacky way to make servers fire MessageCountListener TODO: use IMAPFolder:idle if possible
               (folder, false)
             } catch {
-              case e: MessagingException =>
-                logger.error(s"Error reading folder ${folder.getFullName}, retrying later.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                (folder, false)
               case e: FolderNotFoundException =>
                 logger.error(s"Cannot find folder ${folder.getFullName}, skipping.")
                 (folder, true)
+              case e@(_: MessagingException | _: IllegalStateException) =>
+                logger.error(s"Error reading folder ${folder.getFullName}, retrying later.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                (folder, false)
             }
           }
           foldersToRemove.foreach {
@@ -100,49 +99,49 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         }
     }
 
-    override protected def queryBuilder: ((Option[(Folder, Int, Int)], Vector[Folder], Vector[Config]), Long) => Future[Result] = {
+    override protected def queryBuilder: ((Option[(Folder, Int, Array[Message])], Vector[Folder], Vector[Config]), Long) => Future[Result] = {
       case (state@(currentOption, remainingFolders, queuedConfigs), demand) =>
         val result = currentOption match {
-          case Some((currentFolder, position, max)) =>
+          case Some((currentFolder, position, messages)) =>
             try {
-              val end = Math.min(position + Math.min(demand * 32L, Int.MaxValue).toInt - 1, max)
+              val end = Math.min(position + Math.min(demand * 32L, Int.MaxValue).toInt, messages.length)
               if (!currentFolder.isOpen) {
                 currentFolder.open(Folder.READ_ONLY)
               }
-              val messages = currentFolder.getMessages(position, end)
-              currentFolder.fetch(messages, fetchProfile)
-              val documents = messages.map(x => documentForAction(AddedMessage(x)))
-              if (end == max) {
-                logger.info(s"Email folder ${currentFolder.getFullName} fully imported ($max messages).")
+              val messagesToFetch = messages.slice(position, end)
+              currentFolder.fetch(messagesToFetch, fetchProfile)
+              val documents = messagesToFetch.flatMap(x => documentForAction(AddedMessage(x)))
+              if (end == messages.length) {
+                logger.info(s"Email folder ${currentFolder.getFullName} fully imported ($end messages).")
                 Result(Some((None, remainingFolders, queuedConfigs)), documents)
               } else {
-                Result(Some((Some((currentFolder, end + 1, max)), remainingFolders, queuedConfigs)), documents)
+                Result(Some((Some((currentFolder, end, messages)), remainingFolders, queuedConfigs)), documents)
               }
             } catch {
-              case e: MessagingException =>
-                logger.error(s"Error reading messages from folder ${currentFolder.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                Result(Some(state), Vector.empty)
               case e: FolderNotFoundException =>
                 logger.error(s"Cannot find folder ${currentFolder.getFullName}, skipping.")
                 watchedFolders.remove(currentFolder.getURLName)
                 Result(Some((None, remainingFolders, queuedConfigs)), Vector.empty)
+              case e@(_: MessagingException | _: IllegalStateException) =>
+                logger.error(s"Error reading messages from folder ${currentFolder.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                Result(Some(state), Vector.empty)
             }
           case None =>
             remainingFolders match {
               case head +: tail =>
                 try {
                   processFolder(head)
-                  val messageCount = head.getMessageCount
-                  logger.info(s"Importing email folder ${head.getFullName} ($messageCount messages).")
-                  Result(Some((Some((head, 1, messageCount)), tail, queuedConfigs)), Vector.empty)
+                  val messages = head.getMessages
+                  logger.info(s"Importing email folder ${head.getFullName} (${messages.length} messages).")
+                  Result(Some((Some((head, 0, messages)), tail, queuedConfigs)), Vector.empty)
                 } catch {
-                  case e: MessagingException =>
-                    logger.error(s"Error opening folder ${head.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                    Result(Some(state), Vector.empty)
                   case e: FolderNotFoundException =>
                     logger.error(s"Cannot find folder ${head.getFullName}, skipping.")
                     watchedFolders.remove(head.getURLName)
                     Result(Some((None, tail, queuedConfigs)), Vector.empty)
+                  case e@(_: MessagingException | _: IllegalStateException) =>
+                    logger.error(s"Error opening folder ${head.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                    Result(Some(state), Vector.empty)
                 }
               case _ =>
                 queuedConfigs match {
@@ -151,12 +150,11 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                       val folders = getStoreFolders(headConfig.store)
                       Result(Some(None, folders, tailConfigs), Vector.empty)
                     } catch {
-                      case e: MessagingException =>
+                      case e@(_: MessagingException | _: IllegalStateException) =>
                         logger.error(s"Error reading folders from ${headConfig.store}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
                         Result(Some(None, Vector.empty, tailConfigs), Vector.empty)
                     }
                   case _ =>
-                    logger.info(s"Email import finished with $numberOfEmailMessageAdded messages imported.")
                     Result(None, Vector.empty)
                 }
             }
@@ -166,34 +164,34 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     private def getStoreFolders(store: Store): Vector[Folder] = {
       //TODO: import all folders?
-      store.getDefaultFolder.list().filter(holdsInterestingMessages).toVector
+      store.getDefaultFolder.list().filter(folderHoldsInterestingMessages).toVector
     }
 
-    private def holdsInterestingMessages(folder: Folder): Boolean = {
-      holdsMessages(folder) && !ignoredFolderNames.contains(folder.getName)
+    private def folderHoldsInterestingMessages(folder: Folder): Boolean = {
+      folderHoldsMessages(folder) && !ignoredFolderNames.contains(folder.getName)
     }
 
-    private def holdsMessages(folder: Folder): Boolean = {
+    private def folderHoldsMessages(folder: Folder): Boolean = {
       (folder.getType & javax.mail.Folder.HOLDS_MESSAGES) != 0
     }
 
-    private def documentForAction(action: ImapAction): Document = {
+    private def documentForAction(action: ImapAction): Option[Document] = {
       action match {
         case action: AddedMessage =>
           val context = messageContext(action.message)
           try {
-            numberOfEmailMessageAdded += 1
-            if (numberOfEmailMessageAdded % 100 == 0) {
-              logger.info(s"$numberOfEmailMessageAdded email messages imported")
-            }
-            Document(context, emailMessageConverter.convert(action.message, context))
+            Some(Document(context, emailMessageConverter.convert(action.message, context)))
           } catch {
             case e: FolderClosedException =>
               action.message.getFolder.open(Folder.READ_ONLY)
-              Document(context, emailMessageConverter.convert(action.message, context))
+              Some(Document(context, emailMessageConverter.convert(action.message, context)))
+            case e: MessagingException =>
+              // TODO: Attempt retries
+              logger.error(s"Error processing message number ${action.message.getMessageNumber}.\n${ExceptionUtils.getStackTrace(e)}")
+              None
           }
         case action: RemovedMessage =>
-          Document(messageContext(action.message), SimpleHashModel.empty)
+          Some(Document(messageContext(action.message), SimpleHashModel.empty))
       }
     }
 
@@ -225,13 +223,24 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def addMessages(messages: Array[Message], folder: Folder) = {
-      folder.fetch(messages, fetchProfile)
-      buf ++= messages.map(message => documentForAction(AddedMessage(message)))
-      deliverBuf()
+      try {
+        if (!folder.isOpen) {
+          folder.open(Folder.READ_ONLY)
+        }
+        folder.fetch(messages, fetchProfile)
+        buf ++= messages.flatMap(message => documentForAction(AddedMessage(message)))
+        deliverBuf()
+      } catch {
+        case e: FolderNotFoundException =>
+          logger.error(s"Cannot find folder ${folder.getFullName}, skipping.")
+          watchedFolders.remove(folder.getURLName)
+        case e@(_: MessagingException | _: IllegalStateException) =>
+          logger.error(s"Error reading messages from folder ${folder.getFullName}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+      }
     }
 
     private def removeMessages(messages: Array[Message], folder: Folder) = {
-      buf ++= messages.map(message => documentForAction(RemovedMessage(message)))
+      buf ++= messages.flatMap(message => documentForAction(RemovedMessage(message)))
       deliverBuf()
     }
   }

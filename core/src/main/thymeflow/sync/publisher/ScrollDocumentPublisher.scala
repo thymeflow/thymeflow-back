@@ -13,17 +13,16 @@ import scala.concurrent.Future
   * @author David Montoya
   */
 trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT] with StrictLogging {
-  protected var currentScrollOption: Option[SCROLL] = None
-  protected var processing = false
-  protected var buf = Vector.empty[DOCUMENT]
+  private var scrollQueue: Vector[SCROLL] = Vector.empty
+  private var processing = false
+  private var buf = Vector.empty[DOCUMENT]
 
   def receive = {
     case Result(scrollOption, hits) =>
       processing = false
-      currentScrollOption = scrollOption
-      buf ++= hits
-      deliverBuf()
-      if (!(buf.isEmpty && currentScrollOption.isEmpty)) {
+      scrollQueue = scrollOption.map(_ +: scrollQueue).getOrElse(scrollQueue)
+      queueDocuments(hits)
+      if (!(buf.isEmpty && scrollQueue.isEmpty)) {
         nextResults(totalDemand)
       }
     case Failure(failure) =>
@@ -33,30 +32,36 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
       processing = false
     case Request(requestCount) =>
       deliverBuf()
-      if (currentScrollOption.nonEmpty) {
+      if (scrollQueue.nonEmpty) {
         nextResults(requestCount)
       }
     case Cancel =>
       context.stop(self)
   }
 
-  protected def queryBuilder: (SCROLL, Long) => Future[Result]
+  protected def queueIsEmpty = scrollQueue.isEmpty && !processing
 
-  protected def nextResults(requestCount: Long): Unit = {
+  protected def queue(scroll: SCROLL) = {
+    scrollQueue :+= scroll
+    nextResults(totalDemand)
+  }
+
+  private def nextResults(requestCount: Long): Unit = {
     try {
       if (isActive && totalDemand > 0 && !processing) {
-        currentScrollOption match {
-          case Some(currentScroll) =>
+        scrollQueue match {
+          case head +: tail =>
             processing = true
-            val future = queryBuilder(currentScroll, requestCount)
+            scrollQueue = tail
+            val future = queryBuilder(head, requestCount)
             future.foreach {
               case result => this.self ! result
             }
             future.onFailure {
               case t => this.self ! Failure(t)
             }
-          case None =>
-          // No results to query
+          case _ =>
+          // no scroll to query
         }
       }
     } catch {
@@ -64,6 +69,13 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
         this.self ! Failure(t)
     }
   }
+
+  protected def queueDocuments(documents: Traversable[DOCUMENT]) = {
+    buf ++= documents
+    deliverBuf()
+  }
+
+  protected def queryBuilder: (SCROLL, Long) => Future[Result]
 
   @tailrec final protected def deliverBuf(): Unit =
     if (isActive && totalDemand > 0) {

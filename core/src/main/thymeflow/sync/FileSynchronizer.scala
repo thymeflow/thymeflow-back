@@ -55,14 +55,7 @@ object FileSynchronizer extends Synchronizer {
     }
 
     override def receive: Receive = super.receive orElse {
-      case config: Config =>
-        currentScrollOption = Some(currentScrollOption match {
-          case Some(queuedConfigs) =>
-            queuedConfigs :+ config
-          case None =>
-            Vector(config)
-        })
-        nextResults(totalDemand)
+      case config: Config => queue(Vector(config))
     }
 
     override protected def queryBuilder = {

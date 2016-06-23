@@ -101,7 +101,7 @@ trait Api extends App with SparqlService {
 
   Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
 
-  logger.info(s"Thymeflow API setup at ${backendUri}.")
+  logger.info(s"Thymeflow API setup at $backendUri.")
 
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
@@ -137,7 +137,8 @@ trait Api extends App with SparqlService {
     try {
       val store = Session.getInstance(props).getStore("imap")
       store.connect("imap.gmail.com", gmailAddress, token.accessToken)
-      pipeline.addSourceConfig(EmailSynchronizer.Config(store))
+      val inboxOnly = config.getBoolean("thymeflow.synchronizer.email-synchronizer.google.inbox-only")
+      pipeline.addSourceConfig(EmailSynchronizer.Config(store, folderNamesToKeep = if (inboxOnly) Some(Set("INBOX")) else None))
     } catch {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
         complete(StatusCodes.InternalServerError, "Google IMAP error: " + e.getLocalizedMessage)

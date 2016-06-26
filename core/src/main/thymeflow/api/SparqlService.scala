@@ -2,11 +2,11 @@ package thymeflow.api
 
 import java.io.ByteArrayOutputStream
 
-import akka.http.scaladsl.model.MediaType._
-import akka.http.scaladsl.model.headers.{Accept, `Access-Control-Allow-Methods`, `Access-Control-Allow-Origin`, `Content-Type`}
-import akka.http.scaladsl.model.{ContentType, _}
+import akka.http.scaladsl.model._
+import akka.http.scaladsl.model.headers.{Accept, `Access-Control-Allow-Methods`, `Access-Control-Allow-Origin`}
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.{Directive0, Route}
+import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
+import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
 import com.typesafe.scalalogging.StrictLogging
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
@@ -17,17 +17,18 @@ import org.openrdf.query.parser.QueryParserUtil
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
 import org.openrdf.repository.Repository
 import org.openrdf.rio.{RDFWriterRegistry, Rio}
-import thymeflow.actors._
+import thymeflow.api.SparqlService._
 import thymeflow.rdf.model.SimpleHashModel
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
+import scala.language.implicitConversions
 
 /**
   * @author Thomas Pellissier Tanon
   */
 trait SparqlService extends StrictLogging {
-  val `application/sparql-query` = applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
+  val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
   protected val sparqlRoute = {
     respondWithHeaders(
       `Access-Control-Allow-Origin`.*,
@@ -41,19 +42,22 @@ trait SparqlService extends StrictLogging {
             executeDescription(accept)
         } ~
           post {
-            formField('query) { query =>
-              executeQuery(query, accept)
+            // cannot use formField/formFields here due to an Akka issue
+            // https://github.com/akka/akka/issues/19506
+            entity(as[FormData]) { entity =>
+              entity.fields.get("query") match {
+                case Some(query) => executeQuery(query, accept)
+                case None => entity.fields.get("update") match {
+                  case Some(update) => executeUpdate(update, accept)
+                  case None => reject(MissingFormFieldRejection("query"), MissingFormFieldRejection("update"))
+                }
+              }
             } ~
-              formField('update) { update =>
-                executeUpdate(update, accept)
-              } ~
-              withContentType(`application/sparql-query`) {
-                entity(as[String]) { operation =>
-                  if (isSPARQLQuery(operation)) {
-                    executeQuery(operation, accept)
-                  } else {
-                    executeUpdate(operation, accept)
-                  }
+              entity(as[SparqlQuery]) { operation =>
+                if (isSPARQLQuery(operation.content)) {
+                  executeQuery(operation.content, accept)
+                } else {
+                  executeUpdate(operation.content, accept)
                 }
               }
           } ~
@@ -65,6 +69,8 @@ trait SparqlService extends StrictLogging {
       }
     }
   }
+
+  implicit def sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
 
   protected def repository: Repository
 
@@ -127,9 +133,7 @@ trait SparqlService extends StrictLogging {
     val repositoryConnection = repository.getConnection
     try {
       repositoryConnection.prepareUpdate(QueryLanguage.SPARQL, updateStr).execute()
-      complete {
-        StatusCodes.OK
-      }
+      complete(StatusCodes.OK, "")
     } catch {
       case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
       case e: UpdateExecutionException =>
@@ -177,13 +181,6 @@ trait SparqlService extends StrictLogging {
     })
   }
 
-  private def withContentType(expectedContentType: ContentType): Directive0 = {
-    optionalHeaderValueByType[`Content-Type`]().require({
-      case Some(contentType) if contentType.contentType.mediaType.equals(expectedContentType.mediaType) => true
-      case _ => false
-    })
-  }
-
   private def sparqlServiceDescription: Model = {
     val valueFactory = repository.getValueFactory
     val model = new SimpleHashModel(valueFactory)
@@ -228,4 +225,11 @@ trait SparqlService extends StrictLogging {
       operationPrefix.startsWith("DESCRIBE") ||
       operationPrefix.startsWith("ASK")
   }
+}
+
+
+object SparqlService {
+
+  case class SparqlQuery(content: String)
+
 }

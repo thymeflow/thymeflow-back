@@ -70,7 +70,7 @@ trait SparqlService extends StrictLogging {
     }
   }
 
-  implicit def sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
+  implicit protected def sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
 
   protected def repository: Repository
 

@@ -29,6 +29,7 @@ import scala.language.implicitConversions
   */
 trait SparqlService extends StrictLogging {
   val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
+  implicit protected val sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
   protected val sparqlRoute = {
     respondWithHeaders(
       `Access-Control-Allow-Origin`.*,
@@ -69,8 +70,6 @@ trait SparqlService extends StrictLogging {
       }
     }
   }
-
-  implicit protected def sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
 
   protected def repository: Repository
 

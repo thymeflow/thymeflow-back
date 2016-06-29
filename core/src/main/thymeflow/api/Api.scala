@@ -13,6 +13,7 @@ import org.openrdf.repository.Repository
 import thymeflow.Pipeline
 import thymeflow.actors._
 import thymeflow.sync._
+import thymeflow.sync.facebook.FacebookSynchronizer
 
 import scala.concurrent.duration.Duration
 
@@ -27,6 +28,7 @@ trait Api extends App with SparqlService {
   private val frontendUri = Uri(s"${config.getString("thymeflow.http.frontend-uri")}")
   private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
   private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
+  private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(Uri.Path("/oauth/facebook/token")).toString)
 
   private val route = {
     path("sparql") {
@@ -59,8 +61,41 @@ trait Api extends App with SparqlService {
                   logger.info(s"Microsoft token received at time $durationSinceStart")
                   microsoftOAuth.getAccessToken(code).foreach(tokenRenewal(_, onMicrosoftToken))
                   redirect(frontendUri, StatusCodes.TemporaryRedirect)
-                }
               }
+              }
+          } ~
+          pathPrefix("facebook") {
+            path("auth") {
+              redirect(facebookOAuth.getAuthUri(Vector("email",
+                "publish_actions",
+                "user_about_me",
+                "user_birthday",
+                "user_education_history",
+                "user_friends",
+                "user_games_activity",
+                "user_hometown",
+                "user_likes",
+                "user_location",
+                "user_photos",
+                "user_posts",
+                "user_relationship_details",
+                "user_relationships",
+                "user_religion_politics",
+                "user_status",
+                "user_tagged_places",
+                "user_videos",
+                "user_website",
+                "user_work_history",
+                "user_events",
+                "rsvp_event")), StatusCodes.TemporaryRedirect)
+            } ~
+              path("token") {
+                parameter('code) { code =>
+                  logger.info(s"Facebook token received at time $durationSinceStart")
+                  facebookOAuth.getAccessToken(code).foreach(tokenRenewal(_, onFacebookToken))
+                  redirect(frontendUri, StatusCodes.TemporaryRedirect)
+                }
+          }
           }
       } ~
       pathPrefix("imap") {
@@ -159,5 +194,9 @@ trait Api extends App with SparqlService {
       case e: MessagingException => logger.error(e.getLocalizedMessage, e)
         complete(StatusCodes.InternalServerError, "Microsoft IMAP error: " + e.getLocalizedMessage)
     }
+  }
+
+  private def onFacebookToken(token: facebookOAuth.Token): Unit = {
+    pipeline.addSourceConfig(FacebookSynchronizer.Config(token.accessToken))
   }
 }

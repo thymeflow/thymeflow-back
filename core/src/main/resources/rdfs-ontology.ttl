@@ -86,6 +86,10 @@ schema:birthDate a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range rdfs:Literal .
 
+schema:gender a rdf:Property ;
+    rdfs:domain schema:Person ;
+    rdfs:range rdfs:Literal .
+
 schema:birthPlace a rdf:Property ;
     rdfs:domain schema:Person ;
     rdfs:range schema:Place .

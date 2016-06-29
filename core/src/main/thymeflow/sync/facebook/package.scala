@@ -8,6 +8,7 @@ import thymeflow.sync.facebook.FacebookSynchronizer._
   */
 package object facebook {
 
+  implicit def formatResults[T](implicit format: JsonFormat[T]) = jsonFormat1(Results[T])
   implicit val formatLocation = jsonFormat6(Location)
   implicit val formatPage = jsonFormat1(Page)
   implicit val formatEventPlace = jsonFormat2(EventPlace)
@@ -16,8 +17,6 @@ package object facebook {
   implicit val formatAgeRange = jsonFormat2(AgeRange)
   implicit val formatId = jsonFormat1(Id)
   implicit val formatMe = jsonFormat11(Me)
-
-  implicit def formatResults[T](implicit format: JsonFormat[T]) = jsonFormat1(Results[T])
 
   case class Results[T](data: Vector[T])
 

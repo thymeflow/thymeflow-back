@@ -7,9 +7,11 @@ import akka.stream.scaladsl.Source
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import org.openrdf.model.{Model, Resource, ValueFactory}
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.converter.VCardConverter
 import thymeflow.sync.dav._
+import thymeflow.update.UpdateResults
 
 /**
   * @author Thomas Pellissier Tanon
@@ -34,6 +36,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
     extends BaseDavDocumentsFetcher(valueFactory, sardine, baseUri) {
 
     private val CardDavNamespace = "urn:ietf:params:xml:ns:carddav"
+    override protected val mimeType = "text/vcard"
     private val vCardConverter = new VCardConverter(valueFactory)
 
     override protected def dataNodeName = new QName(CardDavNamespace, "address-data")
@@ -48,6 +51,10 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
 
     override protected def convert(str: String, context: Resource): Model = {
       vCardConverter.convert(str, context)
+    }
+
+    override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
+      vCardConverter.applyDiff(str, diff)
     }
   }
 }

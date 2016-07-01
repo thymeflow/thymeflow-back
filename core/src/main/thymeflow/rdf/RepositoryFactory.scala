@@ -19,6 +19,7 @@ import org.openrdf.{IsolationLevel, IsolationLevels}
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.rdf.query.algebra.evaluation.function
 import thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
+import thymeflow.rdf.sail.{InterceptingSail, SailInterceptor}
 
 import scala.concurrent.duration.Duration
 
@@ -33,7 +34,8 @@ object RepositoryFactory extends StrictLogging {
                                   dataDirectory: File,
                                   persistToDisk: Boolean = false,
                                   persistenceSyncDelay: Long = 1000,
-                                  isolationLevel: IsolationLevel = IsolationLevels.NONE): Repository = {
+                                  isolationLevel: IsolationLevel = IsolationLevels.NONE,
+                                  sailInterceptor: Option[SailInterceptor] = None): Repository = {
     val initializationStart = System.currentTimeMillis()
     logger.info("Start initializing memory store")
 
@@ -50,7 +52,7 @@ object RepositoryFactory extends StrictLogging {
     }
     store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory)
+    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory, sailInterceptor)
 
     logger.info(s"Memory store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
 
@@ -60,14 +62,15 @@ object RepositoryFactory extends StrictLogging {
   def initializedDiskRepository(owlInference: Boolean = true,
                                 fullTextSearch: Boolean = true,
                                 dataDirectory: File,
-                                isolationLevel: IsolationLevel = IsolationLevels.NONE): Repository = {
+                                isolationLevel: IsolationLevel = IsolationLevels.NONE,
+                                sailInterceptor: Option[SailInterceptor] = None): Repository = {
     val initializationStart = System.currentTimeMillis()
     logger.info("Start initializing memory store")
 
     val store = new NativeStore()
     store.setDefaultIsolationLevel(isolationLevel)
 
-    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory)
+    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory, sailInterceptor)
 
     logger.info(s"Disk store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
 
@@ -77,9 +80,10 @@ object RepositoryFactory extends StrictLogging {
   private def initializeRepository(store: NotifyingSail,
                                    owlInference: Boolean = true,
                                    fullTextSearch: Boolean = true,
-                                   dataDirectory: File): Repository = {
+                                   dataDirectory: File,
+                                   sailInterceptor: Option[SailInterceptor] = None): Repository = {
 
-    val repository = new SailRepository(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch))
+    val repository = new SailRepository(addSailInterceptor(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch), sailInterceptor))
     repository.setDataDir(dataDirectory)
     repository.initialize()
     addBasicsToRepository(repository)
@@ -104,6 +108,10 @@ object RepositoryFactory extends StrictLogging {
     } else {
       store
     }
+  }
+
+  private def addSailInterceptor(store: NotifyingSail, sailInterceptor: Option[SailInterceptor] = None): NotifyingSail = {
+    sailInterceptor.map(sailInterceptor => new InterceptingSail(store, sailInterceptor)).getOrElse(store)
   }
 
 

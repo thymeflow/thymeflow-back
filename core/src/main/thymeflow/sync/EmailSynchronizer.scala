@@ -10,12 +10,15 @@ import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
 import thymeflow.actors._
-import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.document.Document
-import thymeflow.sync.converter.EmailMessageConverter
+import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import thymeflow.sync.Synchronizer.Update
+import thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
 import thymeflow.sync.publisher.ScrollDocumentPublisher
+import thymeflow.update.UpdateResults
 import thymeflow.utilities.{ExceptionUtils, TimeExecution}
 
+import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -130,6 +133,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
             }
           }
         }
+      case Update(diff) => sender() ! applyDiff(diff)
     }
 
     def unsubscribeFolder(folder: IMAPFolder, removeMessages: Boolean = true, closeFolder: Boolean = true): Unit = {
@@ -410,6 +414,19 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
           }
       }
       (documentBuilder.result(), remainingMessages.result())
+    }
+
+    private def applyDiff(diff: ModelDiff): UpdateResults = {
+      //TODO: support at least email deletion
+      //We tag only the messages from IMAP as failed
+      UpdateResults.merge(
+        diff.contexts().asScala
+          .filter(_.stringValue().startsWith("imap://"))
+          .map(context => UpdateResults.allFailed(
+            diff.filter(null, null, null, context),
+            new ConverterException("IMAP repository could not be modified")
+          ))
+      )
     }
   }
 

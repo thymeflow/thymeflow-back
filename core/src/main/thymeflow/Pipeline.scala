@@ -2,6 +2,7 @@ package thymeflow
 
 import akka.NotUsed
 import akka.actor.ActorRef
+import akka.pattern.ask
 import akka.stream._
 import akka.stream.scaladsl.GraphDSL.Implicits._
 import akka.stream.scaladsl._
@@ -12,9 +13,12 @@ import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import thymeflow.sync.Synchronizer.Update
+import thymeflow.update.UpdateResults
 import thymeflow.utilities.VectorExtensions
 
 import scala.collection.JavaConverters._
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -22,18 +26,26 @@ import scala.language.postfixOps
   * @author Thomas Pellissier Tanon
   */
 class Pipeline private(repositoryConnection: RepositoryConnection,
-                       source: Source[Document, Any => Unit],
+                       source: Source[Document, Traversable[ActorRef]],
                        enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
   extends StrictLogging {
 
-  private val sourceConfigurator = source
+  private val sourceRefs = source
     .via(buildRepositoryInsertion())
     .via(enrichers)
     .to(Sink.ignore)
     .run()
 
   def addSourceConfig(sourceConfig: Any): Unit = {
-    sourceConfigurator(sourceConfig)
+    sourceRefs.foreach(_ ! sourceConfig)
+  }
+
+  def applyUpdate(update: Update): Future[UpdateResults] = {
+    //TODO: filter
+    Future.sequence(sourceRefs.map(_ ? update)).map(_.flatMap {
+      case result: UpdateResults => Some(result)
+      case _ => None
+    }).map(UpdateResults.merge)
   }
 
   private def buildRepositoryInsertion(): Flow[Document, ModelDiff, NotUsed] = {
@@ -79,11 +91,7 @@ object Pipeline {
     if (sourcesVector.isEmpty) {
       throw new IllegalArgumentException("Pipeline requires at least one source.")
     }
-    val source = VectorExtensions.reduceLeftTree(sourcesVector)(mergeSources).mapMaterializedValue {
-      actorRefs => {
-        (sourceConfig: Any) => actorRefs.foreach(_ ! sourceConfig)
-      }
-    }
+    val source = VectorExtensions.reduceLeftTree(sourcesVector)(mergeSources)
     new Pipeline(repositoryConnection,
       source,
       enrichers)

@@ -6,6 +6,7 @@ import java.io.File
 import thymeflow.Thymeflow
 import thymeflow.rdf.model.vocabulary.Personal
 import thymeflow.rdf.{FileSynchronization, RepositoryFactory}
+import thymeflow.update.{UpdateSailInterceptor, Updater}
 
 import scala.language.postfixOps
 
@@ -14,11 +15,15 @@ import scala.language.postfixOps
   */
 object MainApi extends Api {
 
-  override protected lazy val repository = if (config.getBoolean("thymeflow.api.repository.disk")) {
+
+  private val config = thymeflow.config.default
+  private val sailInterceptor = new UpdateSailInterceptor
+  override protected val repository = if (config.getBoolean("thymeflow.api.repository.disk")) {
     RepositoryFactory.initializedDiskRepository(
       dataDirectory = new File(config.getString("thymeflow.api.repository.data-directory")),
       fullTextSearch = config.getBoolean("thymeflow.api.repository.full-text-search"),
-      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference")
+      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference"),
+      sailInterceptor = Some(sailInterceptor)
     )
   } else {
     RepositoryFactory.initializedMemoryRepository(
@@ -26,11 +31,12 @@ object MainApi extends Api {
       persistToDisk = config.getBoolean("thymeflow.api.repository.persist-to-disk"),
       fullTextSearch = config.getBoolean("thymeflow.api.repository.full-text-search"),
       snapshotCleanupStore = config.getBoolean("thymeflow.api.repository.snapshot-cleanup-store"),
-      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference")
+      owlInference = config.getBoolean("thymeflow.api.repository.owl-inference"),
+      sailInterceptor = Some(sailInterceptor)
     )
   }
-  override protected lazy val pipeline = Thymeflow.initializePipeline(repository)
-  protected val config = thymeflow.config.default
+  override protected val pipeline = Thymeflow.initializePipeline(repository)
+  sailInterceptor.setUpdater(new Updater(repository.getConnection, pipeline))
 
   if (args.length < 1) {
     logger.info("No file for user graph provided")

@@ -2,7 +2,9 @@ package thymeflow.rdf.model
 
 import java.util
 
-import org.openrdf.model.{Model, Statement}
+import org.openrdf.model._
+
+import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -31,5 +33,34 @@ class ModelDiff(val added: Model, val removed: Model) {
   def remove(statements: util.Collection[Statement]) {
     added.removeAll(statements)
     removed.addAll(statements)
+  }
+
+  def contexts(): util.Set[Resource] = {
+    val contexts = added.contexts()
+    contexts.addAll(removed.contexts())
+    contexts
+  }
+
+  def filter(subj: Resource, pred: IRI, obj: Value, contexts: Resource = null): ModelDiff = {
+    new ModelDiff(
+      added.filter(subj, pred, obj, contexts),
+      removed.filter(subj, pred, obj, contexts)
+    )
+  }
+
+  def isEmpty: Boolean = {
+    added.isEmpty && removed.isEmpty
+  }
+
+  override def toString: String = {
+    (this.added.asScala.map("+ " + _.toString) ++ this.removed.asScala.map("- " + _.toString)).mkString("\n")
+  }
+}
+
+object ModelDiff {
+  def merge(diffs: ModelDiff*): ModelDiff = {
+    val diff = new ModelDiff(new SimpleHashModel(), new SimpleHashModel())
+    diffs.foreach(diff.apply)
+    diff
   }
 }

@@ -179,7 +179,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
 
   private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI, context: IRI) = {
     repositoryConnection.begin()
-    val model = new SimpleHashModel()
+    val model = new SimpleHashModel(valueFactory)
     val clusterResource = uuidConverter.createBNode(cluster)
     val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
     model.add(clusterResource, RDF.TYPE, `type`, context)

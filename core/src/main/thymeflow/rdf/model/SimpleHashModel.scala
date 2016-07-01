@@ -11,7 +11,7 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance(), statements: util.Set[Statement] = Collections.emptySet())
+class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstance(), statements: util.Collection[Statement] = Collections.emptySet())
   extends util.HashSet[Statement](statements) with Model {
 
   override def add(subj: Resource, pred: IRI, obj: Value, contexts: Resource*): Boolean = {
@@ -20,7 +20,7 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
 
   private def toStatements(subj: Resource, pred: IRI, obj: Value, contexts: Seq[Resource]): Traversable[Statement] = {
     if (contexts.isEmpty) {
-      List(valueFactory.createStatement(subj, pred, obj))
+      Some(valueFactory.createStatement(subj, pred, obj))
     } else {
       contexts.map(context =>
         valueFactory.createStatement(subj, pred, obj, context)
@@ -86,6 +86,10 @@ class SimpleHashModel(valueFactory: ValueFactory = SimpleValueFactory.getInstanc
 
   override def getValueFactory: ValueFactory = {
     valueFactory
+  }
+
+  override def toString: String = {
+    this.asScala.mkString("\n")
   }
 }
 

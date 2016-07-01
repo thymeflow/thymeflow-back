@@ -41,6 +41,7 @@ object SchemaOrg {
   val END_DATE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "endDate")
   val FAMILY_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "familyName")
   val GEO: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "geo")
+  val GENDER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "gender")
   val GIVEN_NAME: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "givenName")
   val HAS_PART: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "hasPart")
   val HEADLINE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "headline")

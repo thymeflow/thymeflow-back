@@ -43,22 +43,21 @@ class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
   def convert(address: String, model: Model): Option[IRI] = {
     if (address == "undisclosed-recipients:;") {
       None
-    }
-
-    try {
-      Some(AddressBuilder.DEFAULT.parseMailbox(address)).flatMap(x => Option(x.getLocalPart).map((x, _))) match {
-        case Some((mailbox, localPart)) =>
-          val domain = Option(mailbox.getDomain).getOrElse("")
-          convert(localPart = localPart, domain = domain, model)
-        case _ =>
+    } else {
+      try {
+        Some(AddressBuilder.DEFAULT.parseMailbox(address)).flatMap(x => Option(x.getLocalPart).map((x, _))) match {
+          case Some((mailbox, localPart)) =>
+            val domain = Option(mailbox.getDomain).getOrElse("")
+            convert(localPart = localPart, domain = domain, model)
+          case _ =>
+            None
+        }
+      } catch {
+        case ex: Exception =>
+          logger.warn(s"Could not parse email address: $address")
           None
       }
-    } catch {
-      case ex: Exception =>
-        logger.warn(s"Could not parse email address: $address")
-        None
     }
-
   }
 
   /**

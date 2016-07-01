@@ -50,21 +50,17 @@ class FullTextSearchServer[T] private(indexName: String,
     deleteIndex()
   }
 
-  private def deleteIndex() = {
-    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
-      case _ => ()
-    }.recover {
-      case e: IndexMissingException => ()
-    }
-  }
-
   def add(valuedEntities: Traversable[(T, String)]): Future[Unit] = {
     val bulkRequest = esClient.prepareBulk()
     valuedEntities.foreach {
       case (entity, value) =>
         bulkRequest.add(new IndexRequest(indexName).`type`("literal").source(literalJsonBuilder(entity, value)))
     }
-    bulkRequest.execute.future.map(handleBulkResponseFailures)
+    if (bulkRequest.numberOfActions() > 0) {
+      bulkRequest.execute.future.map(handleBulkResponseFailures)
+    } else {
+      Future.successful()
+    }
   }
 
   private def handleBulkResponseFailures(response: BulkResponse): Unit = {
@@ -113,6 +109,14 @@ class FullTextSearchServer[T] private(indexName: String,
         }
     }.map {
       case _ => ()
+    }
+  }
+
+  private def deleteIndex() = {
+    esClient.admin.indices.prepareDelete(indexName).execute.future.map {
+      case _ => ()
+    }.recover {
+      case e: IndexMissingException => ()
     }
   }
 

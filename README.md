@@ -21,6 +21,7 @@ For Knowledge representation, Thymeflow uses the http://schema.org ontology wher
 ## Configuration ##
 
  - Refer to `core/src/main/resources/reference.conf` for a list of configurable properties.
+ - Google/Microsoft OAuth client id/secret and Google geocoder api key should be configured.
  - Customize them by creating `thymeflow/src/main/resources/application.conf` and overriding the listed properties.
 
 ## Usage ##

@@ -8,8 +8,9 @@ import org.openrdf.repository.Repository
 import thymeflow.enricher._
 import thymeflow.rdf.RepositoryFactory
 import thymeflow.spatial.geocoding.Geocoder
+import thymeflow.sync._
 import thymeflow.sync.converter.GoogleLocationHistoryConverter
-import thymeflow.sync.{CalDavSynchronizer, CardDavSynchronizer, EmailSynchronizer, FileSynchronizer}
+import thymeflow.sync.facebook.FacebookSynchronizer
 
 import scala.concurrent.duration._
 import scala.language.postfixOps
@@ -57,7 +58,8 @@ object Thymeflow extends StrictLogging {
         FileSynchronizer.source(repository.getValueFactory),
         CalDavSynchronizer.source(repository.getValueFactory),
         CardDavSynchronizer.source(repository.getValueFactory),
-        EmailSynchronizer.source(repository.getValueFactory)
+        EmailSynchronizer.source(repository.getValueFactory),
+        FacebookSynchronizer.source(repository.getValueFactory)
       ),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))

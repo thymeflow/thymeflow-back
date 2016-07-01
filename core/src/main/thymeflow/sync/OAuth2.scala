@@ -5,6 +5,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
+import com.typesafe.scalalogging.StrictLogging
 import spray.json.DefaultJsonProtocol
 import thymeflow.actors._
 
@@ -33,6 +34,14 @@ object OAuth2 {
     redirectUri
   )
 
+  def Facebook(redirectUri: String) = new OAuth2(
+    "https://www.facebook.com/dialog/oauth",
+    "https://graph.facebook.com/v2.6/oauth/access_token",
+    clientId = config.getString("thymeflow.oauth.facebook.client-id"),
+    clientSecret = config.getString("thymeflow.oauth.facebook.client-secret"),
+    redirectUri
+  )
+
   trait RenewableToken[Token] {
     def accessToken: String
 
@@ -41,7 +50,7 @@ object OAuth2 {
 }
 
 class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String, redirectUri: String)
-  extends SprayJsonSupport with DefaultJsonProtocol {
+  extends SprayJsonSupport with DefaultJsonProtocol with StrictLogging {
 
   def getAuthUri(scopes: Traversable[String]): Uri = {
     Uri(authorizeUri).withQuery(Query(
@@ -70,13 +79,17 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
   case class Token(private var access_token: String, private var token_type: String, private var expires_in: Long, private val refresh_token: Option[String], private val id_token: Option[String], user_id: Option[String])
     extends OAuth2.RenewableToken[Token] {
 
-    private val refrechCallbacks = new ArrayBuffer[() => Any]()
+    private val refreshCallbacks = new ArrayBuffer[() => Any]()
 
     override def accessToken: String = access_token
 
     refresh_token.foreach(refreshToken =>
       system.scheduler.scheduleOnce((expires_in - 10) seconds)(refresh(refreshToken))
     )
+
+    override def onRefresh[T](f: () => T): Unit = {
+      refreshCallbacks :+ f
+    }
 
     private def refresh(refreshToken: String): Unit = {
       implicit val RefreshedTokenFormat = jsonFormat3(RefreshedToken)
@@ -94,10 +107,6 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
             system.scheduler.scheduleOnce((expires_in - 10) seconds)(refresh(refreshToken))
           })
       }
-    }
-
-    override def onRefresh[T](f: () => T): Unit = {
-      refrechCallbacks :+ f
     }
   }
 

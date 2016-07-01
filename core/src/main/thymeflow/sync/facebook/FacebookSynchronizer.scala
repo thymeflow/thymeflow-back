@@ -37,6 +37,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
   private class Publisher(valueFactory: ValueFactory)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
 
+
     private val facebookConverter = new FacebookConverter(valueFactory)
 
     override def receive: Receive = super.receive orElse {
@@ -72,7 +73,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
             val queryMe = HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "me").withQuery(
               Query(
                 ("access_token", config.token),
-                ("fields", "about,bio,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id}")
+                ("fields", "about,bio,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
               )
             ))
 
@@ -98,8 +99,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
       HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "").withQuery(
         Query(
           ("access_token", token),
-          ("limit", "1000"),
-          ("fields", "id,attending_count,can_guests_invite,category,cover,declined_count,description,end_time,guest_list_enabled,interested_count,is_page_owned,is_viewer_admin,maybe_count,name,noreply_count,owner,parent_group,place,start_time,ticket_uri,timezone,type,updated_time,attending.limit(1000),declined.limit(1000),interested.limit(1000),maybe.limit(1000),noreply.limit(1000)"),
+          ("fields", "id,attending_count,can_guests_invite,category,cover,declined_count,description,end_time,guest_list_enabled,interested_count,is_page_owned,is_viewer_admin,maybe_count,name,noreply_count,owner,parent_group,place,start_time,ticket_uri,timezone,type,updated_time,attending.limit(100),declined.limit(100),interested.limit(100),maybe.limit(100),noreply.limit(100)"),
           ("ids", eventIds.mkString(","))
         )
       ))

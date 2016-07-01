@@ -4,7 +4,7 @@ import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import thymeflow.rdf.model.SimpleHashModel
-import thymeflow.rdf.model.vocabulary.SchemaOrg
+import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.sync.converter.utils.EmailAddressConverter
 
 /**
@@ -19,6 +19,7 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
     val model = new SimpleHashModel()
     val meNode = valueFactory.createIRI(namespace, me.id)
 
+    model.add(meNode, RDF.TYPE, Personal.AGENT, context)
     model.add(meNode, RDF.TYPE, SchemaOrg.PERSON, context)
 
     me.birthday.foreach {
@@ -54,6 +55,24 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
         model.add(meNode, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(bio), context)
     }
 
+    me.taggable_friends.data.foreach {
+      taggableFriend =>
+        val taggableFriendNode = valueFactory.createIRI(namespace, taggableFriend.id)
+
+        model.add(taggableFriendNode, RDF.TYPE, Personal.AGENT, context)
+        model.add(taggableFriendNode, RDF.TYPE, SchemaOrg.PERSON, context)
+        taggableFriend.name.foreach {
+          name =>
+            model.add(taggableFriendNode, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+        }
+        taggableFriend.picture.foreach {
+          picture =>
+            picture.data.url.foreach {
+              url =>
+                model.add(taggableFriendNode, SchemaOrg.IMAGE, valueFactory.createLiteral(url), context)
+            }
+        }
+    }
     model
   }
 
@@ -80,19 +99,31 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
         model.add(eventNode, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
     }
 
+    event.cover.foreach {
+      cover =>
+        cover.source.foreach {
+          source =>
+            model.add(eventNode, SchemaOrg.IMAGE, valueFactory.createLiteral(source), context)
+        }
+    }
+
     event.invited.foreach {
       invitee =>
-        convert(eventNode, invitee, model, context)
+        val personNode = convert(invitee, model, context)
+        if (invitee.rsvp_status == "attending") {
+          model.add(eventNode, SchemaOrg.ATTENDEE, personNode, context)
+        }
     }
 
     eventNode
   }
 
-  def convert(eventNode: Resource, attendance: Invitee, model: Model, context: IRI): Resource = {
-    val personNode = valueFactory.createIRI(namespace, attendance.id)
+  def convert(invitee: Invitee, model: Model, context: IRI): Resource = {
+    val personNode = valueFactory.createIRI(namespace, invitee.id)
 
+    model.add(personNode, RDF.TYPE, Personal.AGENT, context)
     model.add(personNode, RDF.TYPE, SchemaOrg.PERSON, context)
-    model.add(personNode, SchemaOrg.NAME, valueFactory.createLiteral(attendance.name), context)
+    model.add(personNode, SchemaOrg.NAME, valueFactory.createLiteral(invitee.name), context)
 
     personNode
   }

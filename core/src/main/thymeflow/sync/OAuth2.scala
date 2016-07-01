@@ -79,7 +79,7 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
   case class Token(private var access_token: String, private var token_type: String, private var expires_in: Long, private val refresh_token: Option[String], private val id_token: Option[String], user_id: Option[String])
     extends OAuth2.RenewableToken[Token] {
 
-    private val refrechCallbacks = new ArrayBuffer[() => Any]()
+    private val refreshCallbacks = new ArrayBuffer[() => Any]()
 
     override def accessToken: String = access_token
 
@@ -88,7 +88,7 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
     )
 
     override def onRefresh[T](f: () => T): Unit = {
-      refrechCallbacks :+ f
+      refreshCallbacks :+ f
     }
 
     private def refresh(refreshToken: String): Unit = {

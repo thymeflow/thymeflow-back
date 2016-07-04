@@ -6,7 +6,7 @@ import org.openrdf.model.{Resource, Statement}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.rdf.model.ModelDiff
-import thymeflow.rdf.model.vocabulary.Personal
+import thymeflow.rdf.model.vocabulary.{Negation, Personal}
 
 import scala.collection.JavaConverters._
 
@@ -27,6 +27,12 @@ abstract class AbstractEnricher(repositoryConnection: RepositoryConnection) exte
   protected def addStatements(diff: ModelDiff, statements: util.Collection[Statement]): Unit = {
     val newStatements = statements.asScala
       .filterNot(repositoryConnection.hasStatement(_, false))
+      .filterNot(statement => repositoryConnection.hasStatement(
+        statement.getSubject,
+        Negation.not(statement.getPredicate),
+        statement.getObject,
+        true
+      ))
       .asJavaCollection
     diff.add(newStatements)
     repositoryConnection.add(newStatements)
@@ -36,7 +42,10 @@ abstract class AbstractEnricher(repositoryConnection: RepositoryConnection) exte
     * Add an inferred statement to the repository if it is not already existing
     */
   protected def addStatement(diff: ModelDiff, statement: Statement): Unit = {
-    if (!repositoryConnection.hasStatement(statement, false)) {
+    if (
+      !repositoryConnection.hasStatement(statement, false) &&
+      !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
+    ) {
       diff.add(statement)
       repositoryConnection.add(statement)
     }

@@ -58,7 +58,7 @@ class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) ex
             .map {
               case (statement, Error(l)) =>
                 repositoryConnection.add(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, userDataContext)
-                repositoryConnection.remove(statement.getSubject, statement.getPredicate, statement.getObject) //TODO: make sure they do not come back
+                repositoryConnection.remove(statement.getSubject, statement.getPredicate, statement.getObject)
                 (statement, Error(l))
               case v => v
             }

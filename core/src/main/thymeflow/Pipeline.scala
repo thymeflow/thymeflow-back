@@ -12,6 +12,7 @@ import thymeflow.actors._
 import thymeflow.enricher.{DelayedBatch, Enricher}
 import thymeflow.rdf.Converters._
 import thymeflow.rdf.model.document.Document
+import thymeflow.rdf.model.vocabulary.Negation
 import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.sync.Synchronizer.Update
 import thymeflow.update.UpdateResults
@@ -68,10 +69,18 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
       )
     }
 
-    //Do not add already existing statements
+    //Do not add already existing statements or with already a negation
     val statementsToAdd = new SimpleHashModel(
       repositoryConnection.getValueFactory,
-      statements.asScala.filterNot(statement => repositoryConnection.hasStatement(statement, false)).asJava
+      statements.asScala
+        .filterNot(statement => repositoryConnection.hasStatement(statement, false))
+        .filterNot(statement => repositoryConnection.hasStatement(
+          statement.getSubject,
+          Negation.not(statement.getPredicate),
+          statement.getObject,
+          true
+        ))
+        .asJava
     )
 
     repositoryConnection.add(statementsToAdd)

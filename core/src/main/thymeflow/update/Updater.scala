@@ -143,7 +143,11 @@ class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) ex
   }
 
   private def applyDiffWithContext(diff: ModelDiff): Future[UpdateResults] = {
-    val (userGraphDiff, sourceGraphDiff) = splitGraphFromDiff(diff, userDataContext)
+    val cleanedDiff = new ModelDiff(
+      new SimpleHashModel(valueFactory, diff.added.asScala.filterNot(hasStatementWithContext(_, false)).asJava),
+      new SimpleHashModel(valueFactory, diff.removed.asScala.filter(hasStatementWithContext(_, true)).asJava)
+    )
+    val (userGraphDiff, sourceGraphDiff) = splitGraphFromDiff(cleanedDiff, userDataContext)
     val userGraphResult = applyDiffToRepository(userGraphDiff)
     sendDiffToSource(sourceGraphDiff).map(UpdateResults.merge(_, userGraphResult))
   }
@@ -169,6 +173,10 @@ class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) ex
         statement -> Ok()
       }).toMap
     )
+  }
+
+  private def hasStatementWithContext(statement: Statement, includeInferred: Boolean): Boolean = {
+    repositoryConnection.hasStatement(statement, includeInferred, statement.getContext)
   }
 
   private def noGraphEditorFound(context: Resource): UpdateResult =

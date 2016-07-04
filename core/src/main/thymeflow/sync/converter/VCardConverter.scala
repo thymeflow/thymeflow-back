@@ -215,10 +215,10 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
         valueFactory.createIRI(uri)
       }).orElse({
         Option(photo.getData).flatMap(binary => {
-          Option(photo.getContentType).map(contentType => {
+          Option(photo.getContentType).orElse(VCardImageType.guess(binary)).map(contentType => {
             valueFactory.createIRI(new DataUri(contentType.getMediaType, binary).toString)
           }).orElse({
-            logger.warn("Photo without content type")
+            logger.warn("Photo with unknwon content type.")
             None
           })
         })
@@ -238,11 +238,9 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     private def convert(telephone: Telephone): Option[Resource] = {
       Option(telephone.getUri).flatMap(uri => {
         phoneNumberConverter.convert(uri.toString, model)
-      }).orElse({
-        Option(telephone.getText).flatMap(rawNumber => {
-          phoneNumberConverter.convert(rawNumber, model)
-        })
-      }).map(telephoneResource => {
+      }).orElse(
+        Option(telephone.getText).flatMap(phoneNumberConverter.convert(_, model))
+      ).map(telephoneResource => {
         telephone.getTypes.asScala.foreach(telephoneType =>
           model.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType), context)
         )
@@ -352,9 +350,9 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       statement.getPredicate match {
         case SchemaOrg.ADDITIONAL_NAME =>
           vCard.getStructuredNames.asScala.exists(_.getAdditionalNames.remove(statement.getObject.stringValue()))
-        case SchemaOrg.BIRTH_DATE => vCard.getBirthdays.remove(toBirthdayProperty(statement.getObject))
-        case SchemaOrg.DEATH_DATE => vCard.getDeathdates.remove(toDeathdateProperty(statement.getObject))
-        case SchemaOrg.EMAIL => vCard.getEmails.remove(toEmailProperty(statement.getObject))
+        case SchemaOrg.BIRTH_DATE => vCard.removeProperty(toBirthdayProperty(statement.getObject))
+        case SchemaOrg.DEATH_DATE => vCard.removeProperty(toDeathdateProperty(statement.getObject))
+        case SchemaOrg.EMAIL => vCard.removeProperty(toEmailProperty(statement.getObject))
         case SchemaOrg.FAMILY_NAME =>
           val oldFamily = statement.getObject.stringValue()
           val structuredNames = vCard.getStructuredNames.asScala.filter(_.getFamily == oldFamily)
@@ -369,13 +367,22 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           vCard.getStructuredNames.asScala.exists(_.getPrefixes.remove(statement.getObject.stringValue()))
         case SchemaOrg.HONORIFIC_SUFFIX =>
           vCard.getStructuredNames.asScala.exists(_.getSuffixes.remove(statement.getObject.stringValue()))
-        case SchemaOrg.IMAGE => vCard.getPhotos.remove(toPhotoProperty(statement.getObject))
-        case SchemaOrg.JOB_TITLE => vCard.getTitles.remove(toTitleProperty(statement.getObject))
-        case SchemaOrg.NAME => vCard.getFormattedNames.remove(toFormattedNameProperty(statement.getObject))
+        case SchemaOrg.IMAGE => vCard.removeProperty(toPhotoProperty(statement.getObject))
+        case SchemaOrg.JOB_TITLE => vCard.removeProperty(toTitleProperty(statement.getObject))
+        case SchemaOrg.NAME => vCard.removeProperty(toFormattedNameProperty(statement.getObject))
         case Personal.NICKNAME =>
           vCard.getNicknames.asScala.exists(_.getValues.remove(statement.getObject.stringValue()))
-        case SchemaOrg.TELEPHONE => vCard.getTelephoneNumbers.remove(toTelephoneProperty(statement.getObject))
-        case SchemaOrg.URL => vCard.getUrls.remove(new Url(statement.getObject.stringValue()))
+        case SchemaOrg.TELEPHONE =>
+          vCard.getTelephoneNumbers.asScala.exists(telephone => {
+            Option(telephone.getUri.toString)
+              .orElse(Option(telephone.getText))
+              .flatMap(phoneNumberConverter.buildTelUri)
+              .filter(_ == statement.getObject.stringValue())
+              .exists(_ => vCard.removeProperty(telephone))
+          })
+        case SchemaOrg.URL =>
+          vCard.removeProperty(new Url(statement.getObject.stringValue()))
+          vCard.removeProperty(new RawProperty("X-SOCIALPROFILE", statement.getObject.stringValue()))
         case _ => throw new ConverterException(s"Unsupported property for vCard deletion ${statement.getPredicate}")
       }
     }
@@ -443,7 +450,6 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     }
 
     private def toTelephoneProperty(value: Value): Telephone = {
-      //TODO: should we add tel: IRI or string (Google uses string)?
       value match {
         case iri: IRI if iri.stringValue.startsWith("tel:") => new Telephone(TelUri.parse(iri.stringValue()))
         case _ => throw new ConverterException(s"$value should be a valid tel: IRI")

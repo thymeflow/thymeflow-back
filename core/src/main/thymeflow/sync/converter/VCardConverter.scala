@@ -445,7 +445,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
         case iri: IRI =>
           val uri = iri.stringValue()
           new Photo(uri, ImageType.find(null, null, uri.substring(uri.lastIndexOf(".") + 1)))
-        case _ => throw new ConverterException(s"$value should be a valid tel: IRI")
+        case _ => throw new ConverterException(s"$value should be a data: IRI or an IRI with an image file extension")
       }
     }
 

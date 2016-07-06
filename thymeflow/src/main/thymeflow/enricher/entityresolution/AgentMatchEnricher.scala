@@ -1,4 +1,4 @@
-package thymeflow.enricher
+package thymeflow.enricher.entityresolution
 
 import java.io._
 import java.nio.charset.StandardCharsets
@@ -12,9 +12,9 @@ import org.openrdf.query.QueryLanguage
 import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
 import thymeflow.actors._
-import thymeflow.enricher.AgentMatchEnricher._
+import thymeflow.enricher.AbstractEnricher
+import thymeflow.enricher.entityresolution.AgentMatchEnricher.{SolveMode, _}
 import thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimilarity, StringSimilarity}
-import thymeflow.enricher.entityresolution.EntityResolutionEvaluation
 import thymeflow.graph.serialization.GraphML
 import thymeflow.graph.{ConnectedComponents, ShortestPath}
 import thymeflow.rdf.Converters._
@@ -310,7 +310,7 @@ class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
                 saveEvaluationToFile(
-                  s"${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}",
+                  s"${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
                   evaluatedSamples)
             }
             if (outputSamples) {
@@ -751,7 +751,6 @@ class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
   /**
     *
     * @param entityNames the list of entities to deduplicate. Each entity comes with a name distribution and some name part types
-    * @param matchingTermIndices
     * @tparam ENTITY         the entity type
     * @tparam NAME_PART_TYPE the name part type
     * @tparam NUMERIC        the numeric type

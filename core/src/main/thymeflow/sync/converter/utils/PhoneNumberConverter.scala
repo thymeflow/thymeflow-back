@@ -43,9 +43,10 @@ class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) ex
       }
       Some(number)
     } catch {
-      case e: NumberParseException => logger.warn("The telephone number " + rawNumber + " is invalid", e)
+      case e: NumberParseException =>
+        logger.warn("The telephone number " + rawNumber + " is invalid", e)
+        None
     }
-    None
   }
 
   private def classForPhoneNumberType(phoneNumberType: PhoneNumberUtil.PhoneNumberType): IRI = {

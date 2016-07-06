@@ -55,17 +55,6 @@ object MaxLikelihoodCluster {
     * xMean = \sum { (x_1, \ldots, x_n). combinedVariances }
     * yMean = \sum { (y_1, \ldots, y_n). combinedVariances }
     *
-    * @param t
-    * @param observation
-    * @param settings
-    * @param cartesianMappingOption
-    * @param previousObservations
-    * @param previousTotalWeight
-    * @param previousXMeanNumerator
-    * @param previousYMeanNumerator
-    * @param previousVarianceNormalizer
-    * @param previousVarianceProduct
-    * @tparam OBSERVATION
     * @return
     */
   def apply[OBSERVATION, T](t: T,

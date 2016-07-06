@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.Repository
 import thymeflow.enricher._
+import thymeflow.enricher.entityresolution.AgentMatchEnricher
 import thymeflow.rdf.RepositoryFactory
 import thymeflow.spatial.geocoding.Geocoder
 import thymeflow.sync._

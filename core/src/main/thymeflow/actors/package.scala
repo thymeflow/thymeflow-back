@@ -2,10 +2,13 @@ package thymeflow
 
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
+import akka.util.Timeout
 import com.typesafe.scalalogging.StrictLogging
 import thymeflow.utilities.ExceptionUtils
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.language.postfixOps
 
 /**
   * @author Thomas Pellissier Tanon
@@ -13,17 +16,18 @@ import scala.concurrent.ExecutionContext.Implicits.global
   */
 package object actors extends StrictLogging {
 
-  implicit lazy val system = ActorSystem("thymeflow")
+  implicit val system = ActorSystem("thymeflow")
 
-  lazy val decider: Supervision.Decider = throwable => {
+  val decider: Supervision.Decider = throwable => {
     logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
     Supervision.Stop
   }
 
-  implicit lazy val executor = global
+  implicit val executor = global
 
-  implicit lazy val materializer = ActorMaterializer(
+  implicit val materializer = ActorMaterializer(
     ActorMaterializerSettings(system).withSupervisionStrategy(decider)
   )
 
+  implicit val timeout = Timeout(30 seconds)
 }

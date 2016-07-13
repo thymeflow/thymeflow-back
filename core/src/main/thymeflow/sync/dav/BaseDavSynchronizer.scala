@@ -1,18 +1,23 @@
 package thymeflow.sync.dav
 
-import java.io.IOException
+import java.io.{ByteArrayInputStream, IOException}
+import java.net.URI
 import javax.xml.namespace.QName
 
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.typesafe.scalalogging.StrictLogging
+import org.apache.commons.io.IOUtils
 import org.apache.http.client.utils.URIBuilder
 import org.openrdf.model.{Model, Resource, ValueFactory}
 import thymeflow.actors._
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.document.Document
 import thymeflow.sync.Synchronizer
+import thymeflow.sync.Synchronizer.Update
 import thymeflow.sync.dav.BaseDavSynchronizer._
+import thymeflow.update.UpdateResults
 import thymeflow.utilities.ExceptionUtils
 
 import scala.collection.JavaConverters._
@@ -29,6 +34,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     extends BasePublisher {
 
     private val fetchers = new mutable.HashMap[String, DocumentFetcher]()
+    private val fetcherForDirectory = new mutable.HashMap[String, DocumentFetcher]
     private val queue = new mutable.Queue[Document]
 
     override def receive: Receive = {
@@ -38,8 +44,13 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         context.stop(self)
       case Tick =>
         if (waitingForData) {
-          fetchers.values.foreach(retrieveDocuments)
+          retrieveAllDocuments()
         }
+        deliverWaitingDocuments()
+      case Update(diff) =>
+        retrieveAllDocuments() //Update state of sync
+        sender() ! applyDiff(diff)
+        retrieveAllDocuments()
         deliverWaitingDocuments()
     }
 
@@ -47,13 +58,14 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       this.self ! Tick
     })
 
-    protected def addFetcher(fetcher: DocumentFetcher): Unit = {
+    protected def addFetcher(newFetcher: DocumentFetcher): Unit = {
       //If it is a fetcher for the same base URI we only updates Sardine
-      val newFetcher = fetchers.getOrElseUpdate(fetcher.baseUri, fetcher)
-      newFetcher.updateSardine(fetcher.sardine)
+      val fetcher = fetchers.getOrElseUpdate(newFetcher.baseUri, newFetcher)
+      fetcher.updateSardine(newFetcher.sardine)
+      fetcher.directories.foreach(fetcherForDirectory.put(_, fetcher))
 
       deliverWaitingDocuments()
-      retrieveDocuments(newFetcher)
+      retrieveDocuments(fetcher)
     }
 
     protected def deliverWaitingDocuments(): Unit = {
@@ -66,6 +78,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       isActive && totalDemand > 0
     }
 
+    private def retrieveAllDocuments(): Unit = {
+      fetchers.values.foreach(retrieveDocuments)
+    }
+
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
@@ -75,15 +91,31 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         }
       )
     }
+
+    private def applyDiff(diff: ModelDiff): UpdateResults = {
+      UpdateResults.merge(diff.contexts().asScala.map(context => {
+        val contextDiff = diff.filter(null, null, null, context)
+        UpdateResults.merge(
+          getFetchersForUri(context.toString)
+            .map(_.applyDiff(contextDiff))
+        )
+      }))
+    }
+
+    private def getFetchersForUri(uri: String): Traversable[BaseDavDocumentsFetcher] = {
+      fetcherForDirectory.filterKeys(uri.startsWith).values
+    }
   }
 
   protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, var sardine: Sardine, val baseUri: String) {
 
+    protected val mimeType: String
+
     private val elementsEtag = new mutable.HashMap[String, String]()
-    private val paths = getDirectoryUris(baseUri)
+    val directories = getDirectoryUris(baseUri)
 
     def newDocuments: Traversable[Document] = {
-      paths.flatMap(newDocumentsFromDirectory)
+      directories.flatMap(newDocumentsFromDirectory)
     }
 
     private def newDocumentsFromDirectory(directoryUri: String): Traversable[Document] = {
@@ -140,6 +172,29 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     private def buildUriFromBaseAndPath(base: String, path: String): String = {
       new URIBuilder(base).setPath(path).toString
     }
+
+    def applyDiff(diff: ModelDiff): UpdateResults = {
+      UpdateResults.merge(diff.contexts().asScala.map(context => {
+        val documentUrl = new URI(context.toString)
+        val oldVersion = IOUtils.toString(sardine.get(documentUrl.toString))
+        val (newVersion, result) = applyDiff(oldVersion, diff.filter(null, null, null, context))
+        if (newVersion == oldVersion) {
+          logger.info(s"No change for vCard $documentUrl")
+          return result
+        }
+
+        var headers = Map(
+          "Content-Type" -> mimeType
+        )
+        elementsEtag.get(documentUrl.getPath).foreach(etag =>
+          headers += "If-Match" -> etag
+        )
+        sardine.put(documentUrl.toString, new ByteArrayInputStream(newVersion.getBytes), headers.asJava)
+        result
+      }))
+    }
+
+    protected def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults)
   }
 }
 

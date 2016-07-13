@@ -1,6 +1,7 @@
 package thymeflow.sync
 
 import akka.stream.actor.ActorPublisher
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.document.Document
 
 /**
@@ -12,3 +13,8 @@ trait Synchronizer {
 
 }
 
+object Synchronizer {
+
+  case class Update(diff: ModelDiff)
+
+}

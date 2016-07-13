@@ -5,18 +5,21 @@ import java.text.SimpleDateFormat
 import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.typesafe.scalalogging.StrictLogging
-import ezvcard.parameter.{AddressType, EmailType, TelephoneType}
+import ezvcard.parameter.{AddressType, EmailType, ImageType, TelephoneType}
 import ezvcard.property._
-import ezvcard.util.DataUri
+import ezvcard.util.{DataUri, TelUri}
 import ezvcard.{Ezvcard, VCard}
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import thymeflow.spatial
 import thymeflow.sync.converter.utils._
+import thymeflow.update.{UpdateResult, UpdateResults}
+import thymeflow.utilities.{Error, Ok}
 
 import scala.collection.JavaConverters._
+import scala.compat.java8.OptionConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -41,10 +44,30 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   private def convert(vCards: Traversable[VCard], context: Resource): Model = {
     val model = new SimpleHashModel(valueFactory)
     val converter = new ToModelConverter(model, context)
-    vCards.foreach(vCard =>
-      converter.convert(vCard)
-    )
+    vCards.foreach(converter.convert)
     model
+  }
+
+  override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
+    val updateResult = UpdateResults()
+    (Ezvcard.write(Ezvcard.parse(str).all().asScala.map(vCard => {
+      val diffAppplication = new DiffApplication(vCard)
+      updateResult.merge(UpdateResults(
+        diff.added.asScala.map(statement =>
+          statement -> diffAppplication.add(statement)
+        ).toMap,
+        diff.removed.asScala.map(statement =>
+          statement -> diffAppplication.remove(statement)
+        ).toMap
+      ))
+      vCard
+    }).asJava).go(), updateResult)
+  }
+
+  private def resourceForVCard(vCard: VCard): Resource = {
+    Option(vCard.getUid)
+      .map(uid => uuidConverter.convert(uid.getValue))
+      .getOrElse(uuidConverter.createIRI(vCard))
   }
 
   private class ToModelConverter(model: Model, context: Resource) {
@@ -63,14 +86,14 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
             model.add(cardResource, Personal.NICKNAME, valueFactory.createLiteral(nickname), context)
           )
         //DEATHDATE
-        case deathDay: Deathdate => convert(deathDay).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date, context))
+        case deathdate: Deathdate => convert(deathdate).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date, context))
         //EMAIL
         case email: Email =>
           convert(email).foreach {
             resource => model.add(cardResource, SchemaOrg.EMAIL, resource, context)
           }
         //FN
-        case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, valueFactory.createLiteral(formattedName.getValue), context)
+        case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, convert(formattedName), context)
         //N
         case structuredName: StructuredName =>
           Option(structuredName.getFamily).foreach(familyName =>
@@ -85,7 +108,7 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           structuredName.getPrefixes.asScala.foreach(prefix =>
             model.add(cardResource, SchemaOrg.HONORIFIC_PREFIX, valueFactory.createLiteral(prefix), context)
           )
-          structuredName.getPrefixes.asScala.foreach(suffix =>
+          structuredName.getSuffixes.asScala.foreach(suffix =>
             model.add(cardResource, SchemaOrg.HONORIFIC_SUFFIX, valueFactory.createLiteral(suffix), context)
           )
         //ORG
@@ -179,15 +202,23 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
       }
     }
 
+    private def convert(formattedName: FormattedName): Literal = {
+      if (formattedName.getLanguage == null) {
+        valueFactory.createLiteral(formattedName.getValue)
+      } else {
+        valueFactory.createLiteral(formattedName.getValue, formattedName.getLanguage)
+      }
+    }
+
     private def convert(photo: ImageProperty): Option[Resource] = {
       Option(photo.getUrl).map(uri => {
         valueFactory.createIRI(uri)
       }).orElse({
         Option(photo.getData).flatMap(binary => {
-          Option(photo.getContentType).map(contentType => {
+          Option(photo.getContentType).orElse(VCardImageType.guess(binary)).map(contentType => {
             valueFactory.createIRI(new DataUri(contentType.getMediaType, binary).toString)
           }).orElse({
-            logger.warn("Photo without content type")
+            logger.warn("Photo with unknwon content type.")
             None
           })
         })
@@ -207,11 +238,9 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
     private def convert(telephone: Telephone): Option[Resource] = {
       Option(telephone.getUri).flatMap(uri => {
         phoneNumberConverter.convert(uri.toString, model)
-      }).orElse({
-        Option(telephone.getText).flatMap(rawNumber => {
-          phoneNumberConverter.convert(rawNumber, model)
-        })
-      }).map(telephoneResource => {
+      }).orElse(
+        Option(telephone.getText).flatMap(phoneNumberConverter.convert(_, model))
+      ).map(telephoneResource => {
         telephone.getTypes.asScala.foreach(telephoneType =>
           model.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType), context)
         )
@@ -243,11 +272,188 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
           None
       }
     }
+  }
 
-    private def resourceForVCard(vCard: VCard): Resource = {
-      Option(vCard.getUid)
-        .map(uid => uuidConverter.convert(uid.getValue))
-        .getOrElse(uuidConverter.createIRI(vCard))
+  private class DiffApplication(vCard: VCard) {
+    //TODO: dramma: what to do for (agent, schema:organization, org) /\ (org, schema:name, name) ???
+    //The add method should always be called after remove in case of edit
+    def add(statement: Statement): UpdateResult = {
+      if (statement.getSubject == resourceForVCard(vCard)) {
+        try {
+          if (addCardStatement(statement)) {
+            Ok()
+          } else {
+            Error(List())
+          }
+        } catch {
+          case e: ConverterException => Error(List(e))
+        }
+      } else {
+        Error(List())
+      }
+    }
+
+    private def addCardStatement(statement: Statement): Boolean = {
+      //TODO: we do not support alternative representation for structured name (only VCard 4.0)
+      statement.getPredicate match {
+        case SchemaOrg.ADDITIONAL_NAME =>
+          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getAdditionalNames.add(statement.getObject.toString)
+        case SchemaOrg.BIRTH_DATE => vCard.getBirthdays.add(toBirthdayProperty(statement.getObject))
+        case SchemaOrg.DEATH_DATE => vCard.getDeathdates.add(toDeathdateProperty(statement.getObject))
+        case SchemaOrg.EMAIL => vCard.getEmails.add(toEmailProperty(statement.getObject))
+        case SchemaOrg.FAMILY_NAME =>
+          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
+          val newFamily = statement.getObject.toString
+          Option(structuredName).filter(_.getFamily != newFamily).foreach(
+            throw new ConverterException("The family name is already set to a different value")
+          )
+          structuredName.setFamily(statement.getObject.toString)
+          true
+        case SchemaOrg.GIVEN_NAME =>
+          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
+          val newGiven = statement.getObject.toString
+          Option(structuredName).filter(_.getGiven != newGiven).foreach(
+            throw new ConverterException("The given name is already set to a different value")
+          )
+          structuredName.setGiven(statement.getObject.toString)
+          true
+        case SchemaOrg.HONORIFIC_PREFIX =>
+          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getPrefixes.add(statement.getObject.toString)
+        case SchemaOrg.HONORIFIC_SUFFIX =>
+          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getSuffixes.add(statement.getObject.toString)
+        case SchemaOrg.IMAGE => vCard.getPhotos.add(toPhotoProperty(statement.getObject))
+        case SchemaOrg.JOB_TITLE => vCard.getTitles.add(toTitleProperty(statement.getObject))
+        case SchemaOrg.NAME => vCard.getFormattedNames.add(toFormattedNameProperty(statement.getObject))
+        case Personal.NICKNAME =>
+          vCard.getNicknames.asScala.headOption.getOrElse(new Nickname()).getValues.add(statement.getObject.stringValue())
+        case SchemaOrg.TELEPHONE => vCard.getTelephoneNumbers.add(toTelephoneProperty(statement.getObject))
+        case SchemaOrg.URL => vCard.addUrl(statement.getObject.stringValue()); true
+        //SchemaOrg.MEMBER_OF
+        case _ => throw new ConverterException(s"Unsupported property for vCard addition ${statement.getPredicate}")
+      }
+    }
+
+    def remove(statement: Statement): UpdateResult = {
+      if (statement.getSubject == resourceForVCard(vCard)) {
+        try {
+          removeCardStatement(statement)
+          Ok()
+        } catch {
+          case e: ConverterException => Error(List(e))
+        }
+      } else {
+        Error(List())
+      }
+    }
+
+    private def removeCardStatement(statement: Statement): Boolean = {
+      statement.getPredicate match {
+        case SchemaOrg.ADDITIONAL_NAME =>
+          vCard.getStructuredNames.asScala.exists(_.getAdditionalNames.remove(statement.getObject.stringValue()))
+        case SchemaOrg.BIRTH_DATE => vCard.removeProperty(toBirthdayProperty(statement.getObject))
+        case SchemaOrg.DEATH_DATE => vCard.removeProperty(toDeathdateProperty(statement.getObject))
+        case SchemaOrg.EMAIL => vCard.removeProperty(toEmailProperty(statement.getObject))
+        case SchemaOrg.FAMILY_NAME =>
+          val oldFamily = statement.getObject.stringValue()
+          val structuredNames = vCard.getStructuredNames.asScala.filter(_.getFamily == oldFamily)
+          structuredNames.foreach(_.setFamily(null))
+          structuredNames.nonEmpty
+        case SchemaOrg.GIVEN_NAME =>
+          val oldGiven = statement.getObject.stringValue()
+          val structuredNames = vCard.getStructuredNames.asScala.filter(_.getGiven == oldGiven)
+          structuredNames.foreach(_.setGiven(null))
+          structuredNames.nonEmpty
+        case SchemaOrg.HONORIFIC_PREFIX =>
+          vCard.getStructuredNames.asScala.exists(_.getPrefixes.remove(statement.getObject.stringValue()))
+        case SchemaOrg.HONORIFIC_SUFFIX =>
+          vCard.getStructuredNames.asScala.exists(_.getSuffixes.remove(statement.getObject.stringValue()))
+        case SchemaOrg.IMAGE => vCard.removeProperty(toPhotoProperty(statement.getObject))
+        case SchemaOrg.JOB_TITLE => vCard.removeProperty(toTitleProperty(statement.getObject))
+        case SchemaOrg.NAME => vCard.removeProperty(toFormattedNameProperty(statement.getObject))
+        case Personal.NICKNAME =>
+          vCard.getNicknames.asScala.exists(_.getValues.remove(statement.getObject.stringValue()))
+        case SchemaOrg.TELEPHONE =>
+          vCard.getTelephoneNumbers.asScala.exists(telephone => {
+            Option(telephone.getUri.toString)
+              .orElse(Option(telephone.getText))
+              .flatMap(phoneNumberConverter.buildTelUri)
+              .filter(_ == statement.getObject.stringValue())
+              .exists(_ => vCard.removeProperty(telephone))
+          })
+        case SchemaOrg.URL =>
+          vCard.removeProperty(new Url(statement.getObject.stringValue()))
+          vCard.removeProperty(new RawProperty("X-SOCIALPROFILE", statement.getObject.stringValue()))
+        case _ => throw new ConverterException(s"Unsupported property for vCard deletion ${statement.getPredicate}")
+      }
+    }
+
+    private def toBirthdayProperty(value: Value): Birthday = {
+      value match {
+        case literal: Literal if literal.getDatatype == XMLSchema.DATETIME =>
+          new Birthday(literal.calendarValue().toGregorianCalendar.getTime, true)
+        case literal: Literal if literal.getDatatype == XMLSchema.DATE =>
+          new Birthday(literal.calendarValue().toGregorianCalendar.getTime)
+        case _ => throw new ConverterException(s"$value should be a valid date or dateTime literal")
+      }
+    }
+
+
+    private def toDeathdateProperty(value: Value): Deathdate = {
+      value match {
+        case literal: Literal if literal.getDatatype == XMLSchema.DATETIME =>
+          new Deathdate(literal.calendarValue().toGregorianCalendar.getTime, true)
+        case literal: Literal if literal.getDatatype == XMLSchema.DATE =>
+          new Deathdate(literal.calendarValue().toGregorianCalendar.getTime)
+        case _ => throw new ConverterException(s"$value should be a valid date or dateTime literal")
+      }
+    }
+
+    private def toEmailProperty(value: Value): Email = {
+      value match {
+        case iri: IRI if iri.stringValue.startsWith("mailto:") => new Email(iri.getLocalName)
+        case _ => throw new ConverterException(s"$value should be a valid mailto: IRI")
+      }
+    }
+
+
+    private def toFormattedNameProperty(value: Value): FormattedName = {
+      value match {
+        case literal: Literal =>
+          val formattedName = new FormattedName(literal.stringValue())
+          literal.getLanguage.asScala.foreach(formattedName.setLanguage)
+          formattedName
+        case _ => throw new ConverterException(s"$value should be a string literal")
+      }
+    }
+
+    private def toTitleProperty(value: Value): Title = {
+      value match {
+        case literal: Literal =>
+          val title = new Title(literal.stringValue())
+          literal.getLanguage.asScala.foreach(title.setLanguage)
+          title
+        case _ => throw new ConverterException(s"$value should be a string literal")
+      }
+    }
+
+    private def toPhotoProperty(value: Value): Photo = {
+      //TODO: should we add data: IRI or string?
+      value match {
+        case iri: IRI if iri.stringValue.startsWith("data:") =>
+          val data = DataUri.parse(iri.stringValue())
+          new Photo(data.getData, ImageType.find(null, data.getContentType, null))
+        case iri: IRI =>
+          val uri = iri.stringValue()
+          new Photo(uri, ImageType.find(null, null, uri.substring(uri.lastIndexOf(".") + 1)))
+        case _ => throw new ConverterException(s"$value should be a data: IRI or an IRI with an image file extension")
+      }
+    }
+
+    private def toTelephoneProperty(value: Value): Telephone = {
+      value match {
+        case iri: IRI if iri.stringValue.startsWith("tel:") => new Telephone(TelUri.parse(iri.stringValue()))
+        case _ => throw new ConverterException(s"$value should be a valid tel: IRI")
+      }
     }
   }
 }

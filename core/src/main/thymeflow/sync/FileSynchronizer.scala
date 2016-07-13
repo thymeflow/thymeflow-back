@@ -8,9 +8,12 @@ import akka.actor.Props
 import akka.stream.scaladsl.Source
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.ValueFactory
+import thymeflow.rdf.model.ModelDiff
 import thymeflow.rdf.model.document.Document
+import thymeflow.sync.Synchronizer.Update
 import thymeflow.sync.converter._
 import thymeflow.sync.publisher.ScrollDocumentPublisher
+import thymeflow.update.UpdateResults
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -56,6 +59,7 @@ object FileSynchronizer extends Synchronizer {
 
     override def receive: Receive = super.receive orElse {
       case config: Config => queue(Vector(config))
+      case Update(diff) => sender() ! applyDiff(diff)
     }
 
     override protected def queryBuilder = {
@@ -183,6 +187,18 @@ object FileSynchronizer extends Synchronizer {
         inputStream.close()
         Document(documentIri, model)
       }
+    }
+
+    private def applyDiff(diff: ModelDiff): UpdateResults = {
+      //We tag file:// contexts as failed
+      UpdateResults.merge(
+        diff.contexts().asScala
+          .filter(_.stringValue().startsWith("file://"))
+          .map(context => UpdateResults.allFailed(
+            diff.filter(null, null, null, context),
+            new ConverterException("Files could not be modified")
+          ))
+      )
     }
   }
 }

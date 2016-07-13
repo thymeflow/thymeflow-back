@@ -11,9 +11,10 @@ package object facebook {
   implicit def formatResults[T](implicit format: JsonFormat[T]) = jsonFormat1(Results[T])
 
   implicit def formatResult[T](implicit format: JsonFormat[T]) = jsonFormat1(Result[T])
-  implicit val formatLocation = jsonFormat6(Location)
+
+  implicit val formatLocation = jsonFormat8(Location)
   implicit val formatPage = jsonFormat1(Page)
-  implicit val formatEventPlace = jsonFormat2(EventPlace)
+  implicit val formatEventPlace = jsonFormat3(EventPlace)
   implicit val formatAttendance = jsonFormat3(Invitee)
   implicit val formatCovert = jsonFormat2(Cover)
   implicit val formatEvent = jsonFormat13(Event)
@@ -25,11 +26,11 @@ package object facebook {
 
   case class Results[T](data: Vector[T])
 
-  case class Location(city: Option[String], country: Option[String], latitude: Option[Double], longitude: Option[Double], street: Option[String], zip: Option[String])
+  case class Location(city: Option[String], country: Option[String], latitude: Option[Double], longitude: Option[Double], region: Option[String], state: Option[String], street: Option[String], zip: Option[String])
 
   case class Page(name: Option[String])
 
-  case class EventPlace(name: Option[String], location: Option[Location])
+  case class EventPlace(id: Option[String], name: Option[String], location: Option[Location])
 
   case class Invitee(id: String, name: String, rsvp_status: String)
 

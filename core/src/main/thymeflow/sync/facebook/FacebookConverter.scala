@@ -5,7 +5,8 @@ import org.openrdf.model.vocabulary.RDF
 import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import thymeflow.sync.converter.utils.EmailAddressConverter
+import thymeflow.spatial.Address
+import thymeflow.sync.converter.utils.{EmailAddressConverter, GeoCoordinatesConverter, PostalAddressConverter}
 
 /**
   * @author David Montoya
@@ -14,6 +15,8 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
 
   final val namespace = "https://graph.facebook.com/"
   private val converter = new EmailAddressConverter(valueFactory)
+  private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
+  private val postalAddressConverter = new PostalAddressConverter(valueFactory)
 
   def convert(me: Me, context: IRI): Model = {
     val model = new SimpleHashModel()
@@ -107,6 +110,12 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
         }
     }
 
+    event.place.foreach {
+      place =>
+        val placeNode = convert(place, model, context)
+        model.add(eventNode, SchemaOrg.LOCATION, placeNode)
+    }
+
     event.invited.foreach {
       invitee =>
         val personNode = convert(invitee, model, context)
@@ -116,6 +125,46 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
     }
 
     eventNode
+  }
+
+  def convert(eventPlace: EventPlace, model: Model, context: IRI): Resource = {
+    val placeResource =
+      eventPlace.id match {
+        case Some(id) => valueFactory.createIRI(namespace, id)
+        case None => valueFactory.createBNode()
+      }
+    model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
+    eventPlace.name.foreach {
+      name =>
+        model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+    }
+    eventPlace.location.foreach {
+      location =>
+        (location.longitude, location.latitude) match {
+          case (Some(longitude), Some(latitude)) =>
+            val geo = geoCoordinatesConverter.convert(longitude, latitude, None, None, model)
+            model.add(placeResource, SchemaOrg.GEO, geo, context)
+          case _ =>
+        }
+        val postalAddressResource = postalAddressConverter.convert(new Address {
+          override def houseNumber: Option[String] = None
+
+          override def postalCode: Option[String] = location.zip
+
+          override def country: Option[String] = location.country
+
+          override def region: Option[String] = Vector(location.state, location.region).flatten match {
+            case Vector() => None
+            case v => Some(v.mkString(" "))
+          }
+
+          override def locality: Option[String] = location.city
+
+          override def street: Option[String] = location.street
+        }, model, context)
+        model.add(placeResource, SchemaOrg.ADDRESS, postalAddressResource, context)
+    }
+    placeResource
   }
 
   def convert(invitee: Invitee, model: Model, context: IRI): Resource = {

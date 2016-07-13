@@ -1,10 +1,15 @@
 package thymeflow.sync.facebook
 
 import java.text.{ParseException, SimpleDateFormat}
+import java.time.OffsetDateTime
+import java.time.chrono.IsoChronology
+import java.time.format.{DateTimeFormatter, DateTimeFormatterBuilder, DateTimeParseException, ResolverStyle}
+import java.time.temporal.ChronoField._
+import java.util.Locale
 
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model._
+import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import thymeflow.rdf.model.SimpleHashModel
 import thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import thymeflow.spatial.Address
@@ -76,13 +81,13 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
     val eventNode = valueFactory.createIRI(namespace, event.id)
     model.add(eventNode, RDF.TYPE, SchemaOrg.EVENT, context)
 
-    /*event.start_time.foreach(startTime =>
-      model.add(eventNode, SchemaOrg.START_DATE, valueFactory.createLiteral(startTime), context)
+    event.start_time.flatMap(convertIsoOffsetDateTime).foreach(startTime =>
+      model.add(eventNode, SchemaOrg.START_DATE, startTime, context)
     )
 
-    event.end_time.foreach(endTime =>
-      model.add(eventNode, SchemaOrg.END_DATE, valueFactory.createLiteral(endTime), context)
-    ) TODO: parse */
+    event.end_time.flatMap(convertIsoOffsetDateTime).foreach(endTime =>
+      model.add(eventNode, SchemaOrg.END_DATE, endTime, context)
+    )
 
     event.description.foreach(description =>
       model.add(eventNode, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description), context)
@@ -123,19 +128,23 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
         case None => valueFactory.createBNode()
       }
     model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
+
     eventPlace.name.foreach {
       name =>
         model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
     }
+
     eventPlace.location.foreach {
       location =>
+
         (location.longitude, location.latitude) match {
           case (Some(longitude), Some(latitude)) =>
             val geo = geoCoordinatesConverter.convert(longitude, latitude, None, None, model)
             model.add(placeResource, SchemaOrg.GEO, geo, context)
           case _ =>
         }
-        val postalAddressResource = postalAddressConverter.convert(new Address {
+
+        val address = new Address {
           override def houseNumber: Option[String] = None
 
           override def postalCode: Option[String] = location.zip
@@ -150,7 +159,9 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
           override def locality: Option[String] = location.city
 
           override def street: Option[String] = location.street
-        }, model, context)
+        }
+
+        val postalAddressResource = postalAddressConverter.convert(address, model, context)
         model.add(placeResource, SchemaOrg.ADDRESS, postalAddressResource, context)
     }
     placeResource
@@ -164,6 +175,40 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
     model.add(personNode, SchemaOrg.NAME, valueFactory.createLiteral(invitee.name), context)
 
     personNode
+  }
+
+
+  private val isoOffsetDateTimeParser = new DateTimeFormatterBuilder()
+    .parseCaseInsensitive()
+    .append(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+    .appendOffset("+HHmm", "Z")
+    .toFormatter(Locale.ROOT)
+    .withResolverStyle(ResolverStyle.STRICT)
+    .withChronology(IsoChronology.INSTANCE)
+
+  private val isoOffsetDateTimeFormatter = new DateTimeFormatterBuilder()
+    .append(DateTimeFormatter.ISO_LOCAL_DATE)
+    .appendLiteral('T')
+    .appendValue(HOUR_OF_DAY, 2)
+    .appendLiteral(':')
+    .appendValue(MINUTE_OF_HOUR, 2)
+    .appendLiteral(':')
+    .appendValue(SECOND_OF_MINUTE, 2)
+    .optionalStart()
+    .appendFraction(NANO_OF_SECOND, 0, 9, true)
+    .optionalEnd()
+    .appendOffset("+HH:MM", "Z")
+    .toFormatter(Locale.ROOT)
+
+  def convertIsoOffsetDateTime(dateTime: String) = {
+    try {
+      val parsedDateTime = OffsetDateTime.parse(dateTime, isoOffsetDateTimeParser)
+      Some(valueFactory.createLiteral(parsedDateTime.format(isoOffsetDateTimeFormatter), XMLSchema.DATETIME))
+    } catch {
+      case e: DateTimeParseException =>
+        logger.warn(s"Invalid Facebook ISO Offset DateTime $dateTime")
+        None
+    }
   }
 
   def convertDate(date: String): Option[Literal] = {
@@ -182,7 +227,7 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
               Some(valueFactory.createLiteral(new SimpleDateFormat("MM-ddd").format(y), XMLSchema.GMONTHDAY))
             } catch {
               case e: ParseException =>
-                logger.info(s"Invalid Fabook date $date")
+                logger.info(s"Invalid Facebook Date $date")
                 None
             }
         }

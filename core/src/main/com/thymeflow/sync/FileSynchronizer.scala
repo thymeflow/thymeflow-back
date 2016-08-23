@@ -127,7 +127,7 @@ object FileSynchronizer extends Synchronizer {
               case (zipfile: ZipFile) =>
                 (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
                   case entry if !entry.isDirectory =>
-                    retrieveFile(Paths.get(entry.getName), () => zipfile.getInputStream(entry))
+                    retrieveFile(Paths.get(zipfile.getName, entry.getName), () => zipfile.getInputStream(entry))
                 }.flatten)), None)
               case config: Config =>
                 (config.mimeType match {

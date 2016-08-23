@@ -33,11 +33,12 @@ class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLo
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Resource): Model = {
-    convert(Ezvcard.parse(stream).all.asScala, context)
+  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+    val wholeContext = context(None)
+    Iterator((wholeContext, convert(Ezvcard.parse(stream).all.asScala, wholeContext)))
   }
 
-  override def convert(str: String, context: Resource): Model = {
+  def convert(str: String, context: Resource): Model = {
     convert(Ezvcard.parse(str).all.asScala, context)
   }
 

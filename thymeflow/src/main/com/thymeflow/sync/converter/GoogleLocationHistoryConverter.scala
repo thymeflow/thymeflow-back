@@ -2,6 +2,7 @@ package com.thymeflow.sync.converter
 
 import java.io.InputStream
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
@@ -10,7 +11,7 @@ import com.thymeflow.utilities.ExceptionUtils
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.openrdf.model.{Model, Resource, ValueFactory}
+import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
 import spray.json.{DefaultJsonProtocol, DeserializationException, JsValue, JsonParser}
 
 /**
@@ -23,59 +24,63 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Convert
   implicit val locationFormat = jsonFormat7(Location)
   implicit val locationHistoryFormat = jsonFormat1(LocationHistory)
 
-  override def convert(str: String, context: Resource): Model = {
-    convert(JsonParser(str), context)
+  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+    convert(JsonParser(IOUtils.toByteArray(stream)), context)
   }
 
-  override def convert(inputStream: InputStream, context: Resource): Model = {
-    convert(JsonParser(IOUtils.toByteArray(inputStream)), context)
-  }
-
-  private def convert(json: JsValue, context: Resource): Model = {
+  private def convert(json: JsValue, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
     try {
       convert(json.convertTo[LocationHistory], context)
     } catch {
       case e: DeserializationException =>
         logger.error(ExceptionUtils.getUnrolledStackTrace(e))
-        new SimpleHashModel(valueFactory)
+        Iterator.empty
     }
   }
 
-  private def convert(locationHistory: LocationHistory, context: Resource): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context)
-    converter.convert(locationHistory)
-    logger.info("Extraction of " + locationHistory.locations.length + " locations done.")
-    model
+  private def convert(locationHistory: LocationHistory, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+    val locationsGroupedByDay = locationHistory.locations.view.map {
+      case location => (location.time, location)
+    }.collect {
+      case (Some(time), location) => (time, location)
+    }.groupBy {
+      case (time, _) => time.truncatedTo(ChronoUnit.DAYS)
+    }
+    logger.info(s"Converting ${locationHistory.locations.length} locations...")
+    locationsGroupedByDay.iterator.map {
+      case (day, locations) =>
+        val dayContext = context(Some(day.toString))
+        val model = new SimpleHashModel(valueFactory)
+        val converter = new ToModelConverter(model, dayContext)
+        converter.convert(locations)
+        (dayContext, model)
+    }
   }
 
   private class ToModelConverter(model: Model, context: Resource) {
-    def convert(locationHistory: LocationHistory): Unit = {
-      locationHistory.locations.foreach(convert)
+    def convert(locations: Traversable[(Instant, Location)]): Unit = {
+      locations.foreach {
+        case (time, location) => convert(time, location)
+      }
     }
 
-    def convert(location: Location): Unit = {
-      location.time match {
-        case Some(time) =>
-          val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy.map(_.toDouble), model)
-          val timeGeoLocationNode = valueFactory.createBNode()
-          model.add(timeGeoLocationNode, RDF.TYPE, Personal.LOCATION, context)
-          model.add(timeGeoLocationNode, SchemaOrg.GEO, geoCoordinatesNode, context)
-          model.add(timeGeoLocationNode, Personal.TIME, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
+    def convert(time: Instant, location: Location): Unit = {
+      val geoCoordinatesNode = geoCoordinatesConverter.convert(location.longitude, location.latitude, location.altitude, location.accuracy.map(_.toDouble), model)
+      val timeGeoLocationNode = valueFactory.createBNode()
+      model.add(timeGeoLocationNode, RDF.TYPE, Personal.LOCATION, context)
+      model.add(timeGeoLocationNode, SchemaOrg.GEO, geoCoordinatesNode, context)
+      model.add(timeGeoLocationNode, Personal.TIME, valueFactory.createLiteral(time.toString, XMLSchema.DATETIME), context)
 
-          // less frequent
-          location.velocity.foreach(magnitude => {
-            val velocityNode = valueFactory.createBNode()
-            model.add(velocityNode, RDF.TYPE, Personal.GEO_VECTOR, context)
-            model.add(geoCoordinatesNode, Personal.VELOCITY, velocityNode, context)
-            model.add(velocityNode, Personal.MAGNITUDE, valueFactory.createLiteral(magnitude), context)
-            location.heading.foreach(heading =>
-              model.add(geoCoordinatesNode, Personal.ANGLE, valueFactory.createLiteral(heading), context)
-            )
-          })
-        case None =>
-          logger.warn(s"Ignoring location with invalid timestamp {location=$location}.")
-      }
+      // less frequent
+      location.velocity.foreach(magnitude => {
+        val velocityNode = valueFactory.createBNode()
+        model.add(velocityNode, RDF.TYPE, Personal.GEO_VECTOR, context)
+        model.add(geoCoordinatesNode, Personal.VELOCITY, velocityNode, context)
+        model.add(velocityNode, Personal.MAGNITUDE, valueFactory.createLiteral(magnitude), context)
+        location.heading.foreach(heading =>
+          model.add(geoCoordinatesNode, Personal.ANGLE, valueFactory.createLiteral(heading), context)
+        )
+      })
     }
   }
 }

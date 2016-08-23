@@ -23,11 +23,12 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Resource): Model = {
-    convert(new MimeMessage(null, stream), context)
+  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+    val wholeContext = context(None)
+    Iterator((wholeContext, convert(new MimeMessage(null, stream), wholeContext)))
   }
 
-  override def convert(str: String, context: Resource): Model = {
+  def convert(str: String, context: Resource): Model = {
     convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
   }
 

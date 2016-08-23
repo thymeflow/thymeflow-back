@@ -1,6 +1,7 @@
 package com.thymeflow.sync
 
 import java.io.{File, InputStream}
+import java.net.URLEncoder
 import java.nio.file.{DirectoryStream, Files, Path, Paths}
 import java.util.zip.ZipFile
 
@@ -13,7 +14,7 @@ import com.thymeflow.sync.converter._
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
 import org.apache.commons.io.FilenameUtils
-import org.openrdf.model.ValueFactory
+import org.openrdf.model.{IRI, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -21,6 +22,7 @@ import scala.concurrent.Future
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
 object FileSynchronizer extends Synchronizer {
 
@@ -82,8 +84,15 @@ object FileSynchronizer extends Synchronizer {
         states match {
           case (state +: queuedStates) =>
             val (nextStates, hit) = state match {
+              case documentIteration@DocumentIteration(iterator) =>
+                if (iterator.hasNext) {
+                  (Vector(documentIteration), Some(iterator.next()))
+                } else {
+                  (Vector.empty, None)
+                }
               case (convertibleFile: ConvertibleFile) =>
-                (Vector.empty, Some(convertibleFile.read()))
+                val documentIterator = convertibleFile.read()
+                (Vector(DocumentIteration(documentIterator)), None)
               case path: Path =>
                 if (Files.isDirectory(path)) {
                   val directories = Vector.newBuilder[Path]
@@ -178,14 +187,37 @@ object FileSynchronizer extends Synchronizer {
 
     private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile])
 
+    private case class DocumentIteration(iterator: Iterator[Document])
+
     private case class DirectoryIteration(directoryStream: DirectoryStream[Path], iterator: Iterator[Any], directories: scala.collection.mutable.Builder[Path, Vector[Path]])
 
     private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) {
-      def read(): Document = {
-        val documentIri = valueFactory.createIRI(path.toUri.toString)
-        val model = converter.convert(inputStream, documentIri)
-        inputStream.close()
-        Document(documentIri, model)
+      def read(): Iterator[Document] = {
+        val baseUri = path.toUri.toString
+        def context: Option[String] => IRI = {
+          case Some(part) =>
+            // We assume that path Uris do not have a query part nor a fragment
+            // TODO: Is this right ?
+            valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
+          case None => valueFactory.createIRI(baseUri)
+        }
+        val documentIterator = converter.convert(inputStream, context).map {
+          case (documentIri, model) => Document(documentIri, model)
+        }
+        new Iterator[Document] {
+          override def hasNext: Boolean = {
+            if (documentIterator.hasNext) {
+              true
+            } else {
+              inputStream.close()
+              false
+            }
+          }
+
+          override def next(): Document = {
+            documentIterator.next()
+          }
+        }
       }
     }
 

@@ -4,16 +4,14 @@ import java.io.InputStream
 
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.update.UpdateResults
-import org.openrdf.model.{Model, Resource}
+import org.openrdf.model.{IRI, Model}
 
 /**
   * @author Thomas Pellissier Tanon
   */
 trait Converter {
 
-  def convert(str: String, context: Resource): Model
-
-  def convert(stream: InputStream, context: Resource): Model
+  def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)]
 
   def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
     (str, UpdateResults.allFailed(diff,

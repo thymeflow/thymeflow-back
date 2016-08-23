@@ -30,7 +30,7 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(str: String, context: Resource): Model = {
+  def convert(str: String, context: Resource): Model = {
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
@@ -43,8 +43,9 @@ class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLog
     model
   }
 
-  override def convert(stream: InputStream, context: Resource): Model = {
-    convert(Biweekly.parse(stream).all.asScala, context)
+  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+    val wholeContext = context(None)
+    Iterator((wholeContext, convert(Biweekly.parse(stream).all.asScala, wholeContext)))
   }
 
   private class ToModelConverter(model: Model, context: Resource) {

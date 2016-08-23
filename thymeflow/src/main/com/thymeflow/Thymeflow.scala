@@ -1,6 +1,7 @@
 package com.thymeflow
 
 import java.io.File
+import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
 import com.thymeflow.enricher._
@@ -48,7 +49,7 @@ object Thymeflow extends StrictLogging {
   def initializePipeline(repository: Repository) = {
     val geocoder = Geocoder.cached(
       Geocoder.googleMaps(),
-      Some(new File(System.getProperty("java.io.tmpdir") + "/thymeflow/geocoder-google-cache"))
+      Some(Paths.get(System.getProperty("java.io.tmpdir"), "thymeflow/geocoder-google-cache"))
     )
 
     setupSynchronizers()

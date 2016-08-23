@@ -9,6 +9,7 @@ import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.{Unmarshal, Unmarshaller}
 import akka.stream.Materializer
+import com.thymeflow.spatial.geocoding.SimpleFeature
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.spatial.{SimpleAddress, geocoding}
 import com.typesafe.scalalogging.StrictLogging
@@ -64,7 +65,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
     */
   protected def parseResponse(data: InputStream): Traversable[geocoding.Feature] = {
     val featureCollection = JsonParser(IOUtils.toByteArray(data))
-    val featureBuilder = Array.newBuilder[Feature]
+    val featureBuilder = Array.newBuilder[SimpleFeature]
     featureCollection.asJsObject.fields("features") match {
       case JsArray(features) =>
         features.foreach {
@@ -74,7 +75,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
             val point = Geography.point(coordinates.head, coordinates.last)
             var address = SimpleAddress()
             var source = Photon()
-            var feature = Feature(point = point, address = address, source = source)
+            var feature = SimpleFeature(point = point, address = address, source = source)
             featureJson.fields("properties").asJsObject.fields.foreach {
               case ("osm_key", string: JsString) =>
                 source = source.copy(osmKey = string.value)
@@ -102,7 +103,7 @@ class Geocoder private(serviceUri: Uri)(implicit actorSystem: ActorSystem,
                   //logger.info(s"${s._1} -> ${write(s._2)}")
                 }
             feature = feature.copy(address = address).copy(source = source)
-            if (feature.isValid) {
+            if (source.isValid) {
               featureBuilder += feature
             } else {
               logger.error(s"Invalid feature $feature")

@@ -1,6 +1,6 @@
 package com.thymeflow.spatial.geocoding
 
-import java.io.File
+import java.nio.file.Path
 
 import akka.http.scaladsl.model.Uri
 import com.thymeflow.actors._
@@ -36,7 +36,7 @@ object Geocoder {
     * @param geocoder the geocoder to cache
     * @return a Geocoder that caches responses
     */
-  def cached(geocoder: Geocoder, persistentCacheFile: Option[File] = None) = new CachedGeocoder(geocoder, persistentCacheFile)
+  def cached(geocoder: Geocoder, persistentCacheFile: Option[Path] = None) = new CachedGeocoder(geocoder, persistentCacheFile)
 
   /**
     * Geocoder client for Google Maps API

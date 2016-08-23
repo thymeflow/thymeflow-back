@@ -1,5 +1,6 @@
 package com.thymeflow.api
 
+import java.nio.file.Paths
 import java.util.Properties
 import java.util.concurrent.TimeUnit
 import javax.mail.{MessagingException, Session}
@@ -29,6 +30,7 @@ trait Api extends App with SparqlService {
   private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
   private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
   private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(Uri.Path("/oauth/facebook/token")).toString)
+  private val uploadsPath = Paths.get(config.getString("thymeflow.api.repository.data-directory"), "uploads")
 
   private val route = {
     path("sparql") {
@@ -121,9 +123,9 @@ trait Api extends App with SparqlService {
       path("upload") {
         uploadedFile("file") {
           case (fileInfo, file) =>
-            logger.info(s"File $file received at time $durationSinceStart")
+            logger.info(s"File ${fileInfo.fileName} uploaded at time $durationSinceStart")
             pipeline.addSourceConfig(
-              FileSynchronizer.Config(file, Some(fileInfo.contentType.mediaType.value))
+              FileSynchronizer.Config(file.toPath, Some(fileInfo.contentType.mediaType.value), Some(uploadsPath.resolve(fileInfo.fileName)))
             )
             redirect(frontendUri, StatusCodes.TemporaryRedirect)
         }

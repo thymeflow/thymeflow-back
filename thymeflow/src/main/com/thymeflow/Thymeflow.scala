@@ -41,7 +41,7 @@ object Thymeflow extends StrictLogging {
       )
     }
     val pipeline = initializePipeline(repository)
-    args.map(x => FileSynchronizer.Config(new File(x))).foreach {
+    args.map(x => FileSynchronizer.Config(Paths.get(x))).foreach {
       config => pipeline.addSourceConfig(config)
     }
   }

@@ -1,8 +1,8 @@
 package com.thymeflow.sync
 
-import java.io.{File, InputStream}
+import java.io.InputStream
 import java.net.URLEncoder
-import java.nio.file.{DirectoryStream, Files, Path, Paths}
+import java.nio.file.{DirectoryStream, Files, Path}
 import java.util.zip.ZipFile
 
 import akka.actor.Props
@@ -26,10 +26,16 @@ import scala.concurrent.Future
   */
 object FileSynchronizer extends Synchronizer {
 
+  private val vCardConverter = new VCardConverter(_)
+  private val iCalConverter = new ICalConverter(_)
+  private val emailMessageConverter = new EmailMessageConverter(_)
+
+
   private var registeredConverters: Map[String, ValueFactory => Converter] = Map(
-    "message/rfc822" -> (new EmailMessageConverter(_)),
-    "text/calendar" -> (new ICalConverter(_)),
-    "text/vcard" -> (new VCardConverter(_))
+    "message/rfc822" -> emailMessageConverter,
+    "text/calendar" -> iCalConverter,
+    "text/vcard" -> vCardConverter,
+    "text/x-vcard" -> vCardConverter
   )
   private var registeredExtensions: Map[String, String] = Map(
     "eml" -> "message/rfc822",
@@ -49,10 +55,24 @@ object FileSynchronizer extends Synchronizer {
     registeredExtensions += extension -> mimeType
   }
 
-  case class Config(file: File, mimeType: Option[String] = None)
+  case class Config(path: Path, mimeType: Option[String] = None, documentPath: Option[Path] = None)
+
+  private sealed trait State
+
+  private case class PathState(filePath: Path, documentPath: Path, mimeType: Option[String] = None) extends State
+
+  private case class ZipFileState(zipFile: ZipFile, documentPath: Path) extends State
+
+  private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile]) extends State
+
+  private case class DocumentIteration(iterator: Iterator[Document]) extends State
+
+  private case class DirectoryIteration(directoryStream: DirectoryStream[Path], iterator: Iterator[State], directories: scala.collection.mutable.Builder[PathState, Vector[PathState]]) extends State
+
+  private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) extends State
 
   private class Publisher(valueFactory: ValueFactory)
-    extends ScrollDocumentPublisher[Document, (Vector[Any])] with BasePublisher {
+    extends ScrollDocumentPublisher[Document, (Vector[State])] with BasePublisher {
 
     val converters = registeredConverters.map {
       case (k, converter) =>
@@ -60,7 +80,7 @@ object FileSynchronizer extends Synchronizer {
     }
 
     override def receive: Receive = super.receive orElse {
-      case config: Config => queue(Vector(config))
+      case config: Config => queue(Vector(PathState(config.path, config.documentPath.getOrElse(config.path), config.mimeType)))
       case Update(diff) => sender() ! applyDiff(diff)
     }
 
@@ -77,7 +97,7 @@ object FileSynchronizer extends Synchronizer {
     }
 
     @tailrec
-    private final def handleStates(states: Vector[Any], requestCount: Long, hits: Vector[Document] = Vector()): (Vector[Any], Vector[Document]) = {
+    private final def handleStates(states: Vector[State], requestCount: Long, hits: Vector[Document] = Vector()): (Vector[State], Vector[Document]) = {
       if (requestCount == 0) {
         (states, hits)
       } else {
@@ -91,24 +111,25 @@ object FileSynchronizer extends Synchronizer {
                   (Vector.empty, None)
                 }
               case (convertibleFile: ConvertibleFile) =>
-                val documentIterator = convertibleFile.read()
+                val documentIterator = readConvertibleFile(convertibleFile)
                 (Vector(DocumentIteration(documentIterator)), None)
-              case path: Path =>
+              case PathState(path, documentPath, mimeType) =>
                 if (Files.isDirectory(path)) {
-                  val directories = Vector.newBuilder[Path]
+                  val directories = Vector.newBuilder[PathState]
                   val directoryStream = Files.newDirectoryStream(path)
                   val iterator = directoryStream.iterator().asScala.collect {
                     case pathInsideDirectory =>
+                      val documentPathInsideDirectory = documentPath.resolve(pathInsideDirectory.getFileName)
                       if (Files.isDirectory(pathInsideDirectory)) {
-                        directories += pathInsideDirectory
+                        directories += PathState(pathInsideDirectory, documentPathInsideDirectory)
                         None
                       } else {
-                        retrieveFile(pathInsideDirectory)
+                        retrieveFile(pathInsideDirectory, None, documentPathInsideDirectory)
                       }
                   }.flatten
                   (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
                 } else {
-                  (retrieveFile(path).toVector, None)
+                  (retrieveFile(path, mimeType, documentPath).toVector, None)
                 }
               case (directoryIteration: DirectoryIteration) =>
                 if (directoryIteration.iterator.hasNext) {
@@ -124,18 +145,11 @@ object FileSynchronizer extends Synchronizer {
                   zipIteration.zipFile.close()
                   (Vector.empty, None)
                 }
-              case (zipfile: ZipFile) =>
+              case ZipFileState(zipfile: ZipFile, documentPath: Path) =>
                 (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
                   case entry if !entry.isDirectory =>
-                    retrieveFile(Paths.get(zipfile.getName, entry.getName), () => zipfile.getInputStream(entry))
+                    retrieveFile(documentPath.resolve(entry.getName), () => zipfile.getInputStream(entry))
                 }.flatten)), None)
-              case config: Config =>
-                (config.mimeType match {
-                  case Some(mimeType) =>
-                    retrieveFile(config.file.toPath, mimeType).toVector
-                  case None =>
-                    Vector(config.file.toPath)
-                }, None)
             }
             hit match {
               case Some(h) =>
@@ -150,26 +164,34 @@ object FileSynchronizer extends Synchronizer {
       }
     }
 
-    private def retrieveFile(path: Path): Option[Any] = {
-      retrieveFile(path, mimeTypeFromFile(path))
+    private def retrieveFile(path: Path, mimeTypeOption: Option[String], documentPath: Path): Option[State] = {
+      retrieveFile(path, mimeTypeOption.getOrElse(mimeTypeFromPath(documentPath)), documentPath) match {
+        case Some(state) => Some(state)
+        case None =>
+          mimeTypeOption match {
+            case Some(mimeType) if mimeType != mimeTypeFromPath(documentPath) =>
+              retrieveFile(path, mimeTypeFromPath(documentPath), documentPath)
+            case _ => None
+          }
+      }
     }
 
-    private def retrieveFile(path: Path, mimeType: String): Option[Any] = {
+    private def retrieveFile(path: Path, mimeType: String, documentPath: Path): Option[State] = {
       if (Files.exists(path)) {
         mimeType match {
           case "application/zip" | "application/x-zip-compressed" =>
-            Some(new ZipFile(path.toFile))
+            Some(ZipFileState(new ZipFile(path.toFile), documentPath))
           case _ =>
-            retrieveFile(path, mimeType, () => Files.newInputStream(path))
+            retrieveFile(documentPath, mimeType, () => Files.newInputStream(path))
         }
       } else {
-        logger.warn(s"Path does not exist: $path")
+        logger.warn(s"File does not exist: $path")
         None
       }
     }
 
     private def retrieveFile(path: Path, streamClosure: () => InputStream): Option[ConvertibleFile] = {
-      retrieveFile(path, mimeTypeFromFile(path), streamClosure)
+      retrieveFile(path, mimeTypeFromPath(path), streamClosure)
     }
 
     private def retrieveFile(path: Path, mimeType: String, streamClosure: () => InputStream): Option[ConvertibleFile] = {
@@ -181,44 +203,36 @@ object FileSynchronizer extends Synchronizer {
       }
     }
 
-    private def mimeTypeFromFile(path: Path): String = {
-      registeredExtensions(FilenameUtils.getExtension(path.toString))
-    }
-
-    private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile])
-
-    private case class DocumentIteration(iterator: Iterator[Document])
-
-    private case class DirectoryIteration(directoryStream: DirectoryStream[Path], iterator: Iterator[Any], directories: scala.collection.mutable.Builder[Path, Vector[Path]])
-
-    private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) {
-      def read(): Iterator[Document] = {
-        val baseUri = path.toUri.toString
-        def context: Option[String] => IRI = {
-          case Some(part) =>
-            // We assume that path Uris do not have a query part nor a fragment
-            // TODO: Is this right ?
-            valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
-          case None => valueFactory.createIRI(baseUri)
-        }
-        val documentIterator = converter.convert(inputStream, context).map {
-          case (documentIri, model) => Document(documentIri, model)
-        }
-        new Iterator[Document] {
-          override def hasNext: Boolean = {
-            if (documentIterator.hasNext) {
-              true
-            } else {
-              inputStream.close()
-              false
-            }
+    private def readConvertibleFile(convertibleFile: ConvertibleFile): Iterator[Document] = {
+      val baseUri = convertibleFile.path.toUri.toString
+      def context: Option[String] => IRI = {
+        case Some(part) =>
+          // We assume that path Uris do not have a query part nor a fragment
+          // TODO: Is this right ?
+          valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
+        case None => valueFactory.createIRI(baseUri)
+      }
+      val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context).map {
+        case (documentIri, model) => Document(documentIri, model)
+      }
+      new Iterator[Document] {
+        override def hasNext: Boolean = {
+          if (documentIterator.hasNext) {
+            true
+          } else {
+            convertibleFile.inputStream.close()
+            false
           }
+        }
 
-          override def next(): Document = {
-            documentIterator.next()
-          }
+        override def next(): Document = {
+          documentIterator.next()
         }
       }
+    }
+
+    private def mimeTypeFromPath(path: Path): String = {
+      registeredExtensions(FilenameUtils.getExtension(path.toString))
     }
 
     private def applyDiff(diff: ModelDiff): UpdateResults = {

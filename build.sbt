@@ -82,7 +82,7 @@ val thymeflowProject = Project (
   id="thymeflow",
   base=file("thymeflow")
 ).settings(commonSettings:_*).settings(
-  mainClass in Compile := Some("thymeflow.api.MainApi"),
+  mainClass in Compile := Some("com.thymeflow.api.MainApi"),
   libraryDependencies += "org.elasticsearch" % "elasticsearch" % "1.+"
 ).dependsOn(coreProject, graphProject, spatialProject)
 

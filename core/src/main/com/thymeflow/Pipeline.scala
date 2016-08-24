@@ -33,6 +33,7 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
 
   private val sourceRefs = source
     .via(buildRepositoryInsertion())
+    .filter(!_.isEmpty)
     .via(enrichers)
     .to(Sink.ignore)
     .run()

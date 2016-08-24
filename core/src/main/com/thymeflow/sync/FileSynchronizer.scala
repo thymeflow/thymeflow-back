@@ -1,6 +1,6 @@
 package com.thymeflow.sync
 
-import java.io.InputStream
+import java.io.{IOException, InputStream}
 import java.net.URLEncoder
 import java.nio.file.{DirectoryStream, Files, Path}
 import java.util.zip.ZipFile
@@ -103,54 +103,84 @@ object FileSynchronizer extends Synchronizer {
       } else {
         states match {
           case (state +: queuedStates) =>
-            val (nextStates, hit) = state match {
-              case documentIteration@DocumentIteration(iterator) =>
-                if (iterator.hasNext) {
-                  (Vector(documentIteration), Some(iterator.next()))
-                } else {
-                  (Vector.empty, None)
-                }
-              case (convertibleFile: ConvertibleFile) =>
-                val documentIterator = readConvertibleFile(convertibleFile)
-                (Vector(DocumentIteration(documentIterator)), None)
-              case PathState(path, documentPath, mimeType) =>
-                if (Files.isDirectory(path)) {
-                  val directories = Vector.newBuilder[PathState]
-                  val directoryStream = Files.newDirectoryStream(path)
-                  val iterator = directoryStream.iterator().asScala.collect {
-                    case pathInsideDirectory =>
-                      val documentPathInsideDirectory = documentPath.resolve(pathInsideDirectory.getFileName)
-                      if (Files.isDirectory(pathInsideDirectory)) {
-                        directories += PathState(pathInsideDirectory, documentPathInsideDirectory)
-                        None
+            val (nextStates, hit) =
+              try {
+                state match {
+                  case documentIteration@DocumentIteration(iterator) =>
+                    if (iterator.hasNext) {
+                      (Vector(documentIteration), Some(iterator.next()))
+                    } else {
+                      (Vector.empty, None)
+                    }
+                  case (convertibleFile: ConvertibleFile) =>
+                    val documentIterator = readConvertibleFile(convertibleFile)
+                    (Vector(DocumentIteration(documentIterator)), None)
+                  case PathState(path, documentPath, mimeType) =>
+                    try {
+                      if (Files.isDirectory(path)) {
+                        val directories = Vector.newBuilder[PathState]
+                        val directoryStream = Files.newDirectoryStream(path)
+                        val iterator = directoryStream.iterator().asScala.collect {
+                          case pathInsideDirectory =>
+                            val documentPathInsideDirectory = documentPath.resolve(pathInsideDirectory.getFileName)
+                            try {
+                              if (Files.isDirectory(pathInsideDirectory)) {
+                                directories += PathState(pathInsideDirectory, documentPathInsideDirectory)
+                                None
+                              } else {
+                                retrieveFile(pathInsideDirectory, None, documentPathInsideDirectory)
+                              }
+                            } catch {
+                              case e: SecurityException =>
+                                logger.error(s"Error checking if path is directory $pathInsideDirectory", e)
+                                None
+                            }
+                        }.flatten
+                        (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
                       } else {
-                        retrieveFile(pathInsideDirectory, None, documentPathInsideDirectory)
+                        (retrieveFile(path, mimeType, documentPath).toVector, None)
                       }
-                  }.flatten
-                  (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
-                } else {
-                  (retrieveFile(path, mimeType, documentPath).toVector, None)
+                    } catch {
+                      case e@(_: IOException | _: SecurityException) =>
+                        logger.error(s"Error opening $path for document $documentPath", e)
+                        (Vector.empty, None)
+                    }
+                  case (directoryIteration: DirectoryIteration) =>
+                    if (directoryIteration.iterator.hasNext) {
+                      (Vector(directoryIteration.iterator.next(), directoryIteration), None)
+                    } else {
+                      try {
+                        directoryIteration.directoryStream.close()
+                      } catch {
+                        case e: IOException =>
+                          logger.error("Error closing DirectoryStream", e)
+                      }
+                      (directoryIteration.directories.result, None)
+                    }
+                  case zipIteration: ZipIteration =>
+                    if (zipIteration.iterator.hasNext) {
+                      (Vector(zipIteration.iterator.next(), zipIteration), None)
+                    } else {
+                      try {
+                        zipIteration.zipFile.close()
+                      } catch {
+                        case e: IOException =>
+                          logger.error("Error closing ZipFile", e)
+                      }
+                      (Vector.empty, None)
+                    }
+                  case ZipFileState(zipfile: ZipFile, documentPath: Path) =>
+                    (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
+                      case entry if !entry.isDirectory =>
+                        retrieveFile(documentPath.resolve(entry.getName), () => zipfile.getInputStream(entry))
+                    }.flatten)), None)
                 }
-              case (directoryIteration: DirectoryIteration) =>
-                if (directoryIteration.iterator.hasNext) {
-                  (Vector(directoryIteration.iterator.next(), directoryIteration), None)
-                } else {
-                  directoryIteration.directoryStream.close()
-                  (directoryIteration.directories.result, None)
-                }
-              case zipIteration: ZipIteration =>
-                if (zipIteration.iterator.hasNext) {
-                  (Vector(zipIteration.iterator.next(), zipIteration), None)
-                } else {
-                  zipIteration.zipFile.close()
+              } catch {
+                case e: Exception =>
+                  // This can happen if a DocumentIteration, ZipIteration or DirectoryIteration fails
+                  logger.error(s"Cannot handle state $state. Skipping.")
                   (Vector.empty, None)
-                }
-              case ZipFileState(zipfile: ZipFile, documentPath: Path) =>
-                (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
-                  case entry if !entry.isDirectory =>
-                    retrieveFile(documentPath.resolve(entry.getName), () => zipfile.getInputStream(entry))
-                }.flatten)), None)
-            }
+              }
             hit match {
               case Some(h) =>
                 handleStates(nextStates ++ queuedStates, requestCount - 1, hits :+ h)
@@ -177,16 +207,22 @@ object FileSynchronizer extends Synchronizer {
     }
 
     private def retrieveFile(path: Path, mimeType: String, documentPath: Path): Option[State] = {
-      if (Files.exists(path)) {
-        mimeType match {
-          case "application/zip" | "application/x-zip-compressed" =>
-            Some(ZipFileState(new ZipFile(path.toFile), documentPath))
-          case _ =>
-            retrieveFile(documentPath, mimeType, () => Files.newInputStream(path))
+      try {
+        if (Files.exists(path)) {
+          mimeType match {
+            case "application/zip" | "application/x-zip-compressed" =>
+              Some(ZipFileState(new ZipFile(path.toFile), documentPath))
+            case _ =>
+              retrieveFile(documentPath, mimeType, () => Files.newInputStream(path))
+          }
+        } else {
+          logger.warn(s"File does not exist: $path")
+          None
         }
-      } else {
-        logger.warn(s"File does not exist: $path")
-        None
+      } catch {
+        case e@(_: IOException | _: SecurityException) =>
+          logger.error(s"Error retrieving file at $path for document $documentPath", e)
+          None
       }
     }
 
@@ -212,21 +248,39 @@ object FileSynchronizer extends Synchronizer {
           valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
         case None => valueFactory.createIRI(baseUri)
       }
-      val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context).map {
-        case (documentIri, model) => Document(documentIri, model)
-      }
-      new Iterator[Document] {
-        override def hasNext: Boolean = {
-          if (documentIterator.hasNext) {
-            true
-          } else {
-            convertibleFile.inputStream.close()
-            false
+      try {
+        val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context).map {
+          case (documentIri, model) => Document(documentIri, model)
+        }
+        new Iterator[Document] {
+          override def hasNext: Boolean = {
+            if (documentIterator.hasNext) {
+              true
+            } else {
+              try {
+                convertibleFile.inputStream.close()
+              } catch {
+                case e: IOException =>
+                  logger.error(s"Error closing file ${convertibleFile.path}", e)
+              }
+              false
+            }
+          }
+
+          override def next(): Document = {
+            documentIterator.next()
           }
         }
-
-        override def next(): Document = {
-          documentIterator.next()
+      } catch {
+        case e: Exception =>
+          logger.error(s"Error converting file ${convertibleFile.path} with converter ${convertibleFile.converter}", e)
+          Iterator.empty
+      } finally {
+        try {
+          convertibleFile.inputStream.close()
+        } catch {
+          case e: IOException =>
+            logger.error(s"Error closing file ${convertibleFile.path}", e)
         }
       }
     }

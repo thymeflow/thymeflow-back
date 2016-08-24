@@ -3,7 +3,7 @@ package com.thymeflow.api
 import java.io.ByteArrayOutputStream
 
 import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.headers.{Accept, `Access-Control-Allow-Methods`, `Access-Control-Allow-Origin`}
+import akka.http.scaladsl.model.headers.Accept
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
@@ -27,14 +27,11 @@ import scala.language.implicitConversions
 /**
   * @author Thomas Pellissier Tanon
   */
-trait SparqlService extends StrictLogging {
+trait SparqlService extends StrictLogging with CorsSupport {
   val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
   implicit protected val sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
   protected val sparqlRoute = {
-    respondWithHeaders(
-      `Access-Control-Allow-Origin`.*,
-      `Access-Control-Allow-Methods`(HttpMethods.GET, HttpMethods.POST, HttpMethods.OPTIONS)
-    ) {
+    corsHandler {
       optionalHeaderValueByType[Accept]() { accept =>
         get {
           parameter('query) { query =>

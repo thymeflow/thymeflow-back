@@ -20,8 +20,9 @@ import scala.concurrent.duration.Duration
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
-trait Api extends App with SparqlService {
+trait Api extends App with SparqlService with CorsSupport {
 
   private val config = com.thymeflow.config.default
 
@@ -63,7 +64,7 @@ trait Api extends App with SparqlService {
                   logger.info(s"Microsoft token received at time $durationSinceStart")
                   microsoftOAuth.getAccessToken(code).foreach(tokenRenewal(_, onMicrosoftToken))
                   redirect(frontendUri, StatusCodes.TemporaryRedirect)
-              }
+                }
               }
           } ~
           pathPrefix("facebook") {
@@ -97,7 +98,7 @@ trait Api extends App with SparqlService {
                   facebookOAuth.getAccessToken(code).foreach(tokenRenewal(_, onFacebookToken))
                   redirect(frontendUri, StatusCodes.TemporaryRedirect)
                 }
-          }
+              }
           }
       } ~
       pathPrefix("imap") {
@@ -121,13 +122,17 @@ trait Api extends App with SparqlService {
         }
       } ~
       path("upload") {
-        uploadedFile("file") {
-          case (fileInfo, file) =>
-            logger.info(s"File ${fileInfo.fileName} uploaded at time $durationSinceStart")
-            pipeline.addSourceConfig(
-              FileSynchronizer.Config(file.toPath, Some(fileInfo.contentType.mediaType.value), Some(uploadsPath.resolve(fileInfo.fileName)))
-            )
-            redirect(frontendUri, StatusCodes.TemporaryRedirect)
+        corsHandler {
+          uploadedFile("file") {
+            case (fileInfo, file) =>
+              logger.info(s"File ${fileInfo.fileName} uploaded at time $durationSinceStart")
+              pipeline.addSourceConfig(
+                FileSynchronizer.Config(file.toPath, Some(fileInfo.contentType.mediaType.value), Some(uploadsPath.resolve(fileInfo.fileName)))
+              )
+              complete {
+                StatusCodes.NoContent
+              }
+          }
         }
       }
   }

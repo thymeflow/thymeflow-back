@@ -40,8 +40,7 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
 
   override def enrich(diff: ModelDiff): Unit = {
     if (
-      !diff.added.contains(null, RDF.TYPE, Personal.LOCATION) &&
-        !diff.added.contains(null, RDF.TYPE, Personal.LOCATION)
+      !diff.added.contains(null, RDF.TYPE, Personal.LOCATION)
     ) {
       //No change in data
       return

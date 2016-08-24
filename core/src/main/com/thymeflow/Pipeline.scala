@@ -56,13 +56,13 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
   private def addDocumentToRepository(document: Document): ModelDiff = {
     repositoryConnection.begin()
     //Removes the removed statements from the repository and the already existing statements from statements
-    val statements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
+    val documentStatements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
     val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
 
     if (document.iri != null) {
       repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
         if (document.model.contains(existingStatement)) {
-          statements.remove(existingStatement)
+          documentStatements.remove(existingStatement)
         } else {
           statementsToRemove.add(existingStatement)
         }
@@ -72,7 +72,7 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     //Do not add already existing statements or with already a negation
     val statementsToAdd = new SimpleHashModel(
       repositoryConnection.getValueFactory,
-      statements.asScala
+      documentStatements.asScala
         .filterNot(statement => repositoryConnection.hasStatement(statement, false))
         .filterNot(statement => repositoryConnection.hasStatement(
           statement.getSubject,
@@ -87,7 +87,7 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     repositoryConnection.remove(statementsToRemove)
     repositoryConnection.commit()
 
-    new ModelDiff(statements, statementsToRemove)
+    new ModelDiff(statementsToAdd, statementsToRemove)
   }
 }
 

@@ -18,6 +18,7 @@
     <logger name="org.elasticsearch" level="WARN"/>
     <!-- suppress the JNA not found warning -->
     <logger name="org.elasticsearch.bootstrap" level="ERROR"/>
+    <logger name="org.openrdf.sail.helpers.DirectoryLockManager" level="ERROR"/>
 
     <root level="info">
         <!--

@@ -104,7 +104,7 @@ trait Api extends App with SparqlService with CorsSupport {
       pathPrefix("imap") {
         post {
           formFieldMap { fields =>
-            logger.info(s"IMAP accound on ${fields.get("host").get} received at time $durationSinceStart")
+            logger.info(s"IMAP account on ${fields.get("host").get} received at time $durationSinceStart")
             val props = new Properties()
             if (fields.get("ssl").contains("true")) {
               props.put("mail.imap.ssl.enable", "true")
@@ -143,7 +143,7 @@ trait Api extends App with SparqlService with CorsSupport {
 
   Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
 
-  logger.info(s"Thymeflow API setup at $backendUri.")
+  logger.info(s"Thymeflow API setup at $backendUri. Frontend expected at $frontendUri.")
 
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)

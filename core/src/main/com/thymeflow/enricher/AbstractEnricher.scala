@@ -13,7 +13,7 @@ import scala.collection.JavaConverters._
 /**
   * @author Thomas Pellissier Tanon
   */
-abstract class AbstractEnricher(repositoryConnection: RepositoryConnection) extends Enricher {
+abstract class AbstractEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends Enricher {
 
   private val isDifferentFromQuery = repositoryConnection.prepareBooleanQuery(QueryLanguage.SPARQL,
     s"""ASK {

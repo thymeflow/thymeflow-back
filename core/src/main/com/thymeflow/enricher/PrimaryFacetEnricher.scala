@@ -14,7 +14,7 @@ import scala.collection.JavaConverters._
   * @author Thomas Pellissier Tanon
   *         TODO: will do bad things if owl:sameAs is also used for places
   */
-class PrimaryFacetEnricher(repositoryConnection: RepositoryConnection) extends AbstractEnricher(repositoryConnection) {
+class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) extends AbstractEnricher(newRepositoryConnection) {
 
   private val enricherContext = repositoryConnection.getValueFactory.createIRI(Personal.NAMESPACE, "primaryFacetEnricherOutput")
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(

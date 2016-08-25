@@ -63,14 +63,14 @@ object Thymeflow extends StrictLogging {
         EmailSynchronizer.source(repository.getValueFactory),
         FacebookSynchronizer.source(repository.getValueFactory)
       ),
-      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.getConnection))
-        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.getConnection, geocoder)))
+      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(() => repository.getConnection))
+        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(() => repository.getConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))
-        .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.getConnection)))
-        .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.getConnection)))
-        .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.getConnection, geocoder)))
-        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(repository.getConnection)))
-        .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new LocationStayEnricher(() => repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new LocationEventEnricher(() => repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(() => repository.getConnection, geocoder)))
+        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(() => repository.getConnection)))
+        .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(() => repository.getConnection)))
         .map(diff => {
           val durationSinceStart = Duration(System.currentTimeMillis() - pipelineStartTime, TimeUnit.MILLISECONDS)
           logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")

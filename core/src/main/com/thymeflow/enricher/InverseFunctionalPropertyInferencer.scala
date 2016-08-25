@@ -13,8 +13,8 @@ import scala.collection.JavaConverters._
   *
   *         An inferencer that uses some owl:InverseFunctionalProperty to add owl:sameAs statements
   */
-class InverseFunctionalPropertyInferencer(repositoryConnection: RepositoryConnection)
-  extends InferenceCountingInferencer(repositoryConnection) {
+class InverseFunctionalPropertyInferencer(newRepositoryConnection: () => RepositoryConnection)
+  extends InferenceCountingInferencer(newRepositoryConnection) {
 
   private val inverseFunctionalProperties = Set(SchemaOrg.TELEPHONE, SchemaOrg.EMAIL, SchemaOrg.URL)
   private val valueFactory = repositoryConnection.getValueFactory

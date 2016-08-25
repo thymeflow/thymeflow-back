@@ -38,30 +38,30 @@ import scala.concurrent.duration.Duration
 /**
   * Depends on @InverseFunctionalPropertyInferencer
   *
-  * @param repositoryConnection   a connection to the knowledge base
-  * @param solveMode              resolution algorithm
-  * @param baseStringSimilarity   the base string similarity to use
-  * @param searchMatchPercent     the term percent match required for candidate equalities
-  * @param searchSize             the number of candidate results for each term
-  * @param parallelism            the concurrency level when looking up for candidate equalities
-  * @param matchDistanceThreshold maximum distance for a term to be considered as match
-  * @param contactRelativeWeight  expresses the relative weight contact card names have with respect to message names
-  *                               must be equal to None or between 0 and 1
+  * @param newRepositoryConnection              a function that creates a new connection to the knowledge base
+  * @param solveMode                            resolution algorithm
+  * @param baseStringSimilarity                 the base string similarity to use
+  * @param searchMatchPercent                   the term percent match required for candidate equalities
+  * @param searchSize                           the number of candidate results for each term
+  * @param parallelism                          the concurrency level when looking up for candidate equalities
+  * @param matchDistanceThreshold               maximum distance for a term to be considered as match
+  * @param contactRelativeWeight                expresses the relative weight contact card names have with respect to message names
+  *                                             must be equal to None or between 0 and 1
   * @param evaluationThreshold    probability threshold above which evaluation is performed
   * @param persistenceThreshold   probability threshold above which equalities are saved
   * @param useIDF                 use Term IDF adjustment
   * @param evaluationSamplesFiles sample files (with ground truth) to evaluate from
   * @param debug                  debug mode
-  * @param outputClassSizes       output equivalent class sizes to a file
-  * @param outputFunctionalities  output functionalities
-  * @param outputSamples          generate and output samples for later annotation and evaluation
-  * @param outputSimilarities     output similarities between agents
-  * @param outputAgents           output the list of agents
+  * @param outputClassSizes output equivalent class sizes to a file
+  * @param outputFunctionalities                output functionalities
+  * @param outputSamples                        generate and output samples for later annotation and evaluation
+  * @param outputSimilarities                   output similarities between agents
+  * @param outputAgents                         output the list of agents
   *
-  * TODO: remove old personal:sameAs and insert new ones in decreasing order of similarity in order not to
-  *       block a good same as because of a bad sameAs and a differentFrom
+  *                                             TODO: remove old personal:sameAs and insert new ones in decreasing order of similarity in order not to
+  *                                             block a good same as because of a bad sameAs and a differentFrom
   */
-class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
+class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
                          solveMode: SolveMode = Vanilla,
                          protected val baseStringSimilarity: StringSimilarity = LevensteinSimilarity,
                          searchMatchPercent: Int = 70,
@@ -78,7 +78,7 @@ class AgentMatchEnricher(repositoryConnection: RepositoryConnection,
                          outputFunctionalities: Boolean = false,
                          outputSamples: Boolean = false,
                          outputSimilarities: Boolean = false,
-                         outputAgents: Boolean = false) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
+                         outputAgents: Boolean = false) extends AbstractEnricher(newRepositoryConnection) with EntityResolutionEvaluation with StrictLogging {
 
   protected val outputFilePrefix = "data/agent-match-enricher"
   private val valueFactory = repositoryConnection.getValueFactory

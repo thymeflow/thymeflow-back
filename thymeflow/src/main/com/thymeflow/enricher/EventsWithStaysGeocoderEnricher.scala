@@ -16,8 +16,8 @@ import scala.concurrent.duration.Duration
 /**
   * @author Thomas Pellissier Tanon
   */
-class EventsWithStaysGeocoderEnricher(repositoryConnection: RepositoryConnection, geocoder: Geocoder)
-  extends AbstractEnricher(repositoryConnection) with StrictLogging {
+class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection, geocoder: Geocoder)
+  extends AbstractEnricher(newRepositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val featureConverter = new FeatureConverter(valueFactory)

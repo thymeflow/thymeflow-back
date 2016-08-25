@@ -28,8 +28,7 @@ import scala.concurrent.Await
   *         TODO: not nice usage of Await
   *         TODO: add modified triples to the diff
   */
-class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends Enricher with StrictLogging {
-
+class LocationStayEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends Enricher with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
@@ -72,49 +71,54 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
       }
     )
 
-    val locationCount = countLocations
-    Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
-      case cluster =>
-        (ClusterObservation(from = cluster.observations.head.time,
-          to = cluster.observations.last.time,
-          accuracy = cluster.accuracy,
-          point = cluster.mean), cluster.observations)
-    }.runForeach {
-      case (cluster, locations) =>
-        // clusters are temporary
-        // TODO: save them in some temporary storage
-        createCluster(cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
-    }.recover {
-      case throwable =>
-        logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
-        Done
-    }, scala.concurrent.duration.Duration.Inf)
+    val createClusterRepositoryConnection = newRepositoryConnection()
+    try {
+      val locationCount = countLocations
+      Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
+        case cluster =>
+          (ClusterObservation(from = cluster.observations.head.time,
+            to = cluster.observations.last.time,
+            accuracy = cluster.accuracy,
+            point = cluster.mean), cluster.observations)
+      }.runForeach {
+        case (cluster, locations) =>
+          // clusters are temporary
+          // TODO: save them in some temporary storage
+          createCluster(createClusterRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
+      }.recover {
+        case throwable =>
+          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          Done
+      }, scala.concurrent.duration.Duration.Inf)
 
-    deleteGraph(inferencerContext) //We only need to delete the previously added inferences at this stage
-    //TODO: This quite early drop may lead of failures of next enrichers (but they will be run again after this one so it will lead after some time to a good state)
-    Await.result(getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
-      case (observationsAndClusters) =>
-        clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
-    }.sliding(2).collect {
-      case Seq(a, b) if a.resource != b.resource => a
-      case Seq(a) => a
-    }.via(stage3).map {
-      case cluster =>
-        (ClusterObservation(from = cluster.observations.head.time,
-          to = cluster.observations.last.time,
-          accuracy = cluster.accuracy,
-          point = cluster.mean), cluster.observations)
-    }.runForeach {
-      case (cluster, locations) =>
-        createStay(cluster, locations)
-    }.recover {
-      case throwable =>
-        logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
-        Done
-    }, scala.concurrent.duration.Duration.Inf)
-    deleteTempInferencerGraph()
+      deleteGraph(inferencerContext) // We only need to delete the previously added inferences at this stage
+      //TODO: This quite early drop may lead of failures of next enrichers (but they will be run again after this one so it will lead after some time to a good state)
+      Await.result(getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
+        case (observationsAndClusters) =>
+          clustering.estimateMovement(movementEstimatorDuration)(observationsAndClusters).getOrElse(IndexedSeq.empty).toIndexedSeq
+      }.sliding(2).collect {
+        case Seq(a, b) if a.resource != b.resource => a
+        case Seq(a) => a
+      }.via(stage3).map {
+        case cluster =>
+          (ClusterObservation(from = cluster.observations.head.time,
+            to = cluster.observations.last.time,
+            accuracy = cluster.accuracy,
+            point = cluster.mean), cluster.observations)
+      }.runForeach {
+        case (cluster, locations) =>
+          createStay(createClusterRepositoryConnection, cluster, locations)
+      }.recover {
+        case throwable =>
+          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          Done
+      }, scala.concurrent.duration.Duration.Inf)
+      deleteTempInferencerGraph()
 
-    logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
+      logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
+    } finally {
+      createClusterRepositoryConnection.close()
+    }
   }
 
   private def deleteTempInferencerGraph() = {
@@ -172,11 +176,15 @@ class LocationStayEnricher(repositoryConnection: RepositoryConnection) extends E
     }
   }
 
-  private def createStay(stay: ClusterObservation, locations: Traversable[Location]) = {
-    createCluster(stay, locations, Personal.STAY, inferencerContext)
+  private def createStay(repositoryConnection: RepositoryConnection,
+                         stay: ClusterObservation,
+                         locations: Traversable[Location]) = {
+    createCluster(repositoryConnection, stay, locations, Personal.STAY, inferencerContext)
   }
 
-  private def createCluster(cluster: ClusterObservation, locations: Traversable[Location], `type`: IRI, context: IRI) = {
+  private def createCluster(repositoryConnection: RepositoryConnection,
+                            cluster: ClusterObservation,
+                            locations: Traversable[Location], `type`: IRI, context: IRI) = {
     repositoryConnection.begin()
     val model = new SimpleHashModel(valueFactory)
     val clusterResource = uuidConverter.createBNode(cluster)

@@ -26,7 +26,7 @@ import scala.concurrent.Await
   */
 /**
   *
-  * @param repositoryConnection           a connection to the knowledge base
+  * @param newRepositoryConnection        a function that creates a new connection to the knowledge base
   * @param baseStringSimilarity           the base string similarity
   * @param searchSize                     the number of candidate results for each term
   * @param searchMatchPercent             the term percent match required for candidate equalities
@@ -38,7 +38,7 @@ import scala.concurrent.Await
   * @param propertiesInverseFunctionality a map from properties to their inverse functionality value
   * @param propertiesFunctionality        a map from properties to their functionality value
   */
-class ParisEnricher(repositoryConnection: RepositoryConnection,
+class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                     protected val baseStringSimilarity: StringSimilarity = LevensteinSimilarity,
                     searchSize: Int = 10000,
                     searchMatchPercent: Int = 70,
@@ -53,7 +53,7 @@ class ParisEnricher(repositoryConnection: RepositoryConnection,
                     propertiesFunctionality: Map[Resource, Double] = Map(
                       SchemaOrg.EMAIL -> 0.8731440162271805,
                       SchemaOrg.NAME -> 0.8043465064044194)
-                   ) extends AbstractEnricher(repositoryConnection) with EntityResolutionEvaluation with StrictLogging {
+                   ) extends AbstractEnricher(newRepositoryConnection) with EntityResolutionEvaluation with StrictLogging {
 
 
   protected val outputFilePrefix = "data/paris-enricher"

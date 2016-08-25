@@ -37,7 +37,7 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     elevationOption.foreach(uriBuilder.coordC(_))
     uncertaintyOption.foreach(uriBuilder.uncertainty(_))
 
-    val geoResource = valueFactory.createIRI(uriBuilder.build().toString())
+    val geoResource = valueFactory.createIRI(uriBuilder.build().toString(Integer.MAX_VALUE))
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))

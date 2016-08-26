@@ -6,6 +6,7 @@ import org.openrdf.model.impl.SimpleValueFactory
 object Personal {
   val NAMESPACE: String = "http://thymeflow.com/personal#"
   val PREFIX: String = "personal"
+  val ONTOLOGY_DEFINITION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ontologyDefinition")
 
   val AGENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Agent")
   val CELLPHONE_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "CellphoneNumber")

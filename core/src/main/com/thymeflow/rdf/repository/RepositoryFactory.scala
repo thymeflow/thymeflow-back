@@ -2,18 +2,21 @@ package com.thymeflow.rdf.repository
 
 import java.nio.file.{Path, Paths}
 
-import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import com.thymeflow.rdf.Converters._
+import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.query.algebra.evaluation.function
 import com.thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 import com.thymeflow.rdf.sail.{InterceptingSail, SailInterceptor}
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{RDF, RDFS}
+import org.openrdf.model.Statement
 import org.openrdf.query.algebra.evaluation.function.FunctionRegistry
 import org.openrdf.repository.RepositoryConnection
 import org.openrdf.repository.sail.SailRepository
-import org.openrdf.rio.RDFFormat
+import org.openrdf.repository.util.RDFLoader
+import org.openrdf.rio.{RDFFormat, RDFHandler}
 import org.openrdf.sail.helpers.AbstractNotifyingSail
 import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.lucene.LuceneSail
@@ -170,29 +173,72 @@ object RepositoryFactory extends StrictLogging {
     sailInterceptor.map(sailInterceptor => new InterceptingSail(notifyingSail, sailInterceptor)).getOrElse(notifyingSail)
   }
 
-
   private def addBasicsToRepository(repository: Repository): Unit = {
     val repositoryConnection = repository.newConnection()
     repositoryConnection.begin()
-    addNamespacesToRepository(repositoryConnection)
-    loadOntology(repositoryConnection)
-    repositoryConnection.commit()
+    if (loadOntology(repositoryConnection)) {
+      // only commit if changes happened
+      repositoryConnection.commit()
+    } else {
+      repositoryConnection.rollback()
+    }
     repositoryConnection.close()
   }
 
-  private def addNamespacesToRepository(repositoryConnection: RepositoryConnection): Unit = {
-    repositoryConnection.setNamespace(RDF.PREFIX, RDF.NAMESPACE)
-    repositoryConnection.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE)
-    repositoryConnection.setNamespace(SchemaOrg.PREFIX, SchemaOrg.NAMESPACE)
-    repositoryConnection.setNamespace(Personal.PREFIX, Personal.NAMESPACE)
+  private def setNamespaceIfChanged(repositoryConnection: RepositoryConnection, prefix: String, name: String): Boolean = {
+    val currentName = repositoryConnection.getNamespace(prefix)
+    if (currentName != name) {
+      repositoryConnection.setNamespace(prefix, name)
+      true
+    } else {
+      false
+    }
   }
 
-  private def loadOntology(repositoryConnection: RepositoryConnection): Unit = {
-    repositoryConnection.add(
-      getClass.getClassLoader.getResourceAsStream("rdfs-ontology.ttl"),
+  private def loadOntology(repositoryConnection: RepositoryConnection): Boolean = {
+    val context = Personal.ONTOLOGY_DEFINITION
+    val statementsToAdd = new SimpleHashModel(repositoryConnection.getValueFactory)
+    val namespacesBuilder = Vector.newBuilder[(String, String)]
+
+    val rdfHandler = new RDFHandler {
+      def handleStatement(st: Statement): Unit = {
+        statementsToAdd.add(st.getSubject, st.getPredicate, st.getObject, context)
+      }
+
+      def handleNamespace(prefix: String, uri: String): Unit = {
+        namespacesBuilder += prefix -> uri
+      }
+
+      def handleComment(comment: String) = {}
+
+      def startRDF() = {}
+
+      def endRDF() = {}
+    }
+
+    val loader = new RDFLoader(repositoryConnection.getParserConfig, repositoryConnection.getValueFactory)
+    loader.load(getClass.getClassLoader.getResourceAsStream("rdfs-ontology.ttl"),
       Personal.NAMESPACE,
-      RDFFormat.TURTLE
+      RDFFormat.TURTLE,
+      rdfHandler)
+
+    val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
+    repositoryConnection.getStatements(null, null, null, Personal.ONTOLOGY_DEFINITION).foreach(existingStatement =>
+      if (statementsToAdd.contains(existingStatement)) {
+        statementsToAdd.remove(existingStatement)
+      } else {
+        statementsToRemove.add(existingStatement)
+      }
     )
+
+    val namespacesChanged = namespacesBuilder.result().map {
+      case (prefix, name) => setNamespaceIfChanged(repositoryConnection, prefix, name)
+    }.count(identity)
+    repositoryConnection.add(statementsToAdd)
+    repositoryConnection.remove(statementsToRemove)
+
+    logger.info(s"Ontology ${Personal.ONTOLOGY_DEFINITION} loaded: $namespacesChanged namespaces changed, ${statementsToAdd.size()} statement(s) added, ${statementsToRemove.size()} statement(s) removed.")
+    !(statementsToAdd.isEmpty && statementsToRemove.isEmpty && namespacesChanged == 0)
   }
 
   //Register extra SPARQL functions

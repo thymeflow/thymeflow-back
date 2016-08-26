@@ -13,6 +13,7 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter._
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
+import com.typesafe.config.{Config => AppConfig}
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.{IRI, ValueFactory}
 
@@ -26,12 +27,11 @@ import scala.concurrent.Future
   */
 object FileSynchronizer extends Synchronizer {
 
-  private val vCardConverter = new VCardConverter(_)
-  private val iCalConverter = new ICalConverter(_)
-  private val emailMessageConverter = new EmailMessageConverter(_)
+  private val vCardConverter: (ValueFactory, AppConfig) => Converter = new VCardConverter(_)(_)
+  private val iCalConverter: (ValueFactory, AppConfig) => Converter = new ICalConverter(_)(_)
+  private val emailMessageConverter: (ValueFactory, AppConfig) => Converter = new EmailMessageConverter(_)(_)
 
-
-  private var registeredConverters: Map[String, ValueFactory => Converter] = Map(
+  private var registeredConverters: Map[String, (ValueFactory, AppConfig) => Converter] = Map(
     "message/rfc822" -> emailMessageConverter,
     "text/calendar" -> iCalConverter,
     "text/vcard" -> vCardConverter,
@@ -44,10 +44,10 @@ object FileSynchronizer extends Synchronizer {
     "zip" -> "application/zip"
   ).withDefaultValue("application/octet-stream")
 
-  def source(valueFactory: ValueFactory) =
+  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
-  def registerConverter(mimeType: String, converter: ValueFactory => Converter) = {
+  def registerConverter(mimeType: String, converter: (ValueFactory, AppConfig) => Converter) = {
     registeredConverters += mimeType -> converter
   }
 
@@ -71,12 +71,12 @@ object FileSynchronizer extends Synchronizer {
 
   private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) extends State
 
-  private class Publisher(valueFactory: ValueFactory)
+  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
     extends ScrollDocumentPublisher[Document, (Vector[State])] with BasePublisher {
 
     val converters = registeredConverters.map {
       case (k, converter) =>
-        k -> converter(valueFactory)
+        k -> converter(valueFactory, appConfig)
     }
 
     override def receive: Receive = super.receive orElse {

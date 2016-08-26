@@ -9,6 +9,7 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.Materializer
 import com.thymeflow.spatial.geocoding
 import com.thymeflow.spatial.geographic.Point
+import com.typesafe.config.Config
 import spray.json.DefaultJsonProtocol
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -47,8 +48,8 @@ class Geocoder(val apiKey: String)(implicit actorSystem: ActorSystem,
 }
 
 object Geocoder {
-  def apply()(implicit actorSystem: ActorSystem, materializer: Materializer, executionContext: ExecutionContext): Geocoder = {
-    new Geocoder(com.thymeflow.config.default.getString("thymeflow.geocoder.google.api-key"))
+  def apply()(implicit actorSystem: ActorSystem, materializer: Materializer, executionContext: ExecutionContext, config: Config): Geocoder = {
+    new Geocoder(config.getString("thymeflow.geocoder.google.api-key"))
   }
 
   private case class GeocoderResult()

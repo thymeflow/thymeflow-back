@@ -11,17 +11,8 @@ import com.typesafe.scalalogging.{Logger, StrictLogging}
   */
 object TimeExecution extends StrictLogging {
 
-  def timeDebug[R](processName: String, block: => R): R = {
-    timeDebug(processName, logger, block)
-  }
-
-  def timeDebug[R](processName: String, logger: Logger, block: => R): R = {
-    time(processName, (x) => {
-      logger.debug(x)
-    }, block)
-  }
-
-  def time[R](processName: String, log: String => Unit, block: => R): R = {
+  def time[R](processName: String, log: String => Unit, block: => R, processInfo: String = ""): R = {
+    log(s"[$processName] - Started${if (processInfo.nonEmpty) ": " else ""}$processInfo.")
     val t0 = System.nanoTime()
     val result = block
     val t1 = System.nanoTime()
@@ -29,14 +20,16 @@ object TimeExecution extends StrictLogging {
     result
   }
 
-  def timeInfo[R](processName: String, block: => R): R = {
-    timeInfo(processName, logger, block)
+  def timeDebug[R](processName: String, logger: Logger, block: => R, processInfo: String = ""): R = {
+    time(processName, (x) => {
+      logger.debug(x)
+    }, block, processInfo)
   }
 
-  def timeInfo[R](processName: String, logger: Logger, block: => R): R = {
+  def timeInfo[R](processName: String, logger: Logger, block: => R, processInfo: String = ""): R = {
     time(processName, (x) => {
       logger.info(x)
-    }, block)
+    }, block, processInfo)
   }
 
   def timeProgressStep[R](processName: String, target: Long, logger: Logger, block: (() => Unit) => R, step: Long = 1): R = {

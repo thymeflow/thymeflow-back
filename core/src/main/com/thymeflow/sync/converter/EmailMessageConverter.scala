@@ -8,6 +8,7 @@ import javax.mail.{Address, Message, Multipart, Part}
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter, UUIDConverter}
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.RDF
@@ -16,7 +17,7 @@ import org.openrdf.model.vocabulary.RDF
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
+class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailAddressNameConverter = new EmailAddressNameConverter(valueFactory)
@@ -121,7 +122,7 @@ class EmailMessageConverter(valueFactory: ValueFactory) extends Converter with S
         }
       )
 
-      if (com.thymeflow.config.default.getBoolean("thymeflow.converter.email.convert-email-content")) {
+      if (config.getBoolean("thymeflow.converter.email.convert-email-content")) {
         addPart(message, messageResource)
       }
     }

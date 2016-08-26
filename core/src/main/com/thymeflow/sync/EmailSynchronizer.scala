@@ -15,6 +15,7 @@ import com.thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.typesafe.config.{Config => AppConfig}
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
 
@@ -38,7 +39,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
   private final val fetchedMessagesDemandMultiplier = 32L
   private val ignoredFolderNames = Set("Junk", "Deleted", "Deleted Messages", "Spam")
 
-  def source(valueFactory: ValueFactory) =
+  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   sealed trait ImapAction {
@@ -61,7 +62,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   case class ConnectionClosed(folder: IMAPFolder)
 
-  private class Publisher(valueFactory: ValueFactory) extends ScrollDocumentPublisher[Document, (Vector[(IMAPFolder, Option[(Boolean, Vector[IMAPMessage])])], Vector[Config])] {
+  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig) extends ScrollDocumentPublisher[Document, (Vector[(IMAPFolder, Option[(Boolean, Vector[IMAPMessage])])], Vector[Config])] {
 
     private val emailMessageConverter = new EmailMessageConverter(valueFactory)
     private val watchedFolders = new mutable.HashMap[URLName, (IMAPFolder, Long, mutable.HashSet[Long], (MessageCountListener, ConnectionListener))]()

@@ -6,6 +6,7 @@ import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import com.thymeflow.actors._
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import spray.json.DefaultJsonProtocol
 
@@ -16,9 +17,7 @@ import scala.language.postfixOps
 
 object OAuth2 {
 
-  private val config = com.thymeflow.config.default
-
-  def Google(redirectUri: String) = new OAuth2(
+  def Google(redirectUri: String)(implicit config: Config) = new OAuth2(
     "https://accounts.google.com/o/oauth2/v2/auth",
     "https://www.googleapis.com/oauth2/v4/token",
     clientId = config.getString("thymeflow.oauth.google.client-id"),
@@ -26,7 +25,7 @@ object OAuth2 {
     redirectUri
   )
 
-  def Microsoft(redirectUri: String) = new OAuth2(
+  def Microsoft(redirectUri: String)(implicit config: Config) = new OAuth2(
     "https://login.live.com/oauth20_authorize.srf", //https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
     "https://login.live.com/oauth20_token.srf", //"https://login.microsoftonline.com/common/oauth2/v2.0/token",
     clientId = config.getString("thymeflow.oauth.microsoft.client-id"),
@@ -34,7 +33,7 @@ object OAuth2 {
     redirectUri
   )
 
-  def Facebook(redirectUri: String) = new OAuth2(
+  def Facebook(redirectUri: String)(implicit config: Config) = new OAuth2(
     "https://www.facebook.com/dialog/oauth",
     "https://graph.facebook.com/v2.6/oauth/access_token",
     clientId = config.getString("thymeflow.oauth.facebook.client-id"),

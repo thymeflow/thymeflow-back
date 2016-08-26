@@ -11,10 +11,11 @@ import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
 import com.thymeflow.Pipeline
 import com.thymeflow.actors._
+import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.sync._
 import com.thymeflow.sync.facebook.FacebookSynchronizer
+import com.typesafe.config.Config
 import org.apache.commons.io.IOUtils
-import org.openrdf.repository.Repository
 
 import scala.concurrent.duration.Duration
 
@@ -24,10 +25,11 @@ import scala.concurrent.duration.Duration
   */
 trait Api extends App with SparqlService with CorsSupport {
 
-  private val config = com.thymeflow.config.default
+  protected implicit def config: Config
 
   private val backendUri = Uri(s"${config.getString("thymeflow.http.backend-uri")}")
   private val frontendUri = Uri(s"${config.getString("thymeflow.http.frontend-uri")}")
+  protected override val allowedOrigin = config.getString("thymeflow.http.frontend-uri")
   private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
   private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
   private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(Uri.Path("/oauth/facebook/token")).toString)
@@ -141,10 +143,6 @@ trait Api extends App with SparqlService with CorsSupport {
 
   protected def repository: Repository
 
-  Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
-
-  logger.info(s"Thymeflow API setup at $backendUri. Frontend expected at $frontendUri.")
-
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
   }
@@ -205,5 +203,11 @@ trait Api extends App with SparqlService with CorsSupport {
 
   private def onFacebookToken(token: facebookOAuth.Token): Unit = {
     pipeline.addSourceConfig(FacebookSynchronizer.Config(token.accessToken))
+  }
+
+  def start(): Unit = {
+    Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
+
+    logger.info(s"Thymeflow API setup at $backendUri. Frontend expected at $frontendUri.")
   }
 }

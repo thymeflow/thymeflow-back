@@ -6,6 +6,7 @@ import akka.http.scaladsl.model.Uri
 import com.thymeflow.actors._
 import com.thymeflow.spatial.geocoding
 import com.thymeflow.spatial.geographic.Point
+import com.typesafe.config.Config
 
 import scala.concurrent.Future
 
@@ -43,5 +44,5 @@ object Geocoder {
     *
     * @return a GoogleMapsGeocoder
     */
-  def googleMaps() = geocoding.google.Geocoder()
+  def googleMaps()(implicit config: Config) = geocoding.google.Geocoder()
 }

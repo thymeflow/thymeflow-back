@@ -12,6 +12,7 @@ import biweekly.{Biweekly, ICalendar}
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model._
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
@@ -23,7 +24,7 @@ import scala.language.implicitConversions
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class ICalConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
+class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val emailMessageConverter = new EmailMessageUriConverter(valueFactory)

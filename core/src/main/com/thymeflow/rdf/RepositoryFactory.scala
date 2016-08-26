@@ -1,122 +1,172 @@
 package com.thymeflow.rdf
 
-import java.io.File
-import java.util.concurrent.TimeUnit
+import java.nio.file.{Path, Paths}
 
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.query.algebra.evaluation.function
+import com.thymeflow.rdf.repository.{Repository, RepositoryWithDefaultIsolationLevel}
 import com.thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 import com.thymeflow.rdf.sail.{InterceptingSail, SailInterceptor}
+import com.thymeflow.utilities.TimeExecution
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, RDFS}
 import org.openrdf.query.algebra.evaluation.function.FunctionRegistry
+import org.openrdf.repository.RepositoryConnection
 import org.openrdf.repository.sail.SailRepository
-import org.openrdf.repository.{Repository, RepositoryConnection}
 import org.openrdf.rio.RDFFormat
-import org.openrdf.sail.NotifyingSail
+import org.openrdf.sail.helpers.AbstractNotifyingSail
 import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
 import org.openrdf.sail.lucene.LuceneSail
 import org.openrdf.sail.lucene4.LuceneIndex
 import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
 import org.openrdf.sail.nativerdf.NativeStore
+import org.openrdf.sail.{NotifyingSail, Sail}
 import org.openrdf.{IsolationLevel, IsolationLevels}
-
-import scala.concurrent.duration.Duration
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
 object RepositoryFactory extends StrictLogging {
 
-  def initializedMemoryRepository(snapshotCleanupStore: Boolean = true,
-                                  owlInference: Boolean = true,
-                                  fullTextSearch: Boolean = true,
-                                  dataDirectory: File,
-                                  persistToDisk: Boolean = false,
-                                  persistenceSyncDelay: Long = 1000,
-                                  isolationLevel: IsolationLevel = IsolationLevels.NONE,
-                                  sailInterceptor: Option[SailInterceptor] = None): Repository = {
-    val initializationStart = System.currentTimeMillis()
-    logger.info("Start initializing memory store")
+  private sealed trait RepositoryConfig {
+    def dataDirectory: Path
 
-    val store = if (snapshotCleanupStore) {
+    def isolationLevel: IsolationLevel
+  }
+
+  private case class SailRepositoryConfig(sailConfig: SailConfig,
+                                          dataDirectory: Path,
+                                          isolationLevel: IsolationLevel) extends RepositoryConfig
+
+  private case class SailConfig(baseNotifyingSail: NotifyingSailConfig,
+                                owlInference: Boolean = true,
+                                fullTextSearch: Boolean = true)
+
+  sealed trait NotifyingSailConfig
+
+  sealed trait StoreConfig extends NotifyingSailConfig
+
+  private case class MemoryStoreConfig(persistToDisk: Boolean = false,
+                                       persistenceSyncDelay: Long = 1000,
+                                       snapshotCleanupStore: Boolean = true) extends StoreConfig
+
+  private case class DiskStoreConfig() extends StoreConfig
+
+  private def initializeMemoryStore(config: MemoryStoreConfig): AbstractNotifyingSail = {
+    val store = if (config.snapshotCleanupStore) {
       val store = new MemoryStore()
-      store.setPersist(persistToDisk)
-      store.setSyncDelay(persistenceSyncDelay)
+      store.setPersist(config.persistToDisk)
+      store.setSyncDelay(config.persistenceSyncDelay)
       store
     } else {
       val store = new SimpleMemoryStore()
-      store.setPersist(persistToDisk)
-      store.setSyncDelay(persistenceSyncDelay)
+      store.setPersist(config.persistToDisk)
+      store.setSyncDelay(config.persistenceSyncDelay)
       store
     }
-    store.setDefaultIsolationLevel(isolationLevel)
-
-    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory, sailInterceptor)
-
-    logger.info(s"Memory store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
-
-    repository
+    store
   }
 
-  def initializedDiskRepository(owlInference: Boolean = true,
-                                fullTextSearch: Boolean = true,
-                                dataDirectory: File,
-                                isolationLevel: IsolationLevel = IsolationLevels.NONE,
-                                sailInterceptor: Option[SailInterceptor] = None): Repository = {
-    val initializationStart = System.currentTimeMillis()
-    logger.info("Start initializing memory store")
-
-    val store = new NativeStore()
-    store.setDefaultIsolationLevel(isolationLevel)
-
-    val repository = initializeRepository(store, owlInference, fullTextSearch, dataDirectory, sailInterceptor)
-
-    logger.info(s"Disk store initialization done in ${Duration(System.currentTimeMillis() - initializationStart, TimeUnit.MILLISECONDS)}")
-
-    repository
+  private def initializeDiskStore(config: DiskStoreConfig): AbstractNotifyingSail = {
+    new NativeStore()
   }
 
-  private def initializeRepository(store: NotifyingSail,
-                                   owlInference: Boolean = true,
-                                   fullTextSearch: Boolean = true,
-                                   dataDirectory: File,
-                                   sailInterceptor: Option[SailInterceptor] = None): Repository = {
-
-    val repository = new SailRepository(addSailInterceptor(addFullTextSearch(addInferencer(store, owlInference), fullTextSearch), sailInterceptor))
-    repository.setDataDir(dataDirectory)
-    repository.initialize()
-    addBasicsToRepository(repository)
-    repository
+  private def initializeStore(config: StoreConfig): NotifyingSail = {
+    val store = config match {
+      case storeConfig: MemoryStoreConfig => initializeMemoryStore(storeConfig)
+      case storeConfig: DiskStoreConfig => initializeDiskStore(storeConfig)
+    }
+    store
   }
 
-  private def addFullTextSearch(store: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {
+  private def initializeNotifyingSail(config: NotifyingSailConfig): NotifyingSail = {
+    config match {
+      case storeConfig: StoreConfig => initializeStore(storeConfig)
+    }
+  }
+
+  private def initializeSail(sailConfig: SailConfig, sailInterceptor: Option[SailInterceptor] = None): Sail = {
+    val baseNotifyingSail = initializeNotifyingSail(sailConfig.baseNotifyingSail)
+    addSailInterceptor(addFullTextSearch(addInferencer(baseNotifyingSail, sailConfig.owlInference), sailConfig.fullTextSearch), sailInterceptor)
+  }
+
+  private def getRepositoryConfig(config: Config): RepositoryConfig = {
+    def configKey(attributeName: String) = {
+      s"thymeflow.repository.$attributeName"
+    }
+    val baseNotifyingSailConfig = config.getString(configKey("type")) match {
+      case "disk" =>
+        DiskStoreConfig()
+      case "memory" =>
+        MemoryStoreConfig(persistToDisk = config.getBoolean(configKey("persist-to-disk")),
+          persistenceSyncDelay = config.getLong(configKey("persistence-sync-delay")),
+          snapshotCleanupStore = config.getBoolean(configKey("snapshot-cleanup-store"))
+        )
+      case repositoryType => throw new IllegalArgumentException(s"Unknown repository type: $repositoryType")
+    }
+    val sailConfig = SailConfig(baseNotifyingSail = baseNotifyingSailConfig,
+      owlInference = config.getBoolean(configKey("owl-inference")),
+      fullTextSearch = config.getBoolean(configKey("full-text-search"))
+    )
+    SailRepositoryConfig(sailConfig = sailConfig,
+      dataDirectory = Paths.get(config.getString(configKey("data-directory"))),
+      isolationLevel = IsolationLevels.valueOf(config.getString(configKey("isolation-level")))
+    )
+  }
+
+  /**
+    * Initializes the Repository
+    *
+    * @param sailInterceptor an interceptor of SPARQL INSERT/DELETE commands
+    * @param config          the application config
+    * @return
+    */
+  // TODO: Improve the inclusion of the sailInterceptor
+  def initializeRepository(sailInterceptor: Option[SailInterceptor] = None)(implicit config: Config): Repository = {
+    val repositoryConfig = getRepositoryConfig(config)
+    TimeExecution.timeInfo("repository-initialization", logger, {
+      repositoryConfig match {
+        case sailRepositoryConfig: SailRepositoryConfig =>
+          val sail = initializeSail(sailRepositoryConfig.sailConfig, sailInterceptor)
+          val sailRepository = new SailRepository(sail)
+          sailRepository.setDataDir(sailRepositoryConfig.dataDirectory.toFile)
+          sailRepository.initialize()
+          val repository = RepositoryWithDefaultIsolationLevel(sailRepository, sailRepositoryConfig.isolationLevel)
+          addBasicsToRepository(repository)
+          repository
+      }
+    }, s"Config=$repositoryConfig")
+  }
+
+  private def addFullTextSearch(notifyingSail: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {
     if (withFullTextSearch) {
       val luceneSail = new LuceneSail()
       luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
       luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
-      luceneSail.setBaseSail(store)
+      luceneSail.setBaseSail(notifyingSail)
       luceneSail
     } else {
-      store
+      notifyingSail
     }
   }
 
-  private def addInferencer(store: NotifyingSail, withOwl: Boolean): NotifyingSail = {
+  private def addInferencer(notifyingSail: NotifyingSail, withOwl: Boolean): NotifyingSail = {
     if (withOwl) {
-      new ForwardChainingSimpleOWLInferencer(new ForwardChainingRDFSInferencer(store))
+      new ForwardChainingSimpleOWLInferencer(new ForwardChainingRDFSInferencer(notifyingSail))
     } else {
-      store
+      notifyingSail
     }
   }
 
-  private def addSailInterceptor(store: NotifyingSail, sailInterceptor: Option[SailInterceptor] = None): NotifyingSail = {
-    sailInterceptor.map(sailInterceptor => new InterceptingSail(store, sailInterceptor)).getOrElse(store)
+  private def addSailInterceptor(notifyingSail: NotifyingSail, sailInterceptor: Option[SailInterceptor] = None): NotifyingSail = {
+    sailInterceptor.map(sailInterceptor => new InterceptingSail(notifyingSail, sailInterceptor)).getOrElse(notifyingSail)
   }
 
 
   private def addBasicsToRepository(repository: Repository): Unit = {
-    val repositoryConnection = repository.getConnection
+    val repositoryConnection = repository.newConnection()
     addNamespacesToRepository(repositoryConnection)
     loadOntology(repositoryConnection)
     repositoryConnection.close()

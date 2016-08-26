@@ -8,6 +8,7 @@ import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.GeoCoordinatesConverter
 import com.thymeflow.utilities.ExceptionUtils
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
@@ -17,7 +18,7 @@ import spray.json.{DefaultJsonProtocol, DeserializationException, JsValue, JsonP
 /**
   * @author David Montoya
   */
-class GoogleLocationHistoryConverter(valueFactory: ValueFactory) extends Converter with StrictLogging with DefaultJsonProtocol {
+class GoogleLocationHistoryConverter(valueFactory: ValueFactory)(implicit config: Config) extends Converter with StrictLogging with DefaultJsonProtocol {
 
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
 

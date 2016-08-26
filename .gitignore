@@ -18,3 +18,5 @@ project/plugins/project/
 
 # TypeSafe Config
 application.conf
+common.conf
+cli.conf

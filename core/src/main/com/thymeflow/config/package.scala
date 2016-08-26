@@ -6,7 +6,10 @@ import com.typesafe.config.ConfigFactory
   * @author David Montoya
   */
 package object config {
-  private lazy val defaultConfig = ConfigFactory.load()
+  private lazy val applicationConfig = ConfigFactory.load()
+  private lazy val cliConfig = ConfigFactory.load("cli")
 
-  def default = defaultConfig
+  def application = applicationConfig
+
+  def cli = cliConfig
 }

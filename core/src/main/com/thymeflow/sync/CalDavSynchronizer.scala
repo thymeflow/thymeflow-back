@@ -11,6 +11,7 @@ import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.sync.converter.ICalConverter
 import com.thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
 import com.thymeflow.update.UpdateResults
+import com.typesafe.config.{Config => AppConfig}
 import org.openrdf.model.{Model, Resource, ValueFactory}
 
 /**
@@ -18,13 +19,13 @@ import org.openrdf.model.{Model, Resource, ValueFactory}
   */
 object CalDavSynchronizer extends BaseDavSynchronizer {
 
-  def source(valueFactory: ValueFactory) =
+  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   case class Config(sardine: Sardine, baseUri: String) {
   }
 
-  private class Publisher(valueFactory: ValueFactory)
+  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
 
     override def receive: Receive = super.receive orElse {
@@ -33,7 +34,7 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
     }
   }
 
-  private class DocumentsFetcher(valueFactory: ValueFactory, sardine: Sardine, baseUri: String)
+  private class DocumentsFetcher(valueFactory: ValueFactory, sardine: Sardine, baseUri: String)(implicit appConfig: AppConfig)
     extends BaseDavDocumentsFetcher(valueFactory, sardine, baseUri) {
 
     private val CalDavNamespace = "urn:ietf:params:xml:ns:caldav"

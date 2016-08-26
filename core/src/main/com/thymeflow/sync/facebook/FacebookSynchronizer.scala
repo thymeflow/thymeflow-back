@@ -11,6 +11,7 @@ import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
+import com.typesafe.config.{Config => AppConfig}
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import spray.json._
 
@@ -23,7 +24,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
   final val namespace = "https://graph.facebook.com"
   final val apiPath = Path("/v2.6")
 
-  def source(valueFactory: ValueFactory) =
+  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
 
   sealed trait FacebookState
@@ -34,7 +35,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
   case class Scroll(token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
 
-  private class Publisher(valueFactory: ValueFactory)
+  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
 
 

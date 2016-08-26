@@ -10,6 +10,7 @@ import com.thymeflow.spatial
 import com.thymeflow.sync.converter.utils._
 import com.thymeflow.update.{UpdateResult, UpdateResults}
 import com.thymeflow.utilities.{Error, Ok}
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import ezvcard.parameter.{AddressType, EmailType, ImageType, TelephoneType}
 import ezvcard.property._
@@ -25,11 +26,11 @@ import scala.compat.java8.OptionConverters._
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-class VCardConverter(valueFactory: ValueFactory) extends Converter with StrictLogging {
+class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extends Converter with StrictLogging {
 
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   // TODO: Guess the phone number region
-  private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, com.thymeflow.config.default.getString("thymeflow.converter.vcard.phone-number-default-region"))
+  private val phoneNumberConverter = new PhoneNumberConverter(valueFactory, config.getString("thymeflow.converter.vcard.phone-number-default-region"))
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 

@@ -9,6 +9,7 @@ import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
 import com.thymeflow.api.SparqlService.SparqlQuery
 import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.repository.Repository
 import com.typesafe.scalalogging.StrictLogging
 import info.aduna.lang.FileFormat
 import info.aduna.lang.service.FileFormatServiceRegistry
@@ -17,7 +18,6 @@ import org.openrdf.model.vocabulary.{RDF, SD}
 import org.openrdf.query._
 import org.openrdf.query.parser.QueryParserUtil
 import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.openrdf.repository.Repository
 import org.openrdf.rio.{RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
@@ -71,7 +71,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   protected def repository: Repository
 
   private def executeQuery(queryStr: String, accept: Option[Accept]): Route = {
-    val repositoryConnection = repository.getConnection
+    val repositoryConnection = repository.newConnection()
     try {
       repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr) match {
         case query: BooleanQuery => executeQuery(query, accept)
@@ -126,7 +126,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   }
 
   private def executeUpdate(updateStr: String, accept: Option[Accept]): Route = {
-    val repositoryConnection = repository.getConnection
+    val repositoryConnection = repository.newConnection()
     try {
       repositoryConnection.prepareUpdate(QueryLanguage.SPARQL, updateStr).execute()
       complete(StatusCodes.OK, "")
@@ -178,7 +178,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   }
 
   private def sparqlServiceDescription: Model = {
-    val valueFactory = repository.getValueFactory
+    val valueFactory = repository.valueFactory
     val model = new SimpleHashModel(valueFactory)
 
     val service = valueFactory.createBNode()

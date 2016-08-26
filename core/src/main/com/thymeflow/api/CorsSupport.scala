@@ -10,17 +10,17 @@ import akka.http.scaladsl.server.Route
   * @author David Montoya
   */
 trait CorsSupport {
-  private val config = com.thymeflow.config.default
+  protected def allowedOrigin: String
 
   lazy val allowedOriginHeader = {
-    val sAllowedOrigin = config.getString("thymeflow.http.frontend-uri")
+    val sAllowedOrigin = allowedOrigin
     if (sAllowedOrigin == "*")
       `Access-Control-Allow-Origin`.*
     else
       `Access-Control-Allow-Origin`(HttpOrigin(sAllowedOrigin))
   }
 
-  private def addAccessControlHeaders = {
+  private def withAccessControlHeaders = {
     mapResponseHeaders { headers =>
       allowedOriginHeader +:
         `Access-Control-Allow-Credentials`(true) +:
@@ -36,7 +36,7 @@ trait CorsSupport {
     )
   }
 
-  def corsHandler(r: Route) = addAccessControlHeaders {
+  def corsHandler(r: Route) = withAccessControlHeaders {
     preflightRequestHandler ~ r
   }
 }

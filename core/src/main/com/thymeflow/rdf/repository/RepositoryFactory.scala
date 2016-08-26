@@ -95,7 +95,8 @@ object RepositoryFactory extends StrictLogging {
     def configKey(attributeName: String) = {
       s"thymeflow.repository.$attributeName"
     }
-    val baseNotifyingSailConfig = config.getString(configKey("type")) match {
+    val repositoryType = config.getString(configKey("type"))
+    val baseNotifyingSailConfig = repositoryType match {
       case "disk" =>
         DiskStoreConfig()
       case "memory" =>
@@ -103,14 +104,20 @@ object RepositoryFactory extends StrictLogging {
           persistenceSyncDelay = config.getLong(configKey("persistence-sync-delay")),
           snapshotCleanupStore = config.getBoolean(configKey("snapshot-cleanup-store"))
         )
-      case repositoryType => throw new IllegalArgumentException(s"Unknown repository type: $repositoryType")
+      case _ => throw new IllegalArgumentException(s"Unknown repository type: $repositoryType")
     }
     val sailConfig = SailConfig(baseNotifyingSail = baseNotifyingSailConfig,
       owlInference = config.getBoolean(configKey("owl-inference")),
       fullTextSearch = config.getBoolean(configKey("full-text-search"))
     )
+    val dataDirectoryPath = if (config.hasPath(configKey("data-directory"))) {
+      logger.warn("Data directory using `thymeflow.repository.data-directory` is DEPRECATED. Refer to reference.conf for the new definition and migration instructions.")
+      Paths.get(config.getString(configKey("data-directory")))
+    } else {
+      Paths.get(config.getString("thymeflow.data-directory"), repositoryType)
+    }
     SailRepositoryConfig(sailConfig = sailConfig,
-      dataDirectory = Paths.get(config.getString(configKey("data-directory"))),
+      dataDirectory = dataDirectoryPath,
       isolationLevel = IsolationLevels.valueOf(config.getString(configKey("isolation-level")))
     )
   }
@@ -166,18 +173,18 @@ object RepositoryFactory extends StrictLogging {
 
   private def addBasicsToRepository(repository: Repository): Unit = {
     val repositoryConnection = repository.newConnection()
+    repositoryConnection.begin()
     addNamespacesToRepository(repositoryConnection)
     loadOntology(repositoryConnection)
+    repositoryConnection.commit()
     repositoryConnection.close()
   }
 
   private def addNamespacesToRepository(repositoryConnection: RepositoryConnection): Unit = {
-    repositoryConnection.begin()
     repositoryConnection.setNamespace(RDF.PREFIX, RDF.NAMESPACE)
     repositoryConnection.setNamespace(RDFS.PREFIX, RDFS.NAMESPACE)
     repositoryConnection.setNamespace(SchemaOrg.PREFIX, SchemaOrg.NAMESPACE)
     repositoryConnection.setNamespace(Personal.PREFIX, Personal.NAMESPACE)
-    repositoryConnection.commit()
   }
 
   private def loadOntology(repositoryConnection: RepositoryConnection): Unit = {

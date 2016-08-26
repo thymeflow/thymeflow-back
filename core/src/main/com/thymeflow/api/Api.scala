@@ -23,7 +23,7 @@ import scala.concurrent.duration.Duration
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-trait Api extends App with SparqlService with CorsSupport {
+trait Api extends SparqlService with CorsSupport {
 
   protected implicit def config: Config
 
@@ -33,7 +33,7 @@ trait Api extends App with SparqlService with CorsSupport {
   private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
   private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
   private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(Uri.Path("/oauth/facebook/token")).toString)
-  private val uploadsPath = Paths.get(config.getString("thymeflow.api.repository.data-directory"), "uploads")
+  private val uploadsPath = Paths.get(config.getString("thymeflow.data-directory"), "uploads")
 
   private val route = {
     path("sparql") {
@@ -143,6 +143,7 @@ trait Api extends App with SparqlService with CorsSupport {
 
   protected def repository: Repository
 
+  private val executionStart: Long = System.currentTimeMillis()
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
   }

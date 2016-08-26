@@ -1,10 +1,9 @@
-package com.thymeflow.rdf
+package com.thymeflow.rdf.repository
 
 import java.nio.file.{Path, Paths}
 
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.query.algebra.evaluation.function
-import com.thymeflow.rdf.repository.{Repository, RepositoryWithDefaultIsolationLevel}
 import com.thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
 import com.thymeflow.rdf.sail.{InterceptingSail, SailInterceptor}
 import com.thymeflow.utilities.TimeExecution

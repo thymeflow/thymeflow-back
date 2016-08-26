@@ -5,8 +5,7 @@ import java.util.concurrent.TimeUnit
 
 import com.thymeflow.enricher._
 import com.thymeflow.enricher.entityresolution.AgentMatchEnricher
-import com.thymeflow.rdf.RepositoryFactory
-import com.thymeflow.rdf.repository.Repository
+import com.thymeflow.rdf.repository.{Repository, RepositoryFactory}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.sync._
 import com.thymeflow.sync.converter.GoogleLocationHistoryConverter

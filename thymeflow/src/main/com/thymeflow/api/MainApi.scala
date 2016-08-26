@@ -3,8 +3,9 @@ package com.thymeflow.api
 import java.io.File
 
 import com.thymeflow.Thymeflow
+import com.thymeflow.rdf.FileSynchronization
 import com.thymeflow.rdf.model.vocabulary.Personal
-import com.thymeflow.rdf.{FileSynchronization, RepositoryFactory}
+import com.thymeflow.rdf.repository.RepositoryFactory
 import com.thymeflow.update.{UpdateSailInterceptor, Updater}
 
 import scala.language.postfixOps

@@ -180,6 +180,6 @@ class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) ex
   }
 
   private def noGraphEditorFound(context: Resource): UpdateResult =
-    Error(List(new Exception(s"No controler for graph $context found.")))
+    Error(List(new Exception(s"No controller for graph $context found.")))
 
 }

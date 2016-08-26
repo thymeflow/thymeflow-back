@@ -36,12 +36,12 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
   private def applyUpdate(diff: ModelDiff): Boolean = {
     updater.apply(diff).foreach(results => {
       results.added.foreach {
-        case (statement, Ok(_)) => logger.info(s"statement $statement have been successefully added")
-        case (statement, Error(l)) => logger.info(s"statement $statement failed ot be added with errors: ${l.mkString}")
+        case (statement, Ok(_)) => logger.info(s"statement $statement has been successfully added")
+        case (statement, Error(l)) => logger.info(s"statement $statement failed to be added with errors: ${l.mkString}")
       }
       results.removed.foreach {
-        case (statement, Ok(_)) => logger.info(s"statement $statement have been successefully removed")
-        case (statement, Error(l)) => logger.info(s"statement $statement failed ot be removed with errors: ${l.mkString}")
+        case (statement, Ok(_)) => logger.info(s"statement $statement has been successfully removed")
+        case (statement, Error(l)) => logger.info(s"statement $statement failed to be removed with errors: ${l.mkString}")
       }
     })
     false

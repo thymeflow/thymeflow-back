@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import javax.mail.{MessagingException, Session}
 
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.{StatusCodes, Uri}
 import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
@@ -17,6 +18,7 @@ import com.thymeflow.sync.facebook.FacebookSynchronizer
 import com.typesafe.config.Config
 import org.apache.commons.io.IOUtils
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.Duration
 
 /**
@@ -27,12 +29,12 @@ trait Api extends SparqlService with CorsSupport {
 
   protected implicit def config: Config
 
-  private val backendUri = Uri(s"${config.getString("thymeflow.http.backend-uri")}")
-  private val frontendUri = Uri(s"${config.getString("thymeflow.http.frontend-uri")}")
-  protected override val allowedOrigin = config.getString("thymeflow.http.frontend-uri")
-  private val googleOAuth = OAuth2.Google(backendUri.withPath(Uri.Path("/oauth/google/token")).toString)
-  private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(Uri.Path("/oauth/microsoft/token")).toString)
-  private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(Uri.Path("/oauth/facebook/token")).toString)
+  private val backendUri = Uri(config.getString("thymeflow.http.backend-uri").replaceAll("/$", ""))
+  private val frontendUri = Uri(config.getString("thymeflow.http.frontend-uri"))
+  protected override val allowedOrigin = frontendUri.withPath(Path.Empty).toString
+  private val googleOAuth = OAuth2.Google(backendUri.withPath(backendUri.path / "oauth" / "google" / "token").toString)
+  private val microsoftOAuth = OAuth2.Microsoft(backendUri.withPath(backendUri.path / "oauth" / "microsoft" / "token").toString)
+  private val facebookOAuth = OAuth2.Facebook(backendUri.withPath(backendUri.path / "oauth" / "facebook" / "token").toString)
   private val uploadsPath = Paths.get(config.getString("thymeflow.data-directory"), "uploads")
 
   private val route = {
@@ -207,8 +209,29 @@ trait Api extends SparqlService with CorsSupport {
   }
 
   def start(): Unit = {
-    Http().bindAndHandle(route, backendUri.authority.host.toString(), backendUri.effectivePort)
+    @tailrec
+    def segments(path: Path, tailSegments: List[String] = List.empty): List[String] = {
+      if (path.isEmpty) {
+        tailSegments
+      } else {
+        if (path.startsWithSegment) {
+          segments(path.tail, path.head.toString :: tailSegments)
+        } else {
+          segments(path.tail, tailSegments)
+        }
+      }
+    }
+    val prefixedRoute = segments(backendUri.path).foldLeft(route) {
+      case (nestedRoute, segment) =>
+        pathPrefix(segment) {
+          nestedRoute
+        }
+    }
+    val listenInterface = config.getString("thymeflow.http.listen-interface")
+    val listenPort = config.getInt("thymeflow.http.listen-port")
 
-    logger.info(s"Thymeflow API setup at $backendUri. Frontend expected at $frontendUri.")
+    Http().bindAndHandle(prefixedRoute, listenInterface, listenPort)
+
+    logger.info(s"Thymeflow API bound to $listenInterface:$listenPort. BackendUri is $backendUri. FrontendUri is $frontendUri.")
   }
 }

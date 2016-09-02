@@ -131,6 +131,7 @@ object FullTextSearchServer extends StrictLogging {
     sBuilder.put("path.home", this.esDirectory.toString)
     sBuilder.put("network.host", "127.0.0.1")
     sBuilder.put("threadpool.search.queue_size", "1000000")
+    sBuilder.put("cluster.routing.allocation.disk.threshold_enabled", "false")
     val settings: Settings = sBuilder.build
     val esNode = nodeBuilder.clusterName(clusterName).loadConfigSettings(true).settings(settings).node
     logger.info("[elastic-search] Started search node.")

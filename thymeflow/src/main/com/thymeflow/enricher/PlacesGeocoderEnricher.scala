@@ -16,6 +16,8 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
 /**
+  * Geocodes instances of schema:Place with a schema:geo property (longitude/latitude coordinates).
+  *
   * @author Thomas Pellissier Tanon
   *
   *         TODO: geocode places with no name but an address

@@ -24,6 +24,9 @@ import org.openrdf.repository.RepositoryConnection
 import scala.concurrent.Await
 
 /**
+  *
+  * Extracts personal:Stay instances from personal:Location instances
+  *
   * @author David Montoya
   *         TODO: not nice usage of Await
   *         TODO: add modified triples to the diff

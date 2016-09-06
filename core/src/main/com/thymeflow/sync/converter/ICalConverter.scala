@@ -58,7 +58,7 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
     }
 
     private def convert(event: VEvent): Resource = {
-      val eventResource = resourceFromUid(event.getUid)
+      val eventResource = resourceFromId(event.getUid, event.getRecurrenceId, event.getSequence)
       model.add(eventResource, RDF.TYPE, SchemaOrg.EVENT, context)
 
       event.getProperties.asScala.foreach(entry =>
@@ -216,11 +216,11 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
       placeResource
     }
 
-    private def resourceFromUid(uid: Uid): Resource = {
+    private def resourceFromId(uid: Uid, recurrenceId: RecurrenceId, sequence: Sequence): Resource = {
       if (uid == null) {
         valueFactory.createBNode()
       } else {
-        uuidConverter.convert(uid.getValue)
+        uuidConverter.convert(Vector(uid, Option(recurrenceId).map(_.getValue.toString).getOrElse(""), Option(sequence).map(_.getValue.toString).getOrElse("")).mkString("\0"))
       }
     }
   }

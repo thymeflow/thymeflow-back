@@ -32,29 +32,29 @@ import org.openrdf.{IsolationLevel, IsolationLevels}
   */
 object RepositoryFactory extends StrictLogging {
 
-  private sealed trait RepositoryConfig {
+  private[repository] sealed trait RepositoryConfig {
     def dataDirectory: Path
 
     def isolationLevel: IsolationLevel
   }
 
-  private case class SailRepositoryConfig(sailConfig: SailConfig,
-                                          dataDirectory: Path,
-                                          isolationLevel: IsolationLevel) extends RepositoryConfig
+  private[repository] case class SailRepositoryConfig(sailConfig: SailConfig,
+                                                      dataDirectory: Path,
+                                                      isolationLevel: IsolationLevel) extends RepositoryConfig
 
-  private case class SailConfig(baseNotifyingSail: NotifyingSailConfig,
-                                owlInference: Boolean = true,
-                                fullTextSearch: Boolean = true)
+  private[repository] case class SailConfig(baseNotifyingSail: NotifyingSailConfig,
+                                            owlInference: Boolean = false,
+                                            fullTextSearch: Boolean = false)
 
   sealed trait NotifyingSailConfig
 
   sealed trait StoreConfig extends NotifyingSailConfig
 
-  private case class MemoryStoreConfig(persistToDisk: Boolean = false,
-                                       persistenceSyncDelay: Long = 1000,
-                                       snapshotCleanupStore: Boolean = true) extends StoreConfig
+  private[repository] case class MemoryStoreConfig(persistToDisk: Boolean = false,
+                                                   persistenceSyncDelay: Long = 1000,
+                                                   snapshotCleanupStore: Boolean = false) extends StoreConfig
 
-  private case class DiskStoreConfig() extends StoreConfig
+  private[repository] case class DiskStoreConfig() extends StoreConfig
 
   private def initializeMemoryStore(config: MemoryStoreConfig): AbstractNotifyingSail = {
     val store = if (config.snapshotCleanupStore) {
@@ -125,16 +125,16 @@ object RepositoryFactory extends StrictLogging {
     )
   }
 
-  /**
-    * Initializes the Repository
+
+  /** *
+    * Initializes the Repository from a RepositoryConfig
     *
-    * @param sailInterceptor an interceptor of SPARQL INSERT/DELETE commands
-    * @param config          the application config
-    * @return
+    * @param repositoryConfig the repository configuration
+    * @param sailInterceptor  an interceptor of SPARQL INSERT/DELETE commands
+    * @return the repository
     */
   // TODO: Improve the inclusion of the sailInterceptor
-  def initializeRepository(sailInterceptor: Option[SailInterceptor] = None)(implicit config: Config): Repository = {
-    val repositoryConfig = getRepositoryConfig(config)
+  private[repository] def initializeRepository(repositoryConfig: RepositoryConfig, sailInterceptor: Option[SailInterceptor]): Repository = {
     TimeExecution.timeInfo("repository-initialization", logger, {
       repositoryConfig match {
         case sailRepositoryConfig: SailRepositoryConfig =>
@@ -147,6 +147,17 @@ object RepositoryFactory extends StrictLogging {
           repository
       }
     }, s"Config=$repositoryConfig")
+  }
+
+  /**
+    * Initializes the Repository from an Application Config
+    *
+    * @param sailInterceptor an interceptor of SPARQL INSERT/DELETE commands
+    * @param config          the application config
+    * @return the repository
+    */
+  def initializeRepository(sailInterceptor: Option[SailInterceptor] = None)(implicit config: Config): Repository = {
+    initializeRepository(getRepositoryConfig(config), sailInterceptor)
   }
 
   private def addFullTextSearch(notifyingSail: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {

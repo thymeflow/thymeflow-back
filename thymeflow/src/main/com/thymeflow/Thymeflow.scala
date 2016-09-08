@@ -32,10 +32,7 @@ object Thymeflow extends StrictLogging {
   }
 
   def initializePipeline(repository: Repository)(implicit config: Config) = {
-    val geocoder = Geocoder.cached(
-      Geocoder.googleMaps(),
-      Some(Paths.get(System.getProperty("java.io.tmpdir"), "thymeflow/geocoder-google-cache"))
-    )
+    val geocoder = Geocoder.google(Some(Paths.get(System.getProperty("java.io.tmpdir"), "thymeflow/google-api-cache")))
 
     setupSynchronizers()
     val pipelineStartTime = System.currentTimeMillis()

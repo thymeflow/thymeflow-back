@@ -5,6 +5,7 @@ import java.nio.file.Path
 import akka.http.scaladsl.model.Uri
 import com.thymeflow.actors._
 import com.thymeflow.spatial.geocoding
+import com.thymeflow.spatial.geocoding.google.Api
 import com.thymeflow.spatial.geographic.Point
 import com.typesafe.config.Config
 
@@ -40,9 +41,10 @@ object Geocoder {
   def cached(geocoder: Geocoder, persistentCacheFile: Option[Path] = None) = new CachedGeocoder(geocoder, persistentCacheFile)
 
   /**
-    * Geocoder client for Google Maps API
+    * Geocoder client using Google API
+    * Requests to Google API are cached.
     *
-    * @return a GoogleMapsGeocoder
+    * @return a Geocoder
     */
-  def googleMaps()(implicit config: Config) = geocoding.google.Geocoder()
+  def google(persistentCacheFile: Option[Path] = None)(implicit config: Config) = geocoding.google.Geocoder(Api(persistentCacheFile))
 }

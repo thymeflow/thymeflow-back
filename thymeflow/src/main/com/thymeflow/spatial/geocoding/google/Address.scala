@@ -28,3 +28,17 @@ case class Address(components: Array[Component]) extends spatial.Address {
 
   override def country: Option[String] = findComponent("country")
 }
+
+object EmptyAddress extends spatial.Address {
+  override def houseNumber: Option[String] = None
+
+  override def postalCode: Option[String] = None
+
+  override def country: Option[String] = None
+
+  override def region: Option[String] = None
+
+  override def locality: Option[String] = None
+
+  override def street: Option[String] = None
+}

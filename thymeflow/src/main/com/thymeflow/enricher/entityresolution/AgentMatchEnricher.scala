@@ -2,7 +2,7 @@ package com.thymeflow.enricher.entityresolution
 
 import java.io._
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.util.Locale
 
 import akka.stream.scaladsl.Source
@@ -72,7 +72,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
                          evaluationThreshold: BigDecimal = BigDecimal(0.9),
                          persistenceThreshold: BigDecimal = BigDecimal(0.9),
                          useIDF: Boolean = true,
-                         evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
+                         evaluationSamplesFiles: IndexedSeq[Path] = IndexedSeq.empty,
                          debug: Boolean = false,
                          outputClassSizes: Boolean = false,
                          outputFunctionalities: Boolean = false,
@@ -136,9 +136,14 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
       |}
     """.stripMargin)
 
+  protected def printParameters = {
+    s"${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF"
+  }
+
   override def enrich(diff: ModelDiff): Unit = {
+    val fileSuffix = s"${printParameters}_${IO.pathTimestamp}"
     if (outputAgents) {
-      saveAgentsNameEmails()
+      saveAgentsNameEmails(fileSuffix)
     }
     // get a map assigning to each agent facet its representative in the "shared id" equivalence class
     val agentRepresentativeMap = getSharedIdRepresentativeByAgent
@@ -165,7 +170,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
               agent -> agentNames
           }.toMap
           if (solveMode == DeduplicateAgentNamePartsAndSolvePartTypes) {
-            val (filteredAgentRepresentativeNamesMap, count) = filterAgentsWithNamePartTypes(agentRepresentativeNamesMap, deduplicatedAgentNames, agentRepresentativeEmailAddresses.apply)
+            val (filteredAgentRepresentativeNamesMap, count) = filterAgentsWithNamePartTypes(fileSuffix, agentRepresentativeNamesMap, deduplicatedAgentNames, agentRepresentativeEmailAddresses.apply)
             filteredAgentCount = count
             filteredAgentRepresentativeNamesMap
           } else {
@@ -296,10 +301,11 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
             lazy val equivalentClasses = generateEquivalentClasses(baseAgentRepresentative, buckets, equalities)
             lazy val agentEmails = getAgentEmails(identity)
             if (outputClassSizes) {
-              saveClassSizes(equivalentClasses.map(x => (x._1, x._3)), agentEmails)
+              saveClassSizes(fileSuffix, equivalentClasses.map(x => (x._1, x._3)), agentEmails)
             }
             if (outputFunctionalities) {
-              saveFunctionalities(equivalentClasses.map(x => (x._1, x._3)), agentRepresentativeMatchNames, agentEmails)
+              saveFunctionalities(fileSuffix,
+                equivalentClasses.map(x => (x._1, x._3)), agentRepresentativeMatchNames, agentEmails)
             }
             evaluationSamplesFiles.foreach {
               path =>
@@ -307,18 +313,17 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
                   case (agent, _) =>
                     (agent.stringValue(), agent)
                 }.toMap
+                val sampleFileName = org.apache.commons.io.FilenameUtils.getBaseName(path.toString)
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
-                saveEvaluationToFile(
-                  s"${solveMode}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_CRW${contactRelativeWeight}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
-                  evaluatedSamples)
+                saveEvaluationToFile(s"${sampleFileName}_$fileSuffix", evaluatedSamples)
             }
             if (outputSamples) {
               val samples = generateSamples(equivalentClasses, 100)
-              saveSamplesToFile(samples)
+              saveSamplesToFile(fileSuffix, samples)
             }
             if (outputSimilarities) {
-              saveResultsToFile(equalities)
+              saveResultsToFile(fileSuffix, equalities)
             }
             reportStatistics(equalities, buckets)
             logger.info(s"[agent-attribute-identity-resolution-enricher] - Counts: {filteredAgentCount=$filteredAgentCount, candidatePairCount=$candidatePairCount, candidatePairCountAboveThreshold=$candidatePairCountAboveThreshold, candidatePairAboveThresholdSetSize=${equalities.size}}")
@@ -336,8 +341,8 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     Await.result(result, Duration.Inf)
   }
 
-  protected def saveAgentsNameEmails() = {
-    val stream = new FileOutputStream(s"${outputFilePrefix}_agents_${IO.pathTimestamp}.csv")
+  protected def saveAgentsNameEmails(fileSuffix: String) = {
+    val stream = new FileOutputStream(s"${outputFilePrefix}_agents_$fileSuffix.csv")
     val writer = new SPARQLResultsCSVWriter(stream)
     agentsNameEmailQuery.evaluate(writer)
     stream.close()
@@ -385,10 +390,11 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     * @tparam NUMERIC the numeric type
     * @return
     */
-  private def filterAgentsWithNamePartTypes[NUMERIC: Numeric](agentRepresentativeNamesMap: Map[Resource, IndexedSeq[(String, Double)]],
+  private def filterAgentsWithNamePartTypes[NUMERIC: Numeric](fileSuffix: String,
+                                                              agentRepresentativeNamesMap: Map[Resource, IndexedSeq[(String, Double)]],
                                                               deduplicatedAgentNames: IndexedSeq[(Resource, IndexedSeq[(String, (NUMERIC, IndexedSeq[IRI]))])],
                                                               agentEmailAddresses: Resource => Traversable[String]) = {
-    val namePartTypeInference = inferNamePartTypes(deduplicatedAgentNames, agentEmailAddresses)
+    val namePartTypeInference = inferNamePartTypes(fileSuffix, deduplicatedAgentNames, agentEmailAddresses)
     var filteredAgentCount = 0
     (agentRepresentativeNamesMap.filter {
       case (agent, nameParts) =>
@@ -429,7 +435,8 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     * @tparam NUMERIC numeric type
     * @return
     */
-  private def inferNamePartTypes[NUMERIC: Numeric](deduplicatedAgentNames: IndexedSeq[(Resource, IndexedSeq[(String, (NUMERIC, IndexedSeq[IRI]))])],
+  private def inferNamePartTypes[NUMERIC: Numeric](fileSuffix: String,
+                                                   deduplicatedAgentNames: IndexedSeq[(Resource, IndexedSeq[(String, (NUMERIC, IndexedSeq[IRI]))])],
                                                    agentEmailAddresses: Resource => Traversable[String]) = {
     val filterDomainList = EmailProviderDomainList.all
     val filteredAgentEmailAddresses = (agentRepresentative: Resource) => {
@@ -439,7 +446,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     if (debug) {
       groupNamePartsByDomain(agentEmailAddressLocalPartNamePartsAlignment)
     }
-    inferNamePartTypesFromGraphTransitivity(agentEmailAddressLocalPartNamePartsAlignment).apply _
+    inferNamePartTypesFromGraphTransitivity(fileSuffix, agentEmailAddressLocalPartNamePartsAlignment).apply _
   }
 
   /**
@@ -448,7 +455,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     * @param agentEmailAddressLocalPartNamePartsAlignment a list of agent email address local part matched patterns
     * @return
     */
-  private def inferNamePartTypesFromGraphTransitivity(agentEmailAddressLocalPartNamePartsAlignment: IndexedSeq[(Resource, String, String, IndexedSeq[NamePart], Map[VariableNamePart, NamePartMatch], Double, IndexedSeq[(String, Set[IRI])])]) = {
+  private def inferNamePartTypesFromGraphTransitivity(fileSuffix: String, agentEmailAddressLocalPartNamePartsAlignment: IndexedSeq[(Resource, String, String, IndexedSeq[NamePart], Map[VariableNamePart, NamePartMatch], Double, IndexedSeq[(String, Set[IRI])])]) = {
     // build the NamePartGraph
     val domainToAgentNamePartEdges = agentEmailAddressLocalPartNamePartsAlignment.groupBy(x => (x._3.toLowerCase(Locale.ROOT), x._4)).toIndexedSeq.flatMap {
       case ((domain, nameParts), g) =>
@@ -545,7 +552,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     }.toMap.withDefaultValue(Map.empty[IRI, Double])
     // serialize graph with results (debug only)
     if (debug) {
-      serializeAgentNamePartGraph(nodes, domainToAgentNamePartEdges ++ agentNamePartToNamePartEdges, nodeToNodeIdMap.apply, agentNamePartToNamePartTypes.apply)
+      serializeAgentNamePartGraph(fileSuffix, nodes, domainToAgentNamePartEdges ++ agentNamePartToNamePartEdges, nodeToNodeIdMap.apply, agentNamePartToNamePartTypes.apply)
     }
     agentNamePartToNamePartTypes
   }
@@ -558,7 +565,8 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     * @param nodeId                          a map from a NamePartGraphNode to an integer id
     * @param resourceNamePartToNamePartTypes a map from a (resource, namePart) to a distribution of name part types
     */
-  private def serializeAgentNamePartGraph(nodes: Set[NamePartGraphNode],
+  private def serializeAgentNamePartGraph(fileSuffix: String,
+                                          nodes: Set[NamePartGraphNode],
                                           edges: Set[(NamePartGraphNode, NamePartGraphNode)],
                                           nodeId: NamePartGraphNode => Int,
                                           resourceNamePartToNamePartTypes: ((Resource, String)) => Map[IRI, Double]) = {
@@ -620,7 +628,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
       ("content", "content", "string")
     ))
 
-    GraphML.write(Paths.get(s"${outputFilePrefix}_name-part-types_${IO.pathTimestamp}.graphml"),
+    GraphML.write(Paths.get(s"${outputFilePrefix}_name-part-types_$fileSuffix.graphml"),
       GraphML.graph("nameParts", directed = false, keys, serializedNodes, serializedEdges))
   }
 
@@ -1134,13 +1142,14 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     *
     * @param equalities a map from a Set(agent1, agent2) to its equality probability
     */
-  private def saveResultsToFile(equalities: Traversable[(Resource, Resource, Double)]) {
+  private def saveResultsToFile(fileSuffix: String,
+                                equalities: Traversable[(Resource, Resource, Double)]) {
     val sortedEqualities = equalities.toIndexedSeq.sortBy(_._3)(implicitly[Ordering[Double]].reverse)
     val results = sortedEqualities.view.map {
       case (agent1, agent2, probability) =>
         Vector(agent1.stringValue(), agent2.stringValue(), probability.toString).mkString(",")
     }
-    val path = Paths.get(s"$outputFilePrefix${IO.pathTimestamp}.csv")
+    val path = Paths.get(s"${outputFilePrefix}_$fileSuffix.csv")
     Files.write(path, results.asJava, StandardCharsets.UTF_8)
   }
 

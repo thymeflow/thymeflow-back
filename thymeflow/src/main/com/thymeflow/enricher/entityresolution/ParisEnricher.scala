@@ -1,6 +1,6 @@
 package com.thymeflow.enricher.entityresolution
 
-import java.nio.file.Paths
+import java.nio.file.Path
 
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
@@ -44,7 +44,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                     searchMatchPercent: Int = 70,
                     useIDF: Boolean = true,
                     protected val matchDistanceThreshold: Double = 0.3d,
-                    evaluationSamplesFiles: IndexedSeq[String] = IndexedSeq.empty,
+                    evaluationSamplesFiles: IndexedSeq[Path] = IndexedSeq.empty,
                     parallelism: Int = 2,
                     persistenceThreshold: BigDecimal = BigDecimal(0.9),
                     propertiesInverseFunctionality: Map[Resource, Double] = Map(
@@ -165,9 +165,11 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                   agent =>
                     (agent.stringValue(), agent)
                 }.toMap.withDefault(repositoryConnection.getValueFactory.createIRI(_))
+
+                val sampleFileName = org.apache.commons.io.FilenameUtils.getBaseName(path.toString)
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
-                saveEvaluationToFile(s"${Paths.get(path).getFileName.toString}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
+                saveEvaluationToFile(s"${sampleFileName}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
                   evaluatedSamples)
             }
             repositoryConnection.begin()

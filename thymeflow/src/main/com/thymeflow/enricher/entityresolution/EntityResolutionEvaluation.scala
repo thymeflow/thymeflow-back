@@ -1,13 +1,12 @@
 package com.thymeflow.enricher.entityresolution
 
-import java.io.{BufferedReader, FileInputStream, InputStreamReader}
+import java.io.{BufferedReader, InputStreamReader}
 import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Paths}
+import java.nio.file.{Files, Path, Paths}
 import java.util.function.Consumer
 
 import com.opencsv.CSVReader
 import com.thymeflow.mathematics.probability.{DiscreteRand, Rand}
-import com.thymeflow.utilities.IO
 import org.openrdf.model.Resource
 
 import scala.collection.JavaConverters._
@@ -21,9 +20,9 @@ trait EntityResolutionEvaluation extends EntityResolution {
 
   protected def outputFilePrefix: String
 
-  protected def parseSamplesFromFile(path: String,
+  protected def parseSamplesFromFile(path: Path,
                                      uriStringToResource: String => Resource) = {
-    val reader = new CSVReader(new BufferedReader(new InputStreamReader(new FileInputStream(path), "UTF-8"), 4096))
+    val reader = new CSVReader(new BufferedReader(new InputStreamReader(Files.newInputStream(path), "UTF-8"), 4096))
     val builder = IndexedSeq.newBuilder[(Option[BigDecimal], Resource, Resource)]
     reader.forEach(new Consumer[Array[String]] {
       override def accept(t: Array[String]): Unit = {
@@ -38,10 +37,11 @@ trait EntityResolutionEvaluation extends EntityResolution {
         builder += ((threshold, agent1, agent2))
       }
     })
+    reader.close()
     builder.result()
   }
 
-  protected def saveEvaluationToFile(parameterPrefix: String,
+  protected def saveEvaluationToFile(fileSuffix: String,
                                      evaluatedSamples: SeqView[(Option[BigDecimal], Option[BigDecimal], Resource, Resource, Boolean), Seq[_]]) = {
     val results = evaluatedSamples.map {
       case (threshold, sampleThreshold, resource1, resource2, truth) =>
@@ -51,7 +51,7 @@ trait EntityResolutionEvaluation extends EntityResolution {
           resource2.stringValue(),
           truth.toString).mkString(",")
     }
-    val path = Paths.get(s"${outputFilePrefix}_evaluation_${parameterPrefix}_${IO.pathTimestamp}.csv")
+    val path = Paths.get(s"${outputFilePrefix}_evaluation_$fileSuffix.csv")
     Files.write(path, results.asJava, StandardCharsets.UTF_8)
   }
 
@@ -142,12 +142,12 @@ trait EntityResolutionEvaluation extends EntityResolution {
     * @param binSize size of the bucket
     * @return a range from 0 to 1 (inclusive) in steps of binSize
     */
-  protected def samplingBuckets(binSize: BigDecimal = BigDecimal("0.05")) = {
+  protected def samplingBuckets(binSize: BigDecimal = BigDecimal("0.025")) = {
     Range.BigDecimal.inclusive(start = BigDecimal(0) + binSize, end = BigDecimal(1), step = binSize)
   }
 
-  protected def saveSamplesToFile(samples: Traversable[(Option[BigDecimal], Long, Traversable[(Resource, Resource)])]) {
-    val timestamp = IO.pathTimestamp
+  protected def saveSamplesToFile(fileSuffix: String,
+                                  samples: Traversable[(Option[BigDecimal], Long, Traversable[(Resource, Resource)])]) {
     val sampleEqualitiesOutput = samples.flatMap {
       case (threshold, size, samplesForThreshold) =>
         samplesForThreshold.groupBy(identity).map {
@@ -157,16 +157,17 @@ trait EntityResolutionEvaluation extends EntityResolution {
             g.size.toString).productIterator.mkString(",")
         }
     }.mkString("\n")
-    val sampleEqualitiesPath = Paths.get(s"${outputFilePrefix}_samples_$timestamp.csv")
+    val sampleEqualitiesPath = Paths.get(s"${outputFilePrefix}_samples_$fileSuffix.csv")
     Files.write(sampleEqualitiesPath, sampleEqualitiesOutput.getBytes(StandardCharsets.UTF_8))
     val sampleGroupSizes = samples.map {
       case (threshold, size, _) => (threshold.map(_.toString).getOrElse("Infinity"), size.toString).productIterator.mkString(",")
     }.mkString("\n")
-    val sampleGroupSizesPath = Paths.get(s"${outputFilePrefix}_samples-group-sizes_$timestamp.csv")
+    val sampleGroupSizesPath = Paths.get(s"${outputFilePrefix}_samples-group-sizes_$fileSuffix.csv")
     Files.write(sampleGroupSizesPath, sampleGroupSizes.getBytes(StandardCharsets.UTF_8))
   }
 
-  protected def saveFunctionalities(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
+  protected def saveFunctionalities(fileSuffix: String,
+                                    equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
                                     agentRepresentativeMatchNames: Map[Resource, IndexedSeq[(String, Double)]],
                                     emailAddressForAgent: Resource => Traversable[String]) = {
     val functionalities = equivalentClasses.view.map {
@@ -181,7 +182,7 @@ trait EntityResolutionEvaluation extends EntityResolution {
         val (nameFunc, nameInvFunc) = (computeFunctionality(nameRelation), computeInverseFunctionality(nameRelation))
         IndexedSeq(threshold.getOrElse(""), emailFunc, emailInvFunc, nameFunc, nameInvFunc).map(_.toString).mkString(",")
     }
-    val functionalitiesPath = Paths.get(s"${outputFilePrefix}_functionalities_${IO.pathTimestamp}.csv")
+    val functionalitiesPath = Paths.get(s"${outputFilePrefix}_functionalities_$fileSuffix.csv")
     Files.write(functionalitiesPath, functionalities.asJava, StandardCharsets.UTF_8)
   }
 
@@ -199,14 +200,15 @@ trait EntityResolutionEvaluation extends EntityResolution {
     instances.count(_._2.nonEmpty).toDouble / Math.max(instances.map(_._2.size).sum, 1).toDouble
   }
 
-  protected def saveClassSizes(equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
+  protected def saveClassSizes(fileSuffix: String,
+                               equivalentClasses: Seq[(Option[BigDecimal], IndexedSeq[Set[Resource]])],
                                emailAddressForAgent: Resource => Traversable[String]) = {
     def save(classSizes: IndexedSeq[(Option[BigDecimal], Int, Int)], suffix: String = "") {
       val results = classSizes.view.map {
         case (threshold, classSize, classCount) =>
           Vector(threshold.map(_.toString).getOrElse(""), classSize, classCount).mkString(",")
       }
-      val path = Paths.get(s"${outputFilePrefix}_class-sizes${suffix}_${IO.pathTimestamp}.csv")
+      val path = Paths.get(s"${outputFilePrefix}_class-sizes${suffix}_$fileSuffix.csv")
       Files.write(path, results.asJava, StandardCharsets.UTF_8)
     }
     var classSizesBuilder = IndexedSeq.newBuilder[(Option[BigDecimal], Int, Int)]
@@ -214,20 +216,21 @@ trait EntityResolutionEvaluation extends EntityResolution {
     equivalentClasses.foreach {
       case (threshold, classes) =>
         classSizesBuilder ++= buildClassSizes(threshold, classes)
-        uniqueClassSizesBuilder ++= buildUniqueEmailClassSizes(threshold, classes, emailAddressForAgent)
+        uniqueClassSizesBuilder ++= buildUniqueEmailClassSizes(fileSuffix, threshold, classes, emailAddressForAgent)
     }
     save(classSizesBuilder.result())
     save(uniqueClassSizesBuilder.result(), "_unique-emails")
   }
 
-  protected def buildUniqueEmailClassSizes(threshold: Option[BigDecimal],
+  protected def buildUniqueEmailClassSizes(fileSuffix: String,
+                                           threshold: Option[BigDecimal],
                                            classes: IndexedSeq[Set[Resource]],
                                            emailAddress: Resource => Traversable[String]) = {
     val emailClasses = classes.map {
       clazz => clazz.flatMap(emailAddress)
     }
     val distinctEmails = emailClasses.flatten.distinct.sorted
-    val path = Paths.get(s"${outputFilePrefix}_distinct-emails_${threshold}_${IO.pathTimestamp}.csv")
+    val path = Paths.get(s"${outputFilePrefix}_distinct-emails_${threshold}_$fileSuffix.csv")
     Files.write(path, distinctEmails.asJava, StandardCharsets.UTF_8)
     classes.map {
       clazz =>

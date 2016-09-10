@@ -47,6 +47,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                     evaluationSamplesFiles: IndexedSeq[Path] = IndexedSeq.empty,
                     parallelism: Int = 2,
                     persistenceThreshold: BigDecimal = BigDecimal(0.9),
+                    maxIterations: Int = 10,
                     propertiesInverseFunctionality: Map[Resource, Double] = Map(
                       SchemaOrg.NAME -> 0.9700722394220846,
                       SchemaOrg.EMAIL -> 0.99),
@@ -155,7 +156,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
               statementsFrom,
               statementsTo,
               literalEqualityStoreBuilder.result(),
-              10)
+              maxIterations)
 
             lazy val buckets = samplingBuckets()
             lazy val equivalentClasses = generateEquivalentClasses(buckets, equalities.definedEqualities)
@@ -198,13 +199,15 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
     (0 until iterations).foldLeft(EqualityStore.newBuilder[INSTANCE]().result()) {
       case (instanceEqualities, i) =>
         logger.info(s"PARIS: iteration $i")
-        step(propertyInverseFunctionality,
+        val (avgSum, equality) = step(propertyInverseFunctionality,
           propertyFunctionality,
           instances,
           statementsFrom,
           statementsTo,
           literalEqualities,
           instanceEqualities)
+        logger.info(s"PARIS: iteration $i - $avgSum")
+        equality
     }
   }
 
@@ -214,7 +217,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                                         statementsFrom: (INSTANCE, Option[PROPERTY]) => Traversable[(INSTANCE, PROPERTY, Either[INSTANCE, LITERAL])],
                                         statementsTo: (Either[INSTANCE, LITERAL], PROPERTY) => Traversable[(INSTANCE, PROPERTY, Either[INSTANCE, LITERAL])],
                                         literalEqualities: EqualityStore[LITERAL],
-                                        instanceEqualities: EqualityStore[INSTANCE]): EqualityStore[INSTANCE] = {
+                                        instanceEqualities: EqualityStore[INSTANCE]): (Double, EqualityStore[INSTANCE]) = {
     val builder = EqualityStore.newBuilder[INSTANCE]()
     val total = instances.size
     TimeExecution.timeProgressStep("paris-step", total, logger, {
@@ -272,7 +275,20 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
           }
           progress()
         }
-        builder.result()
+        val equalityStoreResult = builder.result()
+
+        val (finalSum, finalCount) = equalityStoreResult.definedEqualities.foldLeft((0d, 0)) {
+          case ((sum, count), (instance1, instance2, probability)) =>
+            (sum + Math.abs(instanceEqualities.equality(instance1, instance2) - probability), count + 1)
+        }
+
+        val averageDifference = if (finalCount != 0) {
+          finalSum / finalCount.toDouble
+        } else {
+          finalSum
+        }
+
+        (averageDifference, equalityStoreResult)
     })
   }
 

@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.enricher._
-import com.thymeflow.enricher.entityresolution.{AgentMatchEnricher, EntityResolution}
+import com.thymeflow.enricher.entityresolution.{AgentMatchEnricher, EntityResolution, ParisEnricher}
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.repository.{Repository, RepositoryFactory}
 import com.thymeflow.spatial.geocoding.Geocoder
@@ -29,6 +29,7 @@ object Thymeflow extends StrictLogging {
 
   def main(args: Array[String]) {
     implicit val config = com.thymeflow.config.cli
+    System.getProperties.setProperty("line.separator", "\r\n")
     val repository = RepositoryFactory.initializeRepository()
     val pipeline = initializePipeline(repository)
     args.map(x => FileSynchronizer.Config(Paths.get(x))).foreach {
@@ -46,13 +47,13 @@ object Thymeflow extends StrictLogging {
     val similarities = Vector(EntityResolution.LevensteinSimilarity, EntityResolution.JaroWinklerSimilarity)
     val smps = Vector(0.8, 0.7, 0.6)
     val mdts = Vector(1.0, 0.3)
-    val evaluationFiles = Files.newDirectoryStream(Paths.get("data/barack_evaluation")).iterator().asScala.toVector
-    val enrichers = (for (crw <- crws;
+    val evaluationFiles = Files.newDirectoryStream(Paths.get("data/barack_evaluations")).iterator().asScala.toVector
+    val agentMatchEnrichers = for (crw <- crws;
                           idf <- idfs;
                           similarity <- similarities;
                           smp <- smps;
                           mdt <- mdts) yield {
-      Some(new AgentMatchEnricher(repository.newConnection,
+      new AgentMatchEnricher(repository.newConnection,
         solveMode = AgentMatchEnricher.Vanilla,
         baseStringSimilarity = similarity,
         searchSize = 10000,
@@ -62,8 +63,20 @@ object Thymeflow extends StrictLogging {
         useIDF = idf,
         evaluationSamplesFiles = evaluationFiles,
         persistenceThreshold = 2.0
-      ))
-    }).flatten
+      )
+    }
+    val parisEnrichers = for (idf <- idfs;
+                              similarity <- similarities;
+                              mdt <- mdts) yield {
+      new ParisEnricher(repository.newConnection,
+        baseStringSimilarity = similarity,
+        searchSize = 10000,
+        matchDistanceThreshold = mdt,
+        useIDF = idf,
+        evaluationSamplesFiles = evaluationFiles,
+        persistenceThreshold = 2.0
+      )
+    }
     val parallelism = 7
     Pipeline.create(
       repository.newConnection(),
@@ -82,7 +95,7 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.newConnection, geocoder)))
         .mapAsync(1) {
           baseDiff =>
-            Source.fromIterator(() => enrichers.iterator).mapAsyncUnordered(parallelism) {
+            Source.fromIterator(() => parisEnrichers.iterator).mapAsyncUnordered(parallelism) {
               enricher =>
                 Future {
                   val diff = ModelDiff.merge(baseDiff)

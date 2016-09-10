@@ -97,11 +97,15 @@ object Thymeflow extends StrictLogging {
           baseDiff =>
             Source.fromIterator(() => parisEnrichers.iterator).mapAsyncUnordered(parallelism) {
               enricher =>
-                Future {
+                val f = Future {
                   val diff = ModelDiff.merge(baseDiff)
                   enricher.enrich(diff)
                   diff
                 }
+                f.onFailure {
+                  case e => logger.error("Parallel enricher failure", e)
+                }
+                f
             }.runFold(Vector.empty[ModelDiff]) {
               case (x, f) => x :+ f
             }.map {

@@ -45,7 +45,7 @@ object Thymeflow extends StrictLogging {
     val crws = Vector(Some(0.25), Some(0.5), Some(0.75), None)
     val idfs = Vector(true, false)
     val similarities = Vector(EntityResolution.LevensteinSimilarity, EntityResolution.JaroWinklerSimilarity)
-    val smps = Vector(0.8, 0.7, 0.6)
+    val smps = Vector(80, 70, 60)
     val mdts = Vector(1.0, 0.3)
     val evaluationFiles = Files.newDirectoryStream(Paths.get("data/barack_evaluations")).iterator().asScala.toVector
     val agentMatchEnrichers = for (crw <- crws;
@@ -57,6 +57,7 @@ object Thymeflow extends StrictLogging {
         solveMode = AgentMatchEnricher.Vanilla,
         baseStringSimilarity = similarity,
         searchSize = 10000,
+        searchMatchPercent = smp,
         matchDistanceThreshold = mdt,
         contactRelativeWeight = crw,
         evaluationThreshold = BigDecimal("0.5"),
@@ -67,9 +68,11 @@ object Thymeflow extends StrictLogging {
     }
     val parisEnrichers = for (idf <- idfs;
                               similarity <- similarities;
+                              smp <- smps;
                               mdt <- mdts) yield {
       new ParisEnricher(repository.newConnection,
         baseStringSimilarity = similarity,
+        searchMatchPercent = smp,
         searchSize = 10000,
         matchDistanceThreshold = mdt,
         useIDF = idf,

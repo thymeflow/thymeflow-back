@@ -77,7 +77,8 @@ object Thymeflow extends StrictLogging {
         matchDistanceThreshold = mdt,
         useIDF = idf,
         evaluationSamplesFiles = evaluationFiles,
-        persistenceThreshold = 2.0
+        persistenceThreshold = 2.0,
+        maxIterations = 2
       )
     }
     val parallelism = 7
@@ -92,7 +93,7 @@ object Thymeflow extends StrictLogging {
       ).map(_.source(repository.valueFactory)),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.newConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.newConnection, geocoder)))
-        .via(Pipeline.delayedBatchToFlow(10 seconds))
+        .via(Pipeline.delayedBatchToFlow(30 seconds))
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.newConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.newConnection)))
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.newConnection, geocoder)))
@@ -100,6 +101,7 @@ object Thymeflow extends StrictLogging {
           baseDiff =>
             Source.fromIterator(() => parisEnrichers.iterator).mapAsyncUnordered(parallelism) {
               enricher =>
+                logger.info(s"Running enricher $enricher")
                 val f = Future {
                   val diff = ModelDiff.merge(baseDiff)
                   enricher.enrich(diff)

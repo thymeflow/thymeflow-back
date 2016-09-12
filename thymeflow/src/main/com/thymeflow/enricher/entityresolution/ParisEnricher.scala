@@ -12,7 +12,7 @@ import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.thymeflow.utilities.{ExceptionUtils, IO, TimeExecution}
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
@@ -75,10 +75,15 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
   )
   var literalId = 0
 
+  protected def printParameters = {
+    s"SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF"
+  }
+
   /**
     * @return enrichs the repository the Enricher is linked to based on the diff
     */
   override def enrich(diff: ModelDiff): Unit = {
+    val fileSuffix = s"${printParameters}_${IO.pathTimestamp}"
     val agentNames = getAgentNames
     val agentEmails = getAgentEmails
     val literalToAgent = (agentNames.toIndexedSeq.flatMap {
@@ -170,7 +175,8 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                 val sampleFileName = org.apache.commons.io.FilenameUtils.getBaseName(path.toString)
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
-                saveEvaluationToFile(s"${sampleFileName}_SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF",
+
+                saveEvaluationToFile(s"${sampleFileName}_$fileSuffix",
                   evaluatedSamples)
             }
             repositoryConnection.begin()
@@ -277,10 +283,13 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
         }
         val equalityStoreResult = builder.result()
 
+
         val (finalSum, finalCount) = equalityStoreResult.definedEqualities.foldLeft((0d, 0)) {
           case ((sum, count), (instance1, instance2, probability)) =>
             (sum + Math.abs(instanceEqualities.equality(instance1, instance2) - probability), count + 1)
         }
+
+        instanceEqualities.definedEqualities
 
         val averageDifference = if (finalCount != 0) {
           finalSum / finalCount.toDouble
@@ -404,7 +413,7 @@ object ParisEnricher {
             case (t1, t2, score) =>
               val t1Map = getMap(t1)
               val t2Map = getMap(t2)
-              t1Map += ((t1, score))
+              t1Map += ((t2, score))
               t2Map += ((t1, score))
           }
           this

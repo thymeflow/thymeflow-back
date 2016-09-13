@@ -32,8 +32,8 @@ class PlacesGeocoder(api: Api, radius: Long = 5000)(implicit executionContext: E
   override def direct(address: String): Future[Traversable[BaseFeature]] = {
     api.doQuery[AutocompleteResult](autocompleteUri, Query("input" -> address)).flatMap {
       result =>
-        result.predictions match {
-          case Array(prediction) =>
+        result.predictions.headOption match {
+          case Some(prediction) =>
             api.doQuery[PlaceDetailsResult](detailsUri, Query("placeid" -> prediction.place_id)).map(_.result: Traversable[BaseFeature])
           case _ =>
             Future.successful(Traversable.empty)

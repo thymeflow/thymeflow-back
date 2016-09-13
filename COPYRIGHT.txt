@@ -1,5 +1,5 @@
 Thymeflow - Personal Information Management System
-Copyright (C) 2016, INRIA / Sinovia, ENGIE / École normale supérieure de Lyon
+Copyright (C) 2016, Sinovia / École normale supérieure de Lyon
 Authors : Thomas Pellisier Tanon, David Montoya
 
 This program is free software: you can redistribute it and/or modify

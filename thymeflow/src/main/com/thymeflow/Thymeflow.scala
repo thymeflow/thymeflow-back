@@ -45,7 +45,7 @@ object Thymeflow extends StrictLogging {
     val crws = Vector(Some(0.25), Some(0.5), Some(0.75), None)
     val idfs = Vector(true, false)
     val similarities = Vector(EntityResolution.LevensteinSimilarity, EntityResolution.JaroWinklerSimilarity)
-    val smps = Vector(60)
+    val smps = Vector(80)
     val mdts = Vector(1.0)
     val idMatches = Vector(true, false)
     val evaluationFiles = Files.newDirectoryStream(Paths.get("data/barack_evaluations")).iterator().asScala.toVector
@@ -79,10 +79,11 @@ object Thymeflow extends StrictLogging {
         useIDF = idf,
         evaluationSamplesFiles = evaluationFiles,
         persistenceThreshold = 2.0,
-        maxIterations = 3
+        maxIterations = 2,
+        evaluationThreshold = BigDecimal("0.55")
       )
     }
-    val parallelism = 1
+    val parallelism = 2
     Pipeline.create(
       repository.newConnection(),
       Vector(

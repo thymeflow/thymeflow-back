@@ -47,6 +47,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
                     evaluationSamplesFiles: IndexedSeq[Path] = IndexedSeq.empty,
                     parallelism: Int = 2,
                     persistenceThreshold: BigDecimal = BigDecimal(0.9),
+                    evaluationThreshold: BigDecimal = BigDecimal(0.9),
                     maxIterations: Int = 10,
                     propertiesInverseFunctionality: Map[Resource, Double] = Map(
                       SchemaOrg.NAME -> 0.9700722394220846,
@@ -164,7 +165,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
               literalEqualityStoreBuilder.result(),
               maxIterations)
 
-            lazy val buckets = samplingBuckets()
+            lazy val buckets = samplingBuckets(start = evaluationThreshold)
             val fileSuffix = s"${printParameters(false)}_${IO.pathTimestamp}"
             lazy val equivalentClasses = generateEquivalentClasses(Map[Resource, Resource]().withDefault(identity), buckets, equalities.definedEqualities)
             evaluationSamplesFiles.foreach {

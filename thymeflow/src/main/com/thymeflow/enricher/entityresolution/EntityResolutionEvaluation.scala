@@ -142,8 +142,8 @@ trait EntityResolutionEvaluation extends EntityResolution {
     * @param binSize size of the bucket
     * @return a range from 0 to 1 (inclusive) in steps of binSize
     */
-  protected def samplingBuckets(binSize: BigDecimal = BigDecimal("0.025")) = {
-    Range.BigDecimal.inclusive(start = BigDecimal(0) + binSize, end = BigDecimal(1), step = binSize)
+  protected def samplingBuckets(binSize: BigDecimal = BigDecimal("0.025"), start: BigDecimal = BigDecimal(0)) = {
+    Range.BigDecimal.inclusive(start = start + binSize, end = BigDecimal(1), step = binSize)
   }
 
   protected def saveSamplesToFile(fileSuffix: String,

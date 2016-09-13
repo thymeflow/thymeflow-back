@@ -2,15 +2,32 @@ package com.thymeflow.enricher.entityresolution
 
 import java.util.Locale
 
+import com.thymeflow.graph.ConnectedComponents
+import com.thymeflow.rdf.Converters._
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.text.distances.BipartiteMatchingDistance
 import com.thymeflow.utilities.Memoize
 import com.thymeflow.utilities.text.Normalization
 import org.apache.lucene.search.spell.{JaroWinklerDistance, LevensteinDistance}
+import org.openrdf.model.{BNode, Resource}
+import org.openrdf.query.QueryLanguage
+import org.openrdf.repository.RepositoryConnection
 
 /**
   * @author David Montoya
   */
 trait EntityResolution {
+
+  protected def repositoryConnection: RepositoryConnection
+
+  private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
+    s"""SELECT ?agent ?sameAs WHERE {
+      ?agent a <${Personal.AGENT}> .
+      GRAPH <${Personal.NAMESPACE}inverseFunctionalInferencerOutput> {
+        ?agent <${Personal.SAME_AS}> ?sameAs .
+      }
+    }"""
+  )
 
   protected val normalizeTerm = Memoize.concurrentFifoCache(1000, uncachedNormalizeTerm _)
   /**
@@ -113,6 +130,44 @@ trait EntityResolution {
       0.0
     }
     equalityProbability
+  }
+
+
+  /**
+    *
+    * @return a map that assigns for each agent its equivalent resources under the "shared id" equivalence relation
+    */
+  private def getSameIdAgents: Map[Resource, Traversable[Resource]] = {
+    sameAgentAsQuery.evaluate().flatMap(bindingSet =>
+      (
+        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
+        Option(bindingSet.getValue("sameAs").asInstanceOf[Resource])
+        ) match {
+        case (Some(agent), Some(sameAs)) => Some(agent, sameAs)
+        case _ => None
+      }
+    ).toTraversable.groupBy(_._1).map {
+      case (agent1, g) => agent1 -> g.map(_._2)
+    }
+  }
+
+  /**
+    * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
+    *         equivalence relation
+    *         by default, an unknown agent is represented by itself
+    */
+  protected def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
+    val sameIdAgents = getSameIdAgents
+    val equivalenceClasses = ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
+    val agentRepresentativeMap = equivalenceClasses
+      .flatMap(connectedComponent => connectedComponent.map {
+        _ -> connectedComponent.collectFirst {
+          case resource if !resource.isInstanceOf[BNode] => resource
+        }.getOrElse(connectedComponent.head)
+      })
+      .toMap
+      .withDefault(identity)
+    agentRepresentativeMap
   }
 
   /**

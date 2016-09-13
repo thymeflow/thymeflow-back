@@ -29,7 +29,7 @@ class FullTextSearchServer[T] private(indexName: String,
 
   private val entityFieldName = "entity"
   private val valueFieldName = "value"
-  private val esClient = FullTextSearchServer.esClient
+  private val esClient = FullTextSearchServer.esNode.client()
 
   def refreshIndex() = {
     esClient.admin().indices().prepareRefresh(indexName).execute().future.map(x => handleShardFailures(x.getShardFailures))
@@ -120,13 +120,19 @@ class FullTextSearchServer[T] private(indexName: String,
     }
   }
 
+  def shutdown(): Future[Unit] = {
+    Future.successful({
+      esClient.close()
+      ()
+    })
+  }
 }
 
 object FullTextSearchServer extends StrictLogging {
 
   final val dataDirectory = "data"
   final val clusterName = "thymeflow"
-  lazy val (esNode, esClient) = {
+  lazy val esNode = {
     val sBuilder = ImmutableSettings.builder()
     sBuilder.put("path.home", this.esDirectory.toString)
     sBuilder.put("network.host", "127.0.0.1")
@@ -135,7 +141,7 @@ object FullTextSearchServer extends StrictLogging {
     val settings: Settings = sBuilder.build
     val esNode = nodeBuilder.clusterName(clusterName).loadConfigSettings(true).settings(settings).node
     logger.info("[elastic-search] Started search node.")
-    (esNode, esNode.client())
+    esNode
   }
   private lazy val esDirectory: File = setupDirectories(dataDirectory)
 
@@ -150,7 +156,6 @@ object FullTextSearchServer extends StrictLogging {
 
   def shutdown(): Future[Unit] = {
     Future.successful({
-      esClient.close()
       esNode.close()
       logger.info("[elastic-search] Stopped search node.")
       ()

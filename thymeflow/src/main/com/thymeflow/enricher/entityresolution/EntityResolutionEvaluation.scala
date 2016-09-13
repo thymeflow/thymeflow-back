@@ -61,7 +61,7 @@ trait EntityResolutionEvaluation extends EntityResolution {
       case (threshold, map, classes) =>
         samples.map {
           case (sampleThreshold, resource1, resource2) =>
-            (threshold, sampleThreshold, resource1, resource2, map(resource1) == map(resource2))
+            (threshold, sampleThreshold, resource1, resource2, map(resource1).head == map(resource2).head)
         }
     }
   }

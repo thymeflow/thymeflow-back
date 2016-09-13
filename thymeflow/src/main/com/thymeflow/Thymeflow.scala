@@ -6,7 +6,7 @@ import java.util.concurrent.TimeUnit
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.enricher._
-import com.thymeflow.enricher.entityresolution.{AgentMatchEnricher, EntityResolution, ParisEnricher}
+import com.thymeflow.enricher.entityresolution.{EntityResolution, ParisEnricher}
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.repository.{Repository, RepositoryFactory}
 import com.thymeflow.spatial.geocoding.Geocoder
@@ -45,10 +45,11 @@ object Thymeflow extends StrictLogging {
     val crws = Vector(Some(0.25), Some(0.5), Some(0.75), None)
     val idfs = Vector(true, false)
     val similarities = Vector(EntityResolution.LevensteinSimilarity, EntityResolution.JaroWinklerSimilarity)
-    val smps = Vector(80, 70, 60)
-    val mdts = Vector(1.0, 0.3)
+    val smps = Vector(60)
+    val mdts = Vector(1.0)
+    val idMatches = Vector(true, false)
     val evaluationFiles = Files.newDirectoryStream(Paths.get("data/barack_evaluations")).iterator().asScala.toVector
-    val agentMatchEnrichers = for (crw <- crws;
+    /*val agentMatchEnrichers = for (crw <- crws;
                           idf <- idfs;
                           similarity <- similarities;
                           smp <- smps;
@@ -65,7 +66,7 @@ object Thymeflow extends StrictLogging {
         evaluationSamplesFiles = evaluationFiles,
         persistenceThreshold = 2.0
       )
-    }
+    }*/
     val parisEnrichers = for (idf <- idfs;
                               similarity <- similarities;
                               smp <- smps;
@@ -78,10 +79,10 @@ object Thymeflow extends StrictLogging {
         useIDF = idf,
         evaluationSamplesFiles = evaluationFiles,
         persistenceThreshold = 2.0,
-        maxIterations = 2
+        maxIterations = 3
       )
     }
-    val parallelism = 7
+    val parallelism = 1
     Pipeline.create(
       repository.newConnection(),
       Vector(
@@ -93,13 +94,13 @@ object Thymeflow extends StrictLogging {
       ).map(_.source(repository.valueFactory)),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.newConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.newConnection, geocoder)))
-        .via(Pipeline.delayedBatchToFlow(30 seconds))
+        .via(Pipeline.delayedBatchToFlow(10 seconds))
         .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.newConnection)))
         .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.newConnection)))
         .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.newConnection, geocoder)))
         .mapAsync(1) {
           baseDiff =>
-            Source.fromIterator(() => parisEnrichers.iterator).mapAsyncUnordered(parallelism) {
+            val h = Source.fromIterator(() => parisEnrichers.iterator).mapAsyncUnordered(parallelism) {
               enricher =>
                 logger.info(s"Running enricher $enricher")
                 val f = Future {
@@ -116,6 +117,10 @@ object Thymeflow extends StrictLogging {
             }.map {
               case diffs => ModelDiff.merge(diffs: _*)
             }
+            h.onFailure {
+              case e => logger.error("Parallel enricher pipeline failure", e)
+            }
+            h
         }
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.newConnection)))
         .map(diff => {

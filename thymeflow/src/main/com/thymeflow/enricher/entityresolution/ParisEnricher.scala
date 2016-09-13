@@ -75,17 +75,18 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
   )
   var literalId = 0
 
-  protected def printParameters = {
-    s"SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF$useIDF"
+  protected def printParameters(withIdentityMatch: Boolean) = {
+    s"SMP${searchMatchPercent}_MDT${matchDistanceThreshold}_SS${searchSize}_BSD{$baseStringSimilarity}_IDF${useIDF}_IDMATCH$withIdentityMatch"
   }
 
   /**
     * @return enrichs the repository the Enricher is linked to based on the diff
     */
   override def enrich(diff: ModelDiff): Unit = {
-    val fileSuffix = s"${printParameters}_${IO.pathTimestamp}"
     val agentNames = getAgentNames
     val agentEmails = getAgentEmails
+    // get a map assigning to each agent facet its representative in the "shared id" equivalence class
+    val agentRepresentativeMap = getSharedIdRepresentativeByAgent
     val literalToAgent = (agentNames.toIndexedSeq.flatMap {
       case (agent, literals) =>
         literals.map(literal => literal ->(SchemaOrg.NAME, agent))
@@ -164,19 +165,36 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
               maxIterations)
 
             lazy val buckets = samplingBuckets()
-            lazy val equivalentClasses = generateEquivalentClasses(buckets, equalities.definedEqualities)
+            val fileSuffix = s"${printParameters(false)}_${IO.pathTimestamp}"
+            lazy val equivalentClasses = generateEquivalentClasses(Map[Resource, Resource]().withDefault(identity), buckets, equalities.definedEqualities)
             evaluationSamplesFiles.foreach {
               path =>
                 val uriStringToResource = agents.view.map {
                   agent =>
                     (agent.stringValue(), agent)
-                }.toMap.withDefault(repositoryConnection.getValueFactory.createIRI(_))
+                }.toMap.withDefault(valueFactory.createIRI)
 
                 val sampleFileName = org.apache.commons.io.FilenameUtils.getBaseName(path.toString)
                 val samples = parseSamplesFromFile(path, uriStringToResource)
                 val evaluatedSamples = evaluateSamples(samples, equivalentClasses)
 
                 saveEvaluationToFile(s"${sampleFileName}_$fileSuffix",
+                  evaluatedSamples)
+            }
+            val idMatchFileSuffix = s"${printParameters(true)}_${IO.pathTimestamp}"
+            lazy val equivalentClassesIdMatch = generateEquivalentClasses(agentRepresentativeMap, buckets, equalities.definedEqualities)
+            evaluationSamplesFiles.foreach {
+              path =>
+                val uriStringToResource = agents.view.map {
+                  agent =>
+                    (agent.stringValue(), agent)
+                }.toMap.withDefault(valueFactory.createIRI)
+
+                val sampleFileName = org.apache.commons.io.FilenameUtils.getBaseName(path.toString)
+                val samples = parseSamplesFromFile(path, uriStringToResource)
+                val evaluatedSamples = evaluateSamples(samples, equivalentClassesIdMatch)
+
+                saveEvaluationToFile(s"${sampleFileName}_$idMatchFileSuffix",
                   evaluatedSamples)
             }
             repositoryConnection.begin()
@@ -301,18 +319,20 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
     })
   }
 
-  private def generateEquivalentClasses[INSTANCE](buckets: NumericRange[BigDecimal],
+  private def generateEquivalentClasses[INSTANCE](baseAgentRepresentative: Traversable[(INSTANCE, INSTANCE)],
+                                                  buckets: NumericRange[BigDecimal],
                                                   equalities: Traversable[(INSTANCE, INSTANCE, Double)]): Seq[(Option[BigDecimal], Map[INSTANCE, Set[INSTANCE]], IndexedSeq[Set[INSTANCE]])] = {
     buckets.reverse.view.map {
       threshold =>
-        val (map, classes) = equalityRelationEquivalentClasses(equalities, threshold)
+        val (map, classes) = equalityRelationEquivalentClasses(baseAgentRepresentative, equalities, threshold)
         (Some(threshold), map, classes)
     }
   }
 
-  private def equalityRelationEquivalentClasses[INSTANCE](equalities: Traversable[(INSTANCE, INSTANCE, Double)],
+  private def equalityRelationEquivalentClasses[INSTANCE](representatives: Traversable[(INSTANCE, INSTANCE)],
+                                                          equalities: Traversable[(INSTANCE, INSTANCE, Double)],
                                                           threshold: BigDecimal) = {
-    val e = equalities.view.filter(_._3 >= threshold).map(x => (x._1, x._2))
+    val e = equalities.view.filter(_._3 >= threshold).map(x => (x._1, x._2)) ++ representatives
     val neighbors = (e ++ e.map(x => (x._2, x._1))).groupBy(_._1).map {
       case (instance1, instances) => (instance1, instances.map(_._2).toSet)
     }

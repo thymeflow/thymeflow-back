@@ -20,7 +20,7 @@ import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
 import com.thymeflow.utilities.IO
 import com.thymeflow.utilities.email.EmailProviderDomainList
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{BNode, IRI, Literal, Resource}
+import org.openrdf.model.{IRI, Literal, Resource}
 import org.openrdf.query.QueryLanguage
 import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
 import org.openrdf.repository.RepositoryConnection
@@ -84,14 +84,6 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "AgentMatchEnricher")
 
-  private val sameAgentAsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
-    s"""SELECT ?agent ?sameAs WHERE {
-      ?agent a <${Personal.AGENT}> .
-      GRAPH <${Personal.NAMESPACE}inverseFunctionalInferencerOutput> {
-        ?agent <${Personal.SAME_AS}> ?sameAs .
-      }
-    }"""
-  )
   private val agentEmailAddressesQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?agent ?emailAddress WHERE {
        ?agent a <${Personal.AGENT}> ;
@@ -911,44 +903,6 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
       case (Some(agent), Some(namePartType), Some(namePart)) => (getAgentRepresentative(agent), (namePart, namePartType))
     }.groupBy(_._1).map {
       case (agent, g) => agent -> g.map(_._2).toIndexedSeq
-    }
-  }
-
-
-  /**
-    * @return a map that gives for each agent its equivalent class representative under the "shared id" (email, url...)
-    *         equivalence relation
-    *         by default, an unknown agent is represented by itself
-    */
-  private def getSharedIdRepresentativeByAgent: Map[Resource, Resource] = {
-    val sameIdAgents = getSameIdAgents
-    val equivalenceClasses = ConnectedComponents.compute[Resource](sameIdAgents.keys, sameIdAgents.getOrElse(_, None))
-    val agentRepresentativeMap = equivalenceClasses
-      .flatMap(connectedComponent => connectedComponent.map {
-        _ -> connectedComponent.collectFirst {
-          case resource if !resource.isInstanceOf[BNode] => resource
-        }.getOrElse(connectedComponent.head)
-      })
-      .toMap
-      .withDefault(identity)
-    agentRepresentativeMap
-  }
-
-  /**
-    *
-    * @return a map that assigns for each agent its equivalent resources under the "shared id" equivalence relation
-    */
-  private def getSameIdAgents: Map[Resource, Traversable[Resource]] = {
-    sameAgentAsQuery.evaluate().flatMap(bindingSet =>
-      (
-        Option(bindingSet.getValue("agent").asInstanceOf[Resource]),
-        Option(bindingSet.getValue("sameAs").asInstanceOf[Resource])
-        ) match {
-        case (Some(agent), Some(sameAs)) => Some(agent, sameAs)
-        case _ => None
-      }
-    ).toTraversable.groupBy(_._1).map {
-      case (agent1, g) => agent1 -> g.map(_._2)
     }
   }
 

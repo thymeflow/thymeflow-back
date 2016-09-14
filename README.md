@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.org/thymeflow/thymeflow-front.svg?branch=master)](https://travis-ci.org/thymeflow/thymeflow-front)
+[![Build Status](https://travis-ci.org/thymeflow/thymeflow-back.svg?branch=master)](https://travis-ci.org/thymeflow/thymeflow-back)
 
 # thymeflow-back #
 

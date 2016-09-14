@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/thymeflow/thymeflow-front.svg?branch=master)](https://travis-ci.org/thymeflow/thymeflow-front)
+
 # thymeflow-back #
 
 `thymeflow-back` is the backend implementation of Thymeflow, a Web application that provides that:

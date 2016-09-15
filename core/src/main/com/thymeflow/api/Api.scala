@@ -8,7 +8,6 @@ import javax.mail.{MessagingException, Session}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.{StatusCodes, Uri}
-import akka.http.scaladsl.server.Directives._
 import com.github.sardine.impl.SardineImpl
 import com.thymeflow.Pipeline
 import com.thymeflow.actors._
@@ -25,7 +24,7 @@ import scala.concurrent.duration.Duration
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-trait Api extends SparqlService with CorsSupport {
+trait Api extends SparqlService with SystemTasksService with CorsSupport {
 
   protected implicit def config: Config
 
@@ -138,6 +137,9 @@ trait Api extends SparqlService with CorsSupport {
               }
           }
         }
+      } ~
+      path("system-tasks") {
+        systemTasksRoute
       }
   }
 

@@ -7,7 +7,7 @@ import java.util.concurrent.Executors
 import com.thymeflow.utilities.Cached.{CachedMap, JsonProtocol, Value}
 import com.typesafe.scalalogging.StrictLogging
 import org.mapdb.{DB, DBMaker, StoreDirect, StoreWAL}
-import spray.json.{DefaultJsonProtocol, JsString, JsValue, JsonFormat, JsonParser, _}
+import spray.json.{DefaultJsonProtocol, JsonFormat, JsonParser, _}
 
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
@@ -126,17 +126,7 @@ object Cached {
 
   case class Value[V](modifiedAt: Instant, content: V)
 
-  trait JsonProtocol extends DefaultJsonProtocol {
-    implicit val instantFormat = new JsonFormat[Instant] {
-      override def read(json: JsValue): Instant = json match {
-        case JsString(s) => Instant.parse(s)
-        case _ => throw new IllegalArgumentException(s"Invalid Instant: expected JsString, got $json.")
-      }
-
-      override def write(obj: Instant): JsValue = JsString(obj.toString)
-
-    }
-
+  trait JsonProtocol extends DefaultJsonProtocol with JsonFormats.InstantJsonFormat {
     implicit def valueFormat[V](implicit contentFormat: JsonFormat[V]): RootJsonFormat[Value[V]] = jsonFormat2(Value[V])
   }
 

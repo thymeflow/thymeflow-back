@@ -24,7 +24,7 @@ trait SystemTasksService extends Directives with CorsSupport {
         complete {
           Tasks(List(
             Task("loading", "Files: file.zip", Instant.now, "Done", Some(100)),
-            Task("loading", "CalDAV: angela@example.com", Instant.now, "In progress", Some(Instant.now.getEpochSecond.toInt % 100)),
+            Task("loading", "CalDAV: angela@example.com", Instant.now, "In progress", Some((Instant.now.getEpochSecond % 100).toInt)),
             Task("loading", "CardDAV: angela@example.com", Instant.now, "In progress", None),
             Task("loading", "Email: angela@example2.com", Instant.now, "Waiting", Some(0))
           ))

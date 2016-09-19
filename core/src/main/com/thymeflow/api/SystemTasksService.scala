@@ -23,10 +23,10 @@ trait SystemTasksService extends Directives with CorsSupport {
       get {
         complete {
           ResourceObjects(Vector(
-            ResourceObject(Some("1"), "task", Task("loading", "Files: file.zip", Instant.now, "Done", Some(100))),
-            ResourceObject(Some("2"), "task", Task("loading", "CalDAV: angela@example.com", Instant.now, "In progress", Some((Instant.now.getEpochSecond % 100).toInt))),
-            ResourceObject(Some("3"), "task", Task("loading", "CardDAV: angela@example.com", Instant.now, "In progress", None)),
-            ResourceObject(Some("4"), "task", Task("loading", "Email: angela@example2.com", Instant.now, "Waiting", Some(0)))
+            ResourceObject(Some("1"), "system-task", Task("loading", "Files: file.zip", Instant.now, "Done", Some(100))),
+            ResourceObject(Some("2"), "system-task", Task("loading", "CalDAV: angela@example.com", Instant.now, "In progress", Some((Instant.now.getEpochSecond % 100).toInt))),
+            ResourceObject(Some("3"), "system-task", Task("loading", "CardDAV: angela@example.com", Instant.now, "In progress", None)),
+            ResourceObject(Some("4"), "system-task", Task("loading", "Email: angela@example2.com", Instant.now, "Waiting", Some(0)))
           ))
         }
       }

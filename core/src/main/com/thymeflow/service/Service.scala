@@ -3,8 +3,8 @@ package com.thymeflow.service
 import java.time.Instant
 
 import com.thymeflow.actors.ActorSystemContext
+import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source.Source
-import com.thymeflow.sync.OAuth2
 import com.typesafe.config.Config
 
 import scala.concurrent.Future

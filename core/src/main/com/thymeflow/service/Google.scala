@@ -8,8 +8,8 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.{Authorization, OAuth2BearerToken}
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import com.thymeflow.actors.ActorSystemContext
+import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source.{CalDavSource, CardDavSource, ImapSource}
-import com.thymeflow.sync.OAuth2
 import com.typesafe.config.Config
 
 import scala.concurrent.Future

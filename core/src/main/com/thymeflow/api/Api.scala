@@ -11,7 +11,7 @@ import com.thymeflow.Pipeline
 import com.thymeflow.actors._
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
-import com.thymeflow.sync._
+import com.thymeflow.service.authentication.OAuth2
 import com.typesafe.config.Config
 
 import scala.annotation.tailrec

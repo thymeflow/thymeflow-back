@@ -1,4 +1,4 @@
-package com.thymeflow.sync
+package com.thymeflow.service.authentication
 
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport

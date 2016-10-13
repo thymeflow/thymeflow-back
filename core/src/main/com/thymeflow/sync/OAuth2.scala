@@ -6,7 +6,6 @@ import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import com.thymeflow.actors._
-import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import spray.json.DefaultJsonProtocol
 
@@ -17,41 +16,16 @@ import scala.language.postfixOps
 
 object OAuth2 {
 
-  def Google(redirectUri: String)(implicit config: Config) = new OAuth2(
-    "https://accounts.google.com/o/oauth2/v2/auth",
-    "https://www.googleapis.com/oauth2/v4/token",
-    clientId = config.getString("thymeflow.oauth.google.client-id"),
-    clientSecret = config.getString("thymeflow.oauth.google.client-secret"),
-    redirectUri
-  )
-
-  def Microsoft(redirectUri: String)(implicit config: Config) = new OAuth2(
-    "https://login.live.com/oauth20_authorize.srf", //https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
-    "https://login.live.com/oauth20_token.srf", //"https://login.microsoftonline.com/common/oauth2/v2.0/token",
-    clientId = config.getString("thymeflow.oauth.microsoft.client-id"),
-    clientSecret = config.getString("thymeflow.oauth.microsoft.client-secret"),
-    redirectUri
-  )
-
-  def Facebook(redirectUri: String)(implicit config: Config) = new OAuth2(
-    "https://www.facebook.com/dialog/oauth",
-    "https://graph.facebook.com/v2.6/oauth/access_token",
-    clientId = config.getString("thymeflow.oauth.facebook.client-id"),
-    clientSecret = config.getString("thymeflow.oauth.facebook.client-secret"),
-    redirectUri
-  )
-
   trait RenewableToken[Token] {
     def accessToken: String
-
     def onRefresh[T](f: () => T): Unit
   }
 }
 
-class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String, redirectUri: String)
+case class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSecret: String, redirectUri: String)(scopes: String*)
   extends SprayJsonSupport with DefaultJsonProtocol with StrictLogging {
 
-  def getAuthUri(scopes: Traversable[String]): Uri = {
+  def authUri: Uri = {
     Uri(authorizeUri).withQuery(Query(
       ("scope", scopes.mkString(" ")),
       ("redirect_uri", redirectUri),
@@ -61,7 +35,7 @@ class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clientSec
     ))
   }
 
-  def getAccessToken(code: String): Future[Token] = {
+  def accessToken(code: String): Future[Token] = {
     implicit val TokenFormat = jsonFormat(Token, "access_token", "token_type", "expires_in", "refresh_token", "id_token", "user_id")
     Http().singleRequest(HttpRequest(HttpMethods.POST, tokenUri).withEntity(FormData(Query(
       ("code", code),

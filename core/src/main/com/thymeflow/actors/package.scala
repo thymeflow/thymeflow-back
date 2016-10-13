@@ -31,5 +31,5 @@ package object actors extends StrictLogging {
 
   implicit val timeout = Timeout(30 seconds)
 
-  implicit val actorContext = ActorSystemContext()(executor, system, materializer)
+  implicit val actorContext = ActorSystemContext(executor, system, materializer)
 }

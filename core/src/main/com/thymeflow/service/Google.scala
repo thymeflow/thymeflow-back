@@ -22,6 +22,7 @@ object Google extends Service with OAuth2Service {
   val routeName = "google"
 
   def account(accessToken: String)(implicit config: Config, actorContext: ActorSystemContext): Future[ServiceAccount] = {
+    import actorContext.Implicits._
     val authorization = Authorization(OAuth2BearerToken(accessToken))
     Http().singleRequest(HttpRequest(uri = Uri("https://www.googleapis.com/userinfo/email"), headers = List(authorization))).flatMap {
       case HttpResponse(StatusCodes.OK, _, entity, _) =>

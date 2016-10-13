@@ -34,6 +34,7 @@ object Microsoft extends Service with OAuth2Service with DefaultJsonProtocol wit
   implicit val meFormat: RootJsonFormat[Me] = jsonFormat3(Me)
 
   def account(accessToken: String)(implicit config: Config, actorContext: ActorSystemContext): Future[ServiceAccount] = {
+    import actorContext.Implicits._
     Http().singleRequest(HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "me").withQuery(
       Query(
         ("access_token", accessToken)

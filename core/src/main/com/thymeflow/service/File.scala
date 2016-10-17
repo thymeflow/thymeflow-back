@@ -19,7 +19,7 @@ object File extends Service {
   def account(path: JavaPath,
               mimeType: Option[String] = None,
               documentPath: Option[JavaPath] = None)(implicit config: Config, actorContext: ActorSystemContext): Future[ServiceAccount] = {
-    Future.successful(ServiceAccount(this, documentPath.getOrElse(path).toAbsolutePath.toString, Map("main" -> PathSource(path, mimeType, documentPath))))
+    Future.successful(ServiceAccount(this, documentPath.getOrElse(path).toAbsolutePath.toString, Map("File" -> PathSource(path, mimeType, documentPath))))
   }
 
 }

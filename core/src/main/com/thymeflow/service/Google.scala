@@ -48,11 +48,11 @@ object Google extends Service with OAuth2Service {
               googleAddress,
               Map(
                 // CardDav
-                "mainCardDav" -> CardDavSource("https://www.googleapis.com/.well-known/carddav", accessToken),
+                "Contacts" -> CardDavSource("https://www.googleapis.com/.well-known/carddav", accessToken),
                 // CalDav
-                "mainCalDav" -> CalDavSource(s"https://apidata.googleusercontent.com/caldav/v2/${googleAddress}/events/", accessToken),
+                "Calendar" -> CalDavSource(s"https://apidata.googleusercontent.com/caldav/v2/${googleAddress}/events/", accessToken),
                 // Imap
-                "mainImap" -> ImapSource(imapConnect, folderNamesToKeep = if (inboxOnly) Some(Set("INBOX")) else None)
+                "Emails" -> ImapSource(imapConnect, folderNamesToKeep = if (inboxOnly) Some(Set("INBOX")) else None)
               )
             )
           }

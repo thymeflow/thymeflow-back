@@ -35,7 +35,7 @@ object Email extends Service {
     }
 
     val accountId = Uri(scheme = "imap", authority = Uri.Authority(host = Uri.Host(host), userinfo = user)).toString()
-    Future.successful(ServiceAccount(this, accountId, Map("main" -> ImapSource(connect))))
+    Future.successful(ServiceAccount(this, accountId, Map("Emails" -> ImapSource(connect))))
   }
 
 }

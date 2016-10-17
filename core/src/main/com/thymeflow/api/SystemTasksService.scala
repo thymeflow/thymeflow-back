@@ -33,25 +33,32 @@ trait SystemTasksService extends Directives with CorsSupport {
       serviceAccountTasks =>
         serviceAccountTasks.map {
           case (taskId, serviceAccountTask) =>
-            val (startDate, status, progress) = serviceAccountTask.status match {
-              case Idle => (None, s"Idle", None)
-              case Done(start, end) => (Some(start), s"Done $end", None)
+            val (status, startDate, endDate, progress) = serviceAccountTask.status match {
+              case Idle =>
+                ("idle", None, None, None)
+              case Done(start, end) =>
+                ("done", Some(start), Some(end), None)
               case Working(start, progressOption) =>
                 val progressPercentageOption = progressOption.map {
                   progress => (BigDecimal(progress.value) / BigDecimal(progress.total) * 100).toInt
                 }
-                (Some(start), "Working", progressPercentageOption)
+                ("working", Some(start), None, progressPercentageOption)
               case Error(start, end) =>
-                (Some(start), s"Error $end", None)
+                ("error", Some(start), Some(end), None)
             }
             ResourceObject(
               Some(taskId.toString),
               "system-task",
-              Task(`type` = "service",
-                startDate = startDate,
-                name = List(serviceAccountTask.source.service.name, serviceAccountTask.source.accountId, serviceAccountTask.source.sourceName).mkString(" "),
+              Task(
+                `type` = "synchronization",
+                service = serviceAccountTask.source.service.name,
+                account = serviceAccountTask.source.accountId,
+                source = serviceAccountTask.source.sourceName,
                 status = status,
-                progress = progress)
+                startDate = startDate,
+                endDate = endDate,
+                progress = progress
+              )
             )
         }
     }
@@ -72,7 +79,14 @@ trait SystemTasksService extends Directives with CorsSupport {
 
 object SystemTasksService {
 
-  case class Task(`type`: String, name: String, startDate: Option[Instant], status: String, progress: Option[Int])
+  case class Task(`type`: String,
+                  service: String,
+                  account: String,
+                  source: String,
+                  status: String,
+                  startDate: Option[Instant],
+                  endDate: Option[Instant],
+                  progress: Option[Int])
 
   case class ResourceObject[T](id: Option[String], `type`: String, attributes: T)
 
@@ -80,7 +94,7 @@ object SystemTasksService {
 
   object JsonProtocol extends DefaultJsonProtocol with JsonFormats.InstantJsonFormat {
     implicit val printer: CompactPrinter = CompactPrinter
-    implicit val taskFormat: RootJsonFormat[Task] = jsonFormat5(Task)
+    implicit val taskFormat: RootJsonFormat[Task] = jsonFormat8(Task)
 
     implicit def resourceObjectFormat[T](implicit innerFormat: JsonFormat[T]): RootJsonFormat[ResourceObject[T]] = jsonFormat3(ResourceObject[T])
 

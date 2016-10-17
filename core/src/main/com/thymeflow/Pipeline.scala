@@ -1,20 +1,22 @@
 package com.thymeflow
 
 import akka.NotUsed
-import akka.actor.ActorRef
+import akka.actor.{Actor, ActorRef, ActorRefFactory}
 import akka.pattern.ask
 import akka.stream._
-import akka.stream.scaladsl.GraphDSL.Implicits._
 import akka.stream.scaladsl._
-import com.thymeflow.actors._
+import akka.util.Timeout
 import com.thymeflow.enricher.{DelayedBatch, Enricher}
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Negation
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.repository.Repository
+import com.thymeflow.service.ServiceAccount
+import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
-import com.thymeflow.utilities.VectorExtensions
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.repository.RepositoryConnection
 
@@ -29,6 +31,7 @@ import scala.language.postfixOps
 class Pipeline private(repositoryConnection: RepositoryConnection,
                        source: Source[Document, Traversable[ActorRef]],
                        enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
+                      (implicit materializer: Materializer)
   extends StrictLogging {
 
   private val sourceRefs = source
@@ -38,12 +41,13 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     .to(Sink.ignore)
     .run()
 
-  def addSourceConfig(sourceConfig: Any): Unit = {
-    sourceRefs.foreach(_ ! sourceConfig)
+  def addServiceAccount(serviceAccount: ServiceAccount)(implicit sender: ActorRef = Actor.noSender): Unit = {
+    sourceRefs.foreach(_ ! serviceAccount)
   }
 
-  def applyUpdate(update: Update): Future[UpdateResults] = {
+  def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {
     //TODO: filter
+    implicit val ec = this.materializer.executionContext
     Future.sequence(sourceRefs.map(_ ? update)).map(_.flatMap {
       case result: UpdateResults => Some(result)
       case _ => None
@@ -94,32 +98,24 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
 
 object Pipeline {
 
-  def create(repositoryConnection: RepositoryConnection,
-             sources: Traversable[Graph[SourceShape[Document], ActorRef]],
-             enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _]) = {
-    val sourcesVector = sources.map(Source.fromGraph(_).mapMaterializedValue(List(_))).toVector
-    if (sourcesVector.isEmpty) {
-      throw new IllegalArgumentException("Pipeline requires at least one source.")
-    }
-    val source = VectorExtensions.reduceLeftTree(sourcesVector)(mergeSources)
-    new Pipeline(repositoryConnection,
-      source,
-      enrichers)
+  def apply(repositoryConnection: RepositoryConnection,
+            source: Source[Document, Traversable[ActorRef]],
+            enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])(implicit materializer: Materializer) = {
+    new Pipeline(repositoryConnection, source, enrichers)
   }
 
-  private def mergeSources[Out, Mat](s1: Source[Out, List[Mat]], s2: Source[Out, List[Mat]]): Source[Out, List[Mat]] = {
-    Source.fromGraph[Out, List[Mat]](GraphDSL.create(s1, s2)(_ ++ _) { implicit builder => (s1, s2) =>
-      val merge = builder.add(Merge[Out](2))
-      s1 ~> merge
-      s2 ~> merge
-      SourceShape(merge.out)
-    })
+  def create(repository: Repository,
+             synchronizers: Seq[Synchronizer],
+             enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
+            (implicit config: Config, actorFactory: ActorRefFactory, materializer: Materializer) = {
+    Supervisor.interactor(actorFactory.actorOf(Supervisor.props(repository, synchronizers, enrichers), name = "ThymeflowSupervisor"))
   }
 
-  def delayedBatchToFlow(delay: FiniteDuration) = Flow[ModelDiff].via(DelayedBatch[ModelDiff]((diff1, diff2) => {
-    diff1.apply(diff2)
-    diff1
-  }, delay))
+  def delayedBatchToFlow(delay: FiniteDuration) =
+    Flow[ModelDiff].via(DelayedBatch[ModelDiff]((diff1, diff2) => {
+      diff1.apply(diff2)
+      diff1
+    }, delay))
 
   def enricherToFlow(enricher: Enricher) = Flow[ModelDiff].map(diff => {
     enricher.enrich(diff)

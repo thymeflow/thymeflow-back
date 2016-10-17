@@ -1,6 +1,6 @@
 package com.thymeflow.update
 
-import com.thymeflow.Pipeline
+import com.thymeflow.Supervisor
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
@@ -17,7 +17,7 @@ import scala.concurrent.Future
 /**
   * @author Thomas Pellissier Tanon
   */
-class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) extends StrictLogging {
+class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor.Interactor) extends StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val userDataContext = valueFactory.createIRI(Personal.NAMESPACE, "userData") //TODO: config
@@ -158,7 +158,8 @@ class Updater(repositoryConnection: RepositoryConnection, pipeline: Pipeline) ex
         UpdateResults()
       }
     } else {
-      pipeline.applyUpdate(Update(diff))
+      implicit val timeout = com.thymeflow.actors.timeout
+      supervisor.applyUpdate(Update(diff))
     }
   }
 

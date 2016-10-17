@@ -39,7 +39,7 @@ object Facebook extends Service with OAuth2Service with DefaultJsonProtocol with
         Unmarshal(entity.withContentType(ContentTypes.`application/json`)).to[Me].flatMap {
           me =>
             val accountId = me.email.getOrElse(me.name.getOrElse(me.id))
-            Future.successful(ServiceAccount(accountId, Map("main" -> FacebookGraphApiSource(accessToken))))
+            Future.successful(ServiceAccount(this, accountId, Map("main" -> FacebookGraphApiSource(accessToken))))
         }
     }
   }

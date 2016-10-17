@@ -54,7 +54,7 @@ object Microsoft extends Service with OAuth2Service with DefaultJsonProtocol wit
               store
             }
 
-            Future.successful(ServiceAccount(me.emails.account, Map("mainImap" -> ImapSource(connect))))
+            Future.successful(ServiceAccount(this, me.emails.account, Map("mainImap" -> ImapSource(connect))))
         }
     }
   }

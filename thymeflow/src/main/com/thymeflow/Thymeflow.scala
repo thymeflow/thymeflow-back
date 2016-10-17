@@ -3,9 +3,12 @@ package com.thymeflow
 import java.nio.file.Paths
 import java.util.concurrent.TimeUnit
 
+import akka.actor.ActorSystem
+import akka.stream.Materializer
 import com.thymeflow.enricher._
 import com.thymeflow.enricher.entityresolution.AgentMatchEnricher
 import com.thymeflow.rdf.repository.{Repository, RepositoryFactory}
+import com.thymeflow.service.File
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.sync._
 import com.thymeflow.sync.converter.GoogleLocationHistoryConverter
@@ -23,28 +26,29 @@ import scala.language.postfixOps
 object Thymeflow extends StrictLogging {
 
   def main(args: Array[String]) {
+    import com.thymeflow.actors._
     implicit val config = com.thymeflow.config.cli
     val repository = RepositoryFactory.initializeRepository()
-    val pipeline = initializePipeline(repository)
-    args.map(x => FileSynchronizer.Config(Paths.get(x))).foreach {
-      fileConfig => pipeline.addSourceConfig(fileConfig)
+    val pipeline = Thymeflow.initialize(repository)
+    args.map(x => File.account(Paths.get(x))).foreach {
+      accountFuture => accountFuture.foreach(pipeline.addServiceAccount)
     }
   }
 
-  def initializePipeline(repository: Repository)(implicit config: Config) = {
+  def initialize(repository: Repository)(implicit config: Config, actorSystem: ActorSystem, materializer: Materializer) = {
     val geocoder = Geocoder.google(Some(Paths.get(System.getProperty("java.io.tmpdir"), "thymeflow/google-api-cache")))
 
     setupSynchronizers()
     val pipelineStartTime = System.currentTimeMillis()
     Pipeline.create(
-      repository.newConnection(),
+      repository,
       Vector(
         FileSynchronizer,
         CalDavSynchronizer,
         CardDavSynchronizer,
         EmailSynchronizer,
         FacebookSynchronizer
-      ).map(_.source(repository.valueFactory)),
+      ),
       Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.newConnection))
         .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.newConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))

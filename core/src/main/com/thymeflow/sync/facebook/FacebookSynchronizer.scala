@@ -1,6 +1,6 @@
 package com.thymeflow.sync.facebook
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.Uri.{Path, Query}
@@ -9,9 +9,11 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.service.source.FacebookGraphApiSource
+import com.thymeflow.service.{Idle, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask}
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
-import com.typesafe.config.{Config => AppConfig}
+import com.typesafe.config.Config
 import org.openrdf.model.{IRI, Model, ValueFactory}
 import spray.json._
 
@@ -24,25 +26,31 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
   final val namespace = "https://graph.facebook.com"
   final val apiPath = Path("/v2.6")
 
-  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
-    Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
+  def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
+    Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
 
   sealed trait FacebookState
 
-  case class FacebookRequest(method: String, relative_url: String)
+  case class Initial(token: String) extends FacebookState
 
-  case class Config(token: String) extends FacebookState
+  case class FacebookRequest(method: String, relative_url: String)
 
   case class Scroll(token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
 
-  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
+  private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
-
 
     private val facebookConverter = new FacebookConverter(valueFactory)
 
     override def receive: Receive = super.receive orElse {
-      case config: Config => queue(config)
+      case account: ServiceAccount =>
+        account.sources.foreach {
+          case (sourceName, source: FacebookGraphApiSource) =>
+            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
+            queue(Initial(source.accessToken))
+            supervisor ! ServiceAccountSourceTask(source = sourceId, "Synchronization", Idle)
+          case _ =>
+        }
     }
 
     override protected def queryBuilder = {
@@ -70,10 +78,10 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                   Result(None, Vector(Document(scroll.context, scroll.model)))
                 }
             }
-          case config: Config =>
+          case initial: Initial =>
             val queryMe = HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "me").withQuery(
               Query(
-                ("access_token", config.token),
+                ("access_token", initial.token),
                 ("fields", "about,bio,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
               )
             ))
@@ -85,7 +93,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                     val context = valueFactory.createIRI(s"http://graph.facebook.com")
                     val events = me.events.data.map(_.id)
                     val model = facebookConverter.convert(me, context)
-                    Result(Some(Scroll(config.token, context, model, events)), Vector.empty)
+                    Result(Some(Scroll(initial.token, context, model, events)), Vector.empty)
                 }
             }
             f.recover {

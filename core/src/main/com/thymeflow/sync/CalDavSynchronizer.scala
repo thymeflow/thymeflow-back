@@ -2,16 +2,18 @@ package com.thymeflow.sync
 
 import javax.xml.namespace.QName
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
+import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
-import com.github.sardine.{DavResource, Sardine}
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.service.ServiceAccountSourceTask
+import com.thymeflow.service.source.{CalDavSource, DavSource}
 import com.thymeflow.sync.converter.ICalConverter
 import com.thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
 import com.thymeflow.update.UpdateResults
-import com.typesafe.config.{Config => AppConfig}
+import com.typesafe.config.Config
 import org.openrdf.model.{Model, Resource, ValueFactory}
 
 /**
@@ -19,23 +21,18 @@ import org.openrdf.model.{Model, Resource, ValueFactory}
   */
 object CalDavSynchronizer extends BaseDavSynchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
-    Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
+  def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
+    Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
 
-  case class Config(sardine: Sardine, baseUri: String) {
+  private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
+    extends BaseDavPublisher[DocumentsFetcher](valueFactory, supervisor) {
+    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
+
+    override protected def isValidSource(davSource: DavSource): Boolean = davSource.isInstanceOf[CalDavSource]
   }
 
-  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
-    extends BaseDavPublisher[DocumentsFetcher](valueFactory) {
-
-    override def receive: Receive = super.receive orElse {
-      case config: Config =>
-        addFetcher(new DocumentsFetcher(valueFactory, config.sardine, config.baseUri))
-    }
-  }
-
-  private class DocumentsFetcher(valueFactory: ValueFactory, sardine: Sardine, baseUri: String)(implicit appConfig: AppConfig)
-    extends BaseDavDocumentsFetcher(valueFactory, sardine, baseUri) {
+  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask, source: DavSource)(implicit config: Config)
+    extends BaseDavDocumentsFetcher(valueFactory, task, source) {
 
     private val CalDavNamespace = "urn:ietf:params:xml:ns:caldav"
     override protected val mimeType = "text/calendar"

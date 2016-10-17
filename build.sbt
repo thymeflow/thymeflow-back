@@ -1,8 +1,11 @@
 import sbt.Keys._
 
+scalacOptions += "-target:jvm-1.8"
+
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
+  scalacOptions += "-target:jvm-1.8",
   libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+"

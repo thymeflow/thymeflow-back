@@ -4,30 +4,60 @@ import java.time.Instant
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.server.Directives
+import akka.util.Timeout
+import com.thymeflow.Supervisor
+import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.api.SystemTasksService._
+import com.thymeflow.service.{Done, Idle, Working}
 import com.thymeflow.utilities.JsonFormats
 import spray.json._
 
-import scala.language.implicitConversions
+import scala.concurrent.duration._
+import scala.language.{implicitConversions, postfixOps}
 
 /**
   * @author David Montoya
   */
 trait SystemTasksService extends Directives with CorsSupport {
-
+  protected implicit val actorSystemContext: ActorSystemContext
   import JsonProtocol._
   import SprayJsonSupport._
+  import actorSystemContext.Implicits._
+
+  implicit val timeout = Timeout(5 seconds)
+
+  protected def supervisor: Supervisor.Interactor
+
+  def listTasks() = {
+    supervisor.listTasks().map {
+      serviceAccountTasks =>
+        serviceAccountTasks.map {
+          case (taskId, serviceAccountTask) =>
+            val (startDate, status, progress) = serviceAccountTask.status match {
+              case Idle => (None, s"Idle", None)
+              case Done(start, end) => (Some(start), s"Done $end", None)
+              case Working(start, p) => (Some(start), "Working", p)
+            }
+            ResourceObject(
+              Some(taskId.toString),
+              "system-task",
+              Task(`type` = "service",
+                startDate = startDate,
+                name = List(serviceAccountTask.source.service.name, serviceAccountTask.source.accountId, serviceAccountTask.source.sourceName).mkString(" "),
+                status = status,
+                progress = progress)
+            )
+        }
+    }
+  }
 
   protected val systemTasksRoute = {
     corsHandler {
       get {
         complete {
-          ResourceObjects(Vector(
-            ResourceObject(Some("1"), "system-task", Task("loading", "Files: file.zip", Instant.now, "Done", Some(100))),
-            ResourceObject(Some("2"), "system-task", Task("loading", "CalDAV: angela@example.com", Instant.now, "In progress", Some((Instant.now.getEpochSecond % 100).toInt))),
-            ResourceObject(Some("3"), "system-task", Task("loading", "CardDAV: angela@example.com", Instant.now, "In progress", None)),
-            ResourceObject(Some("4"), "system-task", Task("loading", "Email: angela@example2.com", Instant.now, "Waiting", Some(0)))
-          ))
+          listTasks().map {
+            tasks => ResourceObjects(tasks)
+          }
         }
       }
     }
@@ -36,11 +66,11 @@ trait SystemTasksService extends Directives with CorsSupport {
 
 object SystemTasksService {
 
-  case class Task(`type`: String, name: String, startDate: Instant, status: String, progress: Option[Int])
+  case class Task(`type`: String, name: String, startDate: Option[Instant], status: String, progress: Option[Int])
 
   case class ResourceObject[T](id: Option[String], `type`: String, attributes: T)
 
-  case class ResourceObjects[T](data: scala.collection.immutable.Seq[ResourceObject[T]])
+  case class ResourceObjects[T](data: Seq[ResourceObject[T]])
 
   object JsonProtocol extends DefaultJsonProtocol with JsonFormats.InstantJsonFormat {
     implicit val printer: CompactPrinter = CompactPrinter

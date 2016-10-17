@@ -5,15 +5,17 @@ import java.net.URLEncoder
 import java.nio.file.{DirectoryStream, Files, Path}
 import java.util.zip.ZipFile
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.service.source.PathSource
+import com.thymeflow.service.{Idle, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter._
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
-import com.typesafe.config.{Config => AppConfig}
+import com.typesafe.config.Config
 import org.apache.commons.io.FilenameUtils
 import org.openrdf.model.{IRI, ValueFactory}
 
@@ -27,11 +29,11 @@ import scala.concurrent.Future
   */
 object FileSynchronizer extends Synchronizer {
 
-  private val vCardConverter: (ValueFactory, AppConfig) => Converter = new VCardConverter(_)(_)
-  private val iCalConverter: (ValueFactory, AppConfig) => Converter = new ICalConverter(_)(_)
-  private val emailMessageConverter: (ValueFactory, AppConfig) => Converter = new EmailMessageConverter(_)(_)
+  private val vCardConverter: (ValueFactory, Config) => Converter = new VCardConverter(_)(_)
+  private val iCalConverter: (ValueFactory, Config) => Converter = new ICalConverter(_)(_)
+  private val emailMessageConverter: (ValueFactory, Config) => Converter = new EmailMessageConverter(_)(_)
 
-  private var registeredConverters: Map[String, (ValueFactory, AppConfig) => Converter] = Map(
+  private var registeredConverters: Map[String, (ValueFactory, Config) => Converter] = Map(
     "message/rfc822" -> emailMessageConverter,
     "text/calendar" -> iCalConverter,
     "text/vcard" -> vCardConverter,
@@ -44,18 +46,16 @@ object FileSynchronizer extends Synchronizer {
     "zip" -> "application/zip"
   ).withDefaultValue("application/octet-stream")
 
-  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
-    Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
+  def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
+    Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
 
-  def registerConverter(mimeType: String, converter: (ValueFactory, AppConfig) => Converter) = {
+  def registerConverter(mimeType: String, converter: (ValueFactory, Config) => Converter) = {
     registeredConverters += mimeType -> converter
   }
 
   def registerExtension(extension: String, mimeType: String) = {
     registeredExtensions += extension -> mimeType
   }
-
-  case class Config(path: Path, mimeType: Option[String] = None, documentPath: Option[Path] = None)
 
   private sealed trait State
 
@@ -71,16 +71,23 @@ object FileSynchronizer extends Synchronizer {
 
   private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) extends State
 
-  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig)
+  private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, (Vector[State])] with BasePublisher {
 
     val converters = registeredConverters.map {
       case (k, converter) =>
-        k -> converter(valueFactory, appConfig)
+        k -> converter(valueFactory, config)
     }
 
     override def receive: Receive = super.receive orElse {
-      case config: Config => queue(Vector(PathState(config.path, config.documentPath.getOrElse(config.path), config.mimeType)))
+      case account: ServiceAccount =>
+        account.sources.foreach {
+          case (sourceName, source: PathSource) =>
+            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
+            queue(Vector(PathState(source.path, source.documentPath.getOrElse(source.path), source.mimeType)))
+            supervisor ! ServiceAccountSourceTask(source = sourceId, "Synchronization", Idle)
+          case _ =>
+        }
       case Update(diff) => sender() ! applyDiff(diff)
     }
 

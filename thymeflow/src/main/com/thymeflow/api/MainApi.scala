@@ -3,6 +3,7 @@ package com.thymeflow.api
 import java.io.File
 
 import com.thymeflow.Thymeflow
+import com.thymeflow.actors._
 import com.thymeflow.rdf.FileSynchronization
 import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.repository.RepositoryFactory
@@ -17,8 +18,8 @@ trait MainApiDef extends Api {
   private val sailInterceptor = new UpdateSailInterceptor
   override protected val repository = RepositoryFactory.initializeRepository(Some(sailInterceptor))
 
-  override protected val pipeline = Thymeflow.initializePipeline(repository)
-  sailInterceptor.setUpdater(new Updater(repository.newConnection(), pipeline))
+  override protected val supervisor = Thymeflow.initialize(repository)
+  sailInterceptor.setUpdater(new Updater(repository.newConnection(), supervisor))
 
   def main(args: Array[String]): Unit = {
     if (args.length < 1) {
@@ -46,5 +47,6 @@ trait MainApiDef extends Api {
 }
 
 object MainApi extends {
+  protected val actorSystemContext = com.thymeflow.actors.actorContext
   protected val config = com.thymeflow.config.application
 } with MainApiDef

@@ -7,8 +7,8 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri.Path
 import akka.http.scaladsl.model.{StatusCodes, Uri}
 import akka.http.scaladsl.server.Route
-import com.thymeflow.Pipeline
-import com.thymeflow.actors._
+import com.thymeflow.Supervisor
+import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
 import com.thymeflow.service.authentication.OAuth2
@@ -22,9 +22,10 @@ import scala.concurrent.duration.Duration
   * @author David Montoya
   */
 trait Api extends SparqlService with SystemTasksService with CorsSupport {
+  protected implicit val actorSystemContext: ActorSystemContext
 
+  import actorSystemContext.Implicits._
   protected implicit def config: Config
-
   private val backendUri = Uri(config.getString("thymeflow.http.backend-uri").replaceAll("/$", ""))
   private val frontendUri = Uri(config.getString("thymeflow.http.frontend-uri"))
   protected override val allowedOrigin = frontendUri.withPath(Path.Empty).toString
@@ -89,10 +90,10 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
   }
 
   private def onAccount(account: ServiceAccount): Unit = {
-    pipeline.addSourceConfig(account)
+    supervisor.addServiceAccount(account)
   }
 
-  protected def pipeline: Pipeline
+  protected def supervisor: Supervisor.Interactor
 
   protected def repository: Repository
 

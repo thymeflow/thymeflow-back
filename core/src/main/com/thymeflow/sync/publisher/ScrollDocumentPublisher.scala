@@ -2,7 +2,6 @@ package com.thymeflow.sync.publisher
 
 import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
-import com.thymeflow.utilities.ExceptionUtils
 import com.typesafe.scalalogging.StrictLogging
 
 import scala.annotation.tailrec
@@ -27,7 +26,7 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
       }
     case Failure(failure) =>
       // Necessary to log this error because of https://github.com/akka/akka/issues/18359
-      logger.error(ExceptionUtils.getUnrolledStackTrace(failure))
+      logger.error("Failure when retrieving results", failure)
       onError(failure)
       processing = false
     case Request(requestCount) =>

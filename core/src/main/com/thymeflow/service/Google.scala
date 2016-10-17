@@ -44,7 +44,8 @@ object Google extends Service with OAuth2Service {
 
             val inboxOnly = config.getBoolean("thymeflow.synchronizer.email-synchronizer.google.inbox-only")
 
-            ServiceAccount(googleAddress,
+            ServiceAccount(this,
+              googleAddress,
               Map(
                 // CardDav
                 "mainCardDav" -> CardDavSource("https://www.googleapis.com/.well-known/carddav", accessToken),

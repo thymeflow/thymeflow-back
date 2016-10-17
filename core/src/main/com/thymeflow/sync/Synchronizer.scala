@@ -13,7 +13,7 @@ import org.openrdf.model.ValueFactory
   */
 trait Synchronizer {
 
-  def source(valueFactory: ValueFactory)(implicit config: Config): Graph[SourceShape[Document], ActorRef]
+  def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config): Graph[SourceShape[Document], ActorRef]
 
   protected trait BasePublisher extends ActorPublisher[Document]
 

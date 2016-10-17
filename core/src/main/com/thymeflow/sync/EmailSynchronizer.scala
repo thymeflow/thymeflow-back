@@ -1,28 +1,30 @@
 package com.thymeflow.sync
 
-import java.util.concurrent.TimeUnit
+import java.time.Instant
 import javax.mail.event._
 import javax.mail.{FolderClosedException, _}
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
-import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.service.source.ImapSource
+import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
-import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
-import com.typesafe.config.{Config => AppConfig}
+import com.thymeflow.utilities.TimeExecution
+import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, ValueFactory}
 
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import scala.collection.mutable
+import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.language.postfixOps
 
 /**
@@ -31,18 +33,35 @@ import scala.language.postfixOps
   */
 object EmailSynchronizer extends Synchronizer with StrictLogging {
 
+  implicit val executionContext = com.thymeflow.actors.executor
   // Prevent memory leaks due to caching of Messages' multipart content.
   System.setProperty("mail.mime.cachemultipart", "false")
 
-  private final val retryTime = Duration(15, TimeUnit.SECONDS)
   private final val fetchedMessagesMaxBufferSize = 512
   private final val fetchedMessagesDemandMultiplier = 32L
+
+  private val uidFetchProfile = {
+    val profile = new FetchProfile()
+    profile.add(UIDFolder.FetchProfileItem.UID)
+    profile
+  }
+
+  private val fetchProfile = {
+    val profile = new FetchProfile()
+    profile.add(FetchProfile.Item.FLAGS)
+    profile.add(FetchProfile.Item.ENVELOPE)
+    profile.add(FetchProfile.Item.CONTENT_INFO)
+    profile.add(UIDFolder.FetchProfileItem.UID)
+    profile.add("In-Reply-To")
+    profile
+  }
+
   private val ignoredFolderNames = Set("Junk", "Deleted", "Deleted Messages", "Spam")
 
-  def source(valueFactory: ValueFactory)(implicit appConfig: AppConfig) =
-    Source.actorPublisher[Document](Props(new Publisher(valueFactory)))
+  def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
+    Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
 
-  sealed trait ImapAction {
+  private sealed trait ImapAction {
     def uidValidity: Long
 
     def messageUid: Long
@@ -50,115 +69,566 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     def folderURLName: URLName
   }
 
-  case class Config(store: Store, folderNamesToKeep: Option[Set[String]] = None)
-
-  case class AddedMessage(uidValidity: Long, messageUid: Long, message: Message) extends ImapAction {
+  private case class AddedMessage(uidValidity: Long, messageUid: Long, message: Message) extends ImapAction {
     def folderURLName = message.getFolder.getURLName
   }
 
-  case class RemovedMessage(folderURLName: URLName, uidValidity: Long, messageUid: Long) extends ImapAction
+  private case class RemovedMessage(folderURLName: URLName, uidValidity: Long, messageUid: Long) extends ImapAction
 
-  case class UpdatedMessages(added: Boolean, folder: IMAPFolder, messages: Vector[IMAPMessage])
+  private sealed trait QueuedMessage
 
-  case class ConnectionClosed(folder: IMAPFolder)
+  private case class UpdatedSource(fetcher: EmailFetcher, source: ImapSource) extends QueuedMessage
 
-  private class Publisher(valueFactory: ValueFactory)(implicit appConfig: AppConfig) extends ScrollDocumentPublisher[Document, (Vector[(IMAPFolder, Option[(Boolean, Vector[IMAPMessage])])], Vector[Config])] {
+  private case class UpdatedMessages(fetcher: EmailFetcher, added: Boolean, folder: IMAPFolder, messages: Vector[IMAPMessage]) extends QueuedMessage
 
-    private val emailMessageConverter = new EmailMessageConverter(valueFactory)
-    private val watchedFolders = new mutable.HashMap[URLName, (IMAPFolder, Long, mutable.HashSet[Long], (MessageCountListener, ConnectionListener))]()
+  private case class ConnectionClosed(fetcher: EmailFetcher, folder: IMAPFolder) extends QueuedMessage
 
-    private val uidFetchProfile = {
-      val profile = new FetchProfile()
-      profile.add(UIDFolder.FetchProfileItem.UID)
-      profile
+  private case class FolderSyncStatus(uidValidity: Long,
+                                      addedMessageUids: Set[Long],
+                                      messagesToAdd: Vector[IMAPMessage],
+                                      messagesToRemove: Vector[IMAPMessage])
+
+  private case class FolderSubscription(folder: IMAPFolder, messageCountListener: MessageCountListener, connectionListener: ConnectionListener, inSync: Boolean)
+
+  private case class ConnectedSource(task: ServiceAccountSourceTask, source: ImapSource)
+
+  private object Tick
+
+  private case class Documents(content: Traversable[Document])
+
+  private case class Result(states: Traversable[(EmailFetcher, (EmailFetcherState, EmailFetcherTask))])
+
+  private sealed trait EmailFetcherTask
+
+  private case object Idle extends EmailFetcherTask
+
+  private case class Working(folderURLName: URLName, startDate: Instant, processed: Long, toProcess: Long) extends EmailFetcherTask
+
+  private case class Done(folderURLName: URLName, startDate: Instant, endDate: Instant) extends EmailFetcherTask
+
+  private sealed trait EmailFetcherState
+
+  private case class Initial(source: ImapSource) extends EmailFetcherState
+
+  private sealed trait FoldersEmailFetcherState extends EmailFetcherState
+
+  private case class Connected(source: ImapSource,
+                               folders: Map[URLName, (FolderSubscription, Option[FolderSyncStatus])]) extends FoldersEmailFetcherState
+
+  private case class Error(source: ImapSource,
+                           foldersOption: Option[Map[URLName, (FolderSubscription, Option[FolderSyncStatus])]]) extends FoldersEmailFetcherState
+
+  private case class NewSource(source: ImapSource, state: FoldersEmailFetcherState) extends EmailFetcherState
+
+  private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
+    extends ActorPublisher[Document] {
+
+    private val fetchers = new mutable.HashMap[ServiceAccountSource, (EmailFetcher, EmailFetcherState, EmailFetcherTask)]
+
+    protected def newFetcher(source: ImapSource, serviceSource: ServiceAccountSource) = {
+      new EmailFetcher(self, valueFactory, serviceSource, source)
     }
 
-    private val fetchProfile = {
-      val profile = new FetchProfile()
-      profile.add(FetchProfile.Item.FLAGS)
-      profile.add(FetchProfile.Item.ENVELOPE)
-      profile.add(FetchProfile.Item.CONTENT_INFO)
-      profile.add(UIDFolder.FetchProfileItem.UID)
-      profile.add("In-Reply-To")
-      profile
+    def notifyTask(fetcher: EmailFetcher, fetcherTask: EmailFetcherTask) = {
+      val serviceTask = fetcherTask match {
+        case Idle =>
+          ServiceAccountSourceTask(fetcher.serviceAccountSource, "", IdleService)
+        case Working(folderURLName, startDate, processed, toProcess) =>
+          val progress = (BigDecimal(processed) / BigDecimal(toProcess) * 100).toInt
+          ServiceAccountSourceTask(fetcher.serviceAccountSource, Some(folderURLName.getFile).getOrElse(""), WorkingService(startDate, Some(progress)))
+        case Done(folderURLName, startDate, endDate) =>
+          ServiceAccountSourceTask(fetcher.serviceAccountSource, Some(folderURLName.getFile).getOrElse(""), DoneService(startDate, endDate))
+      }
+      supervisor ! serviceTask
     }
 
-    system.scheduler.schedule(1 minute, 1 minute)({
-      this.self ! Tick
-    })
-
-    def folderAddUids(folder: IMAPFolder, addedUids: Traversable[Long]) = {
-      val folderURLName = folder.getURLName
-      watchedFolders.get(folderURLName) match {
-        case Some((_, uidValidity, uids, messageCountListener)) =>
-          uids ++= addedUids
-        case _ =>
+    protected def addOrUpdateFetcher(sourceId: ServiceAccountSource, source: ImapSource): Unit = {
+      // If there exists a fetcher for his sourceId we only update its source
+      fetchers.get(sourceId) match {
+        case Some((fetcher, _, _)) =>
+          messageQueue :+= UpdatedSource(fetcher, source)
+        case None =>
+          fetchers(sourceId) = {
+            val fetcher = newFetcher(source, sourceId)
+            val fetcherState = Initial(source)
+            val fetcherTask = Idle
+            notifyTask(fetcher, fetcherTask)
+            (fetcher, fetcherState, fetcherTask)
+          }
       }
     }
 
-    def folderRemoveUids(folder: IMAPFolder, removedUids: Traversable[Long]) = {
-      val folderURLName = folder.getURLName
-      watchedFolders.get(folderURLName) match {
-        case Some((_, uidValidity, uids, messageCountListener)) =>
-          uids --= removedUids
-        case _ =>
+    private var processing = false
+    private var buf = Vector.empty[Document]
+
+    @tailrec final protected def deliverBuf(delivered: Long = 0): Long =
+      if (isActive && totalDemand > 0) {
+        /*
+         * totalDemand is a Long and could be larger than
+         * what buf.splitAt can accept
+         */
+        if (totalDemand <= Int.MaxValue) {
+          val (use, keep) = buf.splitAt(totalDemand.toInt)
+          buf = keep
+          use foreach onNext
+          use.size
+        } else {
+          val (use, keep) = buf.splitAt(Int.MaxValue)
+          buf = keep
+          use foreach onNext
+          deliverBuf(delivered + use.size)
+        }
+      } else {
+        0L
+      }
+
+
+    def handleState(handlers: Traversable[(EmailFetcher, () => (EmailFetcherState, EmailFetcherTask))]) = {
+      processing = true
+      val future = Future {
+        handlers.map {
+          case (fetcher, handler) => (fetcher, handler())
+        }
+      }
+      future.foreach {
+        result => self ! Result(result)
+      }
+      future.onFailure {
+        case t => logger.error(s"Error handling state.", t)
       }
     }
 
-    override def receive: Receive = super.receive orElse {
-      case config: Config =>
-        queue((Vector.empty, Vector(config)))
-      case UpdatedMessages(added, folder, messages) =>
-        val update = (folder, Some((added, messages)))
-        queue((Vector(update), Vector.empty))
-      case ConnectionClosed(folder) =>
-        val update = (folder, None)
-        queue((Vector(update), Vector.empty))
-      case Tick =>
-        if (queueIsEmpty && waitingForData) {
-          watchedFolders.values.toIndexedSeq.map {
-            case (folder, _, _, _) => try {
-              if (!folder.isOpen) {
-                queue((Vector((folder, None)), Vector.empty))
-              } else {
-                // hacky way to make servers fire MessageCountListener
-                // TODO: use IMAPFolder:idle if possible
-                folder.getMessageCount
+    def shouldFetch = !processing && isActive && totalDemand > 0
+
+    def handleFetchersState() = {
+      if (shouldFetch) {
+        processMessageQueue()
+        fetchers.values.view.map {
+          case (fetcher, fetcherState, fetcherTask) => {
+            (fetcher, fetcher.stateHandler(fetcherState, fetcherTask, totalDemand))
+          }
+        }.collectFirst {
+          case (fetcher, Some(handler)) => (fetcher, handler)
+        }.exists {
+          case (fetcher, handler) =>
+            handleState(List((fetcher, handler)))
+            true
+        }
+      } else {
+        false
+      }
+    }
+
+    var messageQueue = Vector.empty[QueuedMessage]
+
+    def processMessageQueue() = {
+      messageQueue.foreach {
+        case ConnectionClosed(fetcher, folder) =>
+          fetchers.get(fetcher.serviceAccountSource) match {
+            case Some((_, connected@Connected(_, folders), task)) =>
+              val newFolders = folders.get(folder.getURLName) match {
+                case Some((folderSubscription@FolderSubscription(_, _, _, true), syncStatusOption)) =>
+                  folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), syncStatusOption))
+                case _ => folders
               }
-            } catch {
-              case e: FolderNotFoundException =>
-                logger.error(s"Cannot find folder ${folder.getFullName}, skipping.")
-                unsubscribeFolder(folder)
-              case e@(_: MessagingException | _: IllegalStateException) =>
-                logger.error(s"Error reading folder ${folder.getFullName}, retrying later.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+              fetchers += fetcher.serviceAccountSource -> (fetcher, connected.copy(folders = newFolders), task)
+            case _ =>
+          }
+        case UpdatedSource(fetcher, newSource) =>
+          fetchers.get(fetcher.serviceAccountSource) match {
+            case Some((_, fetcherState, task)) =>
+              val newState = fetcherState match {
+                case state: FoldersEmailFetcherState => NewSource(newSource, state)
+                case NewSource(_, state) => NewSource(newSource, state)
+                case Initial(_) => Initial(newSource)
+              }
+              fetchers += fetcher.serviceAccountSource -> (fetcher, newState, task)
+            case _ =>
+          }
+        case UpdatedMessages(fetcher, added, folder, messages) =>
+          fetchers.get(fetcher.serviceAccountSource) match {
+            case Some((_, fetcherState, task)) =>
+              val newState = fetcherState match {
+                case connected@Connected(_, folders) =>
+                  val newFolders = folders.get(folder.getURLName) match {
+                    case Some((folderSubscription@FolderSubscription(_, _, _, true), Some(syncStatus))) =>
+                      val newSyncStatus = if (added) {
+                        syncStatus.copy(messagesToAdd = syncStatus.messagesToAdd ++ messages)
+                      } else {
+                        syncStatus.copy(messagesToRemove = syncStatus.messagesToRemove ++ messages)
+                      }
+                      folders + (folder.getURLName -> (folderSubscription, Some(newSyncStatus)))
+                    case _ => folders
+                  }
+                  fetchers += fetcher.serviceAccountSource -> (fetcher, connected.copy(folders = newFolders), task)
+                case _ =>
+              }
+            case _ =>
+          }
+      }
+      messageQueue = Vector.empty
+    }
+
+    def receive: Receive = {
+      case account: ServiceAccount =>
+        account.sources.foreach {
+          case (sourceName, source: ImapSource) =>
+            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
+            addOrUpdateFetcher(sourceId, source)
+          case _ =>
+        }
+        handleFetchersState()
+      case Result(states) =>
+        processing = false
+        states.foreach {
+          case (fetcher, (state, task)) =>
+            fetchers += fetcher.serviceAccountSource -> (fetcher, state, task)
+            notifyTask(fetcher, task)
+        }
+        handleFetchersState()
+      case Documents(content) =>
+        buf ++= content
+        deliverBuf()
+      case Request(_) =>
+        deliverBuf()
+        handleFetchersState()
+      case Cancel =>
+        context.stop(self)
+      case Tick =>
+        if (shouldFetch) {
+          if (!handleFetchersState()) {
+            val handlers = fetchers.values.toVector.map {
+              case (fetcher, state, task) =>
+                (fetcher, () => {
+                  fetcher.onTick(state, task)
+                })
             }
+            handleState(handlers)
           }
         }
       case Update(diff) => sender() ! applyDiff(diff)
+      case m: QueuedMessage =>
+        messageQueue :+= m
+        handleFetchersState()
     }
 
-    def unsubscribeFolder(folder: IMAPFolder, removeMessages: Boolean = true, closeFolder: Boolean = true): Unit = {
-      val folderURLName = folder.getURLName
-      watchedFolders.get(folderURLName) match {
-        case Some((_, uidValidity, uids, (messageCountListener, connectionListener))) =>
-          folder.removeMessageCountListener(messageCountListener)
-          folder.removeConnectionListener(connectionListener)
-          if (removeMessages) {
-            val documents = uids.toVector.map {
-              uid => documentForAction(RemovedMessage(folderURLName, uidValidity, uid))
-            }
-            queueDocuments(documents)
-          }
-          watchedFolders.remove(folderURLName)
+    private def applyDiff(diff: ModelDiff): UpdateResults = {
+      //TODO: support at least email deletion
+      //We tag only the messages from IMAP as failed
+      UpdateResults.merge(
+        diff.contexts().asScala
+          .filter(_.stringValue().startsWith("imap://"))
+          .map(context => UpdateResults.allFailed(
+            diff.filter(null, null, null, context),
+            new ConverterException("IMAP repository could not be modified")
+          ))
+      )
+    }
+  }
+
+
+  private class EmailFetcher(publisher: ActorRef,
+                             valueFactory: ValueFactory,
+                             val serviceAccountSource: ServiceAccountSource,
+                             initialSource: ImapSource)
+                            (implicit config: Config) {
+
+    protected def publishDocuments(documents: Traversable[Document]) = {
+      publisher ! Documents(documents)
+    }
+
+    def onTick(state: EmailFetcherState, task: EmailFetcherTask) = {
+      // state is assumed to be Connected, and folder subscription is assumed to in sync
+      state match {
+        case connected@Connected(source, folders) =>
+          (folders.values.foldLeft(connected) {
+            case (foldedConnected, (folderSubscription@FolderSubscription(folder, _, _, true), syncStatus)) =>
+              try {
+                scala.concurrent.blocking {
+                  if (!folder.isOpen) {
+                    // hacky way to make servers fire MessageCountListener
+                    // TODO: use IMAPFolder:idle if possible
+                    folder.getMessageCount
+                  }
+                }
+                foldedConnected
+              } catch {
+                case e: FolderNotFoundException =>
+                  logger.error(s"$serviceAccountSource: Cannot find folder ${folder.getFullName}, skipping.")
+                  unsubscribeFolder(folderSubscription, close = true)
+                  foldedConnected.copy(folders = folders - folder.getURLName)
+                case e@(_: MessagingException | _: IllegalStateException) =>
+                  logger.error(s"$serviceAccountSource: Error reading folder ${folder.getFullName}, retrying later.", e)
+                  foldedConnected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), syncStatus)))
+              }
+          }, task)
         case _ =>
+          (state, task)
       }
+    }
+
+    def stateHandler(state: EmailFetcherState, task: EmailFetcherTask, demand: Long): Option[() => (EmailFetcherState, EmailFetcherTask)] = {
+      state match {
+        case NewSource(newSource, Error(source, folders)) => None
+        case NewSource(newSource, Connected(_, folders)) =>
+          Some(() => {
+            folders.values.foreach {
+              case (folderSubscription, _) =>
+                unsubscribeFolder(folderSubscription, close = true)
+              case _ =>
+            }
+            try {
+              val store = newSource.connect()
+              val newFolders = getStoreFolders(store, newSource.folderNamesToKeep)
+              val newFolderURLNameSet = newFolders.map(_.getURLName).toSet
+              val removedFolders = folders.keySet -- newFolderURLNameSet
+              removedFolders.foreach {
+                removedFolderURLName =>
+                  folders(removedFolderURLName) match {
+                    case (_, Some(folderSyncStatus)) =>
+                      removeMessagesFromFolder(removedFolderURLName, folderSyncStatus)
+                    case _ =>
+                  }
+              }
+              val folderStatus = newFolders.map {
+                folder =>
+                  val folderSyncStatus = folders.get(folder.getURLName) match {
+                    case Some((_, previousFolderSyncStatusOption)) =>
+                      previousFolderSyncStatusOption.map {
+                        previousFolderSyncStatus => previousFolderSyncStatus.copy(messagesToAdd = Vector.empty, messagesToRemove = Vector.empty)
+                      }
+                    case None =>
+                      None
+                  }
+                  val folderSubscription = subscribeFolder(folder)
+                  folder.getURLName -> (folderSubscription, folderSyncStatus)
+              }
+              (Connected(newSource, folderStatus.toMap), Idle)
+            } catch {
+              // TODO : make sure store is closed.
+              case e: AuthenticationFailedException =>
+                logger.error(s"$serviceAccountSource: Invalid authentication.", e)
+                (Error(newSource, Some(folders)), Idle)
+              case e@(_: MessagingException | _: IllegalStateException) =>
+                logger.error(s"$serviceAccountSource: Error reading folders.", e)
+                (Error(newSource, Some(folders)), Idle)
+            }
+          })
+        case Error(source, folders) => None
+        case Initial(source) =>
+          Some(() =>
+            try {
+              val store = source.connect()
+              val folders = getStoreFolders(store, source.folderNamesToKeep).map {
+                folder => folder.getURLName -> (subscribeFolder(folder), None)
+              }
+              (Connected(source, folders.toMap), Idle)
+            } catch {
+              // TODO : make sure store is closed.
+              case e: AuthenticationFailedException =>
+                logger.error(s"$serviceAccountSource: Invalid authentication for $serviceAccountSource, skipping.", e)
+                (Error(source, None), Idle)
+              case e@(_: MessagingException | _: IllegalStateException) =>
+                logger.error(s"$serviceAccountSource: Error reading folders from $serviceAccountSource, skipping.", e)
+                (Error(source, None), Idle)
+            })
+        case connected@Connected(source, folders) =>
+          folders.values.collectFirst {
+            case (subscribedFolder@FolderSubscription(folder, _, _, true), Some(syncStatus)) if syncStatus.messagesToAdd.nonEmpty || syncStatus.messagesToRemove.nonEmpty =>
+              () =>
+                try {
+                  if (openFolder(folder)) {
+                    logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} needs to be reloaded.")
+                    (connected.copy(folders = folders + (folder.getURLName -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
+                  } else {
+                    var justProcessed = 0L
+                    val syncStatusAfterRemove = if (syncStatus.messagesToRemove.nonEmpty) {
+                      val uidValidity = folder.getUIDValidity
+                      val uidsAndDocuments = syncStatus.messagesToRemove.flatMap(message => {
+                        try {
+                          // message UID is retrieved from the cache, only if the message had been fetched already.
+                          val messageUid = folder.getUID(message)
+                          Some((messageUid, documentForAction(RemovedMessage(folder.getURLName, uidValidity = uidValidity, messageUid = messageUid))))
+                        } catch {
+                          case e: MessageRemovedException =>
+                            logger.warn(s"$serviceAccountSource: Message $message was removed before it had been fetched, skipping.")
+                            None
+                        }
+                      })
+                      val documentsToRemove = uidsAndDocuments.filter(x => syncStatus.addedMessageUids.contains(x._1))
+                      justProcessed += syncStatus.messagesToRemove.size
+                      publishDocuments(documentsToRemove.map(_._2))
+                      syncStatus.copy(addedMessageUids = syncStatus.addedMessageUids -- documentsToRemove.map(_._1))
+                    } else {
+                      syncStatus
+                    }
+                    val syncStatusAfterAdd = if (syncStatusAfterRemove.messagesToAdd.nonEmpty) {
+                      val count = Math.min(Math.min(fetchedMessagesMaxBufferSize, Math.min(demand * fetchedMessagesDemandMultiplier, Int.MaxValue).toInt), syncStatusAfterRemove.messagesToAdd.length)
+                      val (messagesToFetch, remainingMessages) = syncStatusAfterRemove.messagesToAdd.splitAt(count)
+                      val (uidsAndDocuments, unprocessedMessages) = getDocumentsForMessages(folder, messagesToFetch)
+                      val documents = uidsAndDocuments.map(_._2)
+                      val addedMessageUids = syncStatusAfterRemove.addedMessageUids ++ uidsAndDocuments.map(_._1)
+                      justProcessed += messagesToFetch.size - unprocessedMessages.size
+                      publishDocuments(documents)
+                      syncStatusAfterRemove.copy(addedMessageUids = addedMessageUids, messagesToAdd = remainingMessages ++ unprocessedMessages)
+                    } else {
+                      syncStatusAfterRemove
+                    }
+                    val newTask = task match {
+                      case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
+                        folder.getURLName
+                        working.copy(processed = processed + justProcessed)
+                      case _ => Working(folderURLName = folder.getURLName,
+                        startDate = Instant.now,
+                        processed = 0L,
+                        toProcess = syncStatusAfterAdd.messagesToAdd.length.toLong + syncStatusAfterAdd.messagesToRemove.length.toLong)
+                    }
+                    val finalTask = if (syncStatusAfterAdd.messagesToAdd.isEmpty && syncStatusAfterAdd.messagesToRemove.isEmpty) {
+                      logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} fully synchronized.")
+                      Done(folderURLName = newTask.folderURLName, startDate = newTask.startDate, endDate = Instant.now())
+                    } else {
+                      newTask
+                    }
+                    (connected.copy(
+                      folders = folders + (folder.getURLName -> (subscribedFolder, Some(syncStatusAfterAdd)))
+                    ), finalTask)
+                  }
+                } catch {
+                  case e: FolderNotFoundException =>
+                    logger.error(s"$serviceAccountSource: Cannot find folder ${folder.getFullName}, skipping.")
+                    unsubscribeFolder(subscribedFolder)
+                    removeMessagesFromFolder(folder.getURLName, syncStatus)
+                    (connected.copy(folders = folders - folder.getURLName), Idle)
+                  case e@(_: MessagingException | _: IllegalStateException) =>
+                    logger.error(s"$serviceAccountSource: Error reading messages from folder ${folder.getFullName}, retrying.", e)
+                    try {
+                      if (folder.isOpen) {
+                        folder.close(false)
+                      }
+                    } catch {
+                      case _: MessagingException | _: IllegalStateException =>
+                    }
+                    (connected.copy(folders = folders + (folder.getURLName -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
+                }
+            case (folderSubscription@FolderSubscription(folder, _, _, false), previousFolderSyncStatusOption) =>
+              () =>
+                try {
+                  openFolder(folder)
+                  try {
+                    val initialFolderSyncStatus = previousFolderSyncStatusOption match {
+                      case Some(previousFolderSyncStatus) =>
+                        if (folder.getUIDValidity != previousFolderSyncStatus.uidValidity) {
+                          removeMessagesFromFolder(folder.getURLName, previousFolderSyncStatus)
+                          FolderSyncStatus(folder.getUIDValidity, new immutable.HashSet[Long], Vector.empty, Vector.empty)
+                        } else {
+                          previousFolderSyncStatus.copy(messagesToAdd = Vector.empty, messagesToRemove = Vector.empty)
+                        }
+                      case None =>
+                        FolderSyncStatus(folder.getUIDValidity, new immutable.HashSet[Long], Vector.empty, Vector.empty)
+                    }
+                    syncFolder(previousFolderSyncStatusOption.isEmpty, folder, initialFolderSyncStatus) match {
+                      case Left(folderSyncStatus) =>
+                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = true), Some(folderSyncStatus)))),
+                          Working(folderURLName = folder.getURLName,
+                            startDate = Instant.now(),
+                            processed = 0L,
+                            toProcess = folderSyncStatus.messagesToAdd.length.toLong + folderSyncStatus.messagesToRemove.length.toLong))
+                      case Right(true) =>
+                        unsubscribeFolder(folderSubscription)
+                        (connected.copy(folders = folders - folder.getURLName), Idle)
+                      case Right(false) =>
+                        unsubscribeFolder(folderSubscription)
+                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), Some(initialFolderSyncStatus)))), Idle)
+                    }
+                  } catch {
+                    case e@(_: MessagingException | _: IllegalStateException) =>
+                      logger.error(s"$serviceAccountSource: Error processing folder ${folder.getFullName}, retrying.", e)
+                      unsubscribeFolder(folderSubscription)
+                      (connected, Idle)
+                  }
+                } catch {
+                  case e: FolderNotFoundException =>
+                    logger.error(s"$serviceAccountSource: Cannot find folder ${folder.getFullName}, skipping.")
+                    previousFolderSyncStatusOption.foreach {
+                      previousFolderSyncStatus => removeMessagesFromFolder(folder.getURLName, previousFolderSyncStatus)
+                    }
+                    (connected.copy(folders = folders - folder.getURLName), Idle)
+                  case e@(_: MessagingException | _: IllegalStateException) =>
+                    logger.error(s"$serviceAccountSource: Error processing folder ${folder.getFullName}, retrying.", e)
+                    (connected, Idle)
+                }
+          }
+      }
+    }
+
+    private val emailMessageConverter = new EmailMessageConverter(valueFactory)
+
+    def createFolderListeners(folder: IMAPFolder) = {
+      val messageCountListener = new MessageCountListener {
+        override def messagesAdded(e: MessageCountEvent): Unit = {
+          publisher ! UpdatedMessages(EmailFetcher.this, added = true, folder, e.getMessages.toVector.asInstanceOf[Vector[IMAPMessage]])
+        }
+
+        override def messagesRemoved(e: MessageCountEvent): Unit = {
+          publisher ! UpdatedMessages(EmailFetcher.this, added = false, folder, e.getMessages.toVector.asInstanceOf[Vector[IMAPMessage]])
+        }
+      }
+      val connectionListener = new ConnectionListener {
+        override def disconnected(e: ConnectionEvent): Unit = {
+        }
+
+        override def opened(e: ConnectionEvent): Unit = {
+        }
+
+        override def closed(e: ConnectionEvent): Unit = {
+          publisher ! ConnectionClosed(EmailFetcher.this, folder)
+        }
+      }
+      folder.addMessageCountListener(messageCountListener)
+      folder.addConnectionListener(connectionListener)
+      (messageCountListener, connectionListener)
+    }
+
+
+    def subscribeFolder(folder: IMAPFolder) = {
+      val (messageCountListener, connectionListener) = createFolderListeners(folder)
+      FolderSubscription(folder, messageCountListener, connectionListener, inSync = false)
+    }
+
+    def openFolder(folder: IMAPFolder) = {
+      if (!folder.isOpen) {
+        scala.concurrent.blocking {
+          folder.open(Folder.READ_ONLY)
+        }
+        true
+      } else {
+        false
+      }
+    }
+
+    def removeMessagesFromFolder(folderURLName: URLName,
+                                 folderSyncStatus: FolderSyncStatus) = {
+      val documents = folderSyncStatus.addedMessageUids.toVector.map {
+        uid => documentForAction(RemovedMessage(folderURLName, folderSyncStatus.uidValidity, uid))
+      }
+      publishDocuments(documents)
+    }
+
+    def unsubscribeFolder(folderSubscription: FolderSubscription,
+                          close: Boolean = true): Unit = {
+      folderSubscription.folder.removeMessageCountListener(folderSubscription.messageCountListener)
+      folderSubscription.folder.removeConnectionListener(folderSubscription.connectionListener)
       try {
-        if (closeFolder && folder.isOpen) {
-          folder.close(false)
+        if (close && folderSubscription.folder.isOpen) {
+          folderSubscription.folder.close(false)
         }
       } catch {
         case _: MessagingException | _: IllegalStateException =>
       }
+    }
+
+    private def messageContext(folderURLName: URLName, uidValidity: Long, messageUid: Long): IRI = {
+      valueFactory.createIRI(s"$folderURLName#$uidValidity-$messageUid")
     }
 
     private def documentForAction(action: ImapAction): Document = {
@@ -171,210 +641,6 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
-    private def messageContext(folderURLName: URLName, uidValidity: Long, messageUid: Long): IRI = {
-      valueFactory.createIRI(s"$folderURLName#$uidValidity-$messageUid")
-    }
-
-    private def waitingForData: Boolean = {
-      isActive && totalDemand > 0
-    }
-
-    def createFolderListeners(folder: IMAPFolder) = {
-      val messageCountListener = new MessageCountListener {
-        override def messagesAdded(e: MessageCountEvent): Unit = {
-          Publisher.this.self ! UpdatedMessages(added = true, folder, e.getMessages.toVector.asInstanceOf[Vector[IMAPMessage]])
-        }
-
-        override def messagesRemoved(e: MessageCountEvent): Unit = {
-          Publisher.this.self ! UpdatedMessages(added = false, folder, e.getMessages.toVector.asInstanceOf[Vector[IMAPMessage]])
-        }
-      }
-      val connectionListener = new ConnectionListener {
-        override def disconnected(e: ConnectionEvent): Unit = {
-        }
-
-        override def opened(e: ConnectionEvent): Unit = {
-        }
-
-        override def closed(e: ConnectionEvent): Unit = {
-          Publisher.this.self ! ConnectionClosed(folder)
-        }
-      }
-      folder.addMessageCountListener(messageCountListener)
-      folder.addConnectionListener(connectionListener)
-      (messageCountListener, connectionListener)
-    }
-
-    def openFolder(folder: IMAPFolder) = {
-      if (!folder.isOpen) {
-        watchedFolders.get(folder.getURLName) match {
-          case None =>
-            folder.open(Folder.READ_ONLY)
-            val folderListeners = createFolderListeners(folder)
-            watchedFolders += folder.getURLName ->(folder, folder.getUIDValidity, new mutable.HashSet[Long], folderListeners)
-          case Some((previousFolder, uidValidity, uids, previousFolderListeners)) =>
-            folder.open(Folder.READ_ONLY)
-            if (folder.getUIDValidity != uidValidity || folder != previousFolder) {
-              unsubscribeFolder(previousFolder, removeMessages = folder.getUIDValidity != uidValidity, closeFolder = folder != previousFolder)
-              val folderListeners = if (folder != previousFolder) {
-                createFolderListeners(folder)
-              } else {
-                previousFolderListeners
-              }
-              watchedFolders += folder.getURLName ->(folder, folder.getUIDValidity, if (folder.getUIDValidity != uidValidity) new mutable.HashSet[Long] else uids, folderListeners)
-            }
-        }
-        true
-      } else {
-        false
-      }
-    }
-
-    def fetchFolderMessagesWithUIDs(folder: IMAPFolder) = {
-      TimeExecution.timeInfo(s"Fetching Email message UIDs for folder ${folder.getFullName}", logger, {
-        val messages = folder.getMessages
-        folder.fetch(messages, uidFetchProfile)
-        messages.toVector.asInstanceOf[Vector[IMAPMessage]]
-      })
-    }
-
-    override protected def queryBuilder: ((Vector[(IMAPFolder, Option[(Boolean, Vector[IMAPMessage])])], Vector[Config]), Long) => Future[Result] = {
-      case (state@(folders, queuedConfigs), demand) =>
-        Future {
-          folders match {
-            case (currentFolder, Some((added, messages))) +: foldersTail =>
-              if (added) {
-                try {
-                  if (openFolder(currentFolder)) {
-                    logger.info(s"Email folder ${currentFolder.getFullName} needs to be reloaded.")
-                    Result(Some((currentFolder, None) +: foldersTail, queuedConfigs), Vector.empty)
-                  } else {
-                    val count = Math.min(Math.min(fetchedMessagesMaxBufferSize, Math.min(demand * fetchedMessagesDemandMultiplier, Int.MaxValue).toInt), messages.length)
-                    val (messagesToFetch, remainingMessages) = messages.splitAt(count)
-                    val (uidsAndDocuments, unprocessedMessages) = getDocumentsForMessages(currentFolder, messagesToFetch)
-                    val documents = uidsAndDocuments.map(_._2)
-                    folderAddUids(currentFolder, uidsAndDocuments.map(_._1))
-                    if (unprocessedMessages.isEmpty && remainingMessages.isEmpty) {
-                      logger.info(s"Email folder ${currentFolder.getFullName} fully imported.")
-                      Result(Some((foldersTail, queuedConfigs)), documents)
-                    } else {
-                      Result(Some(((currentFolder, Some((added, unprocessedMessages ++ remainingMessages))) +: foldersTail, queuedConfigs)), documents)
-                    }
-                  }
-                } catch {
-                  case e: FolderNotFoundException =>
-                    logger.error(s"Cannot find folder ${currentFolder.getFullName}, skipping.")
-                    unsubscribeFolder(currentFolder)
-                    Result(Some((foldersTail, queuedConfigs)), Vector.empty)
-                  case e@(_: MessagingException | _: IllegalStateException) =>
-                    logger.error(s"Error reading messages from folder ${currentFolder.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                    try {
-                      if (currentFolder.isOpen) {
-                        currentFolder.close(false)
-                      }
-                    } catch {
-                      case _: MessagingException | _: IllegalStateException =>
-                    }
-                    Thread.sleep(retryTime.toMillis)
-                    Result(Some(state), Vector.empty)
-                }
-              } else {
-                try {
-                  if (currentFolder.isOpen) {
-                    val uidValidity = currentFolder.getUIDValidity
-                    val uidsAndDocuments = messages.flatMap(message => {
-                      try {
-                        // message UID is retrieved from the cache, only if the message had been fetched already.
-                        val messageUid = currentFolder.getUID(message)
-                        Some((messageUid, documentForAction(RemovedMessage(currentFolder.getURLName, uidValidity = uidValidity, messageUid = messageUid))))
-                      } catch {
-                        case e: MessageRemovedException =>
-                          logger.warn(s"Message $message was removed before it had been fetched, skipping.")
-                          None
-                      }
-                    })
-                    folderRemoveUids(currentFolder, uidsAndDocuments.map(_._1))
-                    Result(Some((foldersTail, queuedConfigs)), uidsAndDocuments.map(_._2))
-                  } else {
-                    // if folder is not open, we cannot remove messages, since the UIDs have not been loaded.
-                    Result(Some((foldersTail, queuedConfigs)), Vector.empty)
-                  }
-                } catch {
-                  case e@(_: MessagingException | _: IllegalStateException) =>
-                    logger.error(s"Error deleting messages from folder ${currentFolder.getFullName}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                    Result(Some((foldersTail, queuedConfigs)), Vector.empty)
-                }
-              }
-            case (currentFolder, None) +: foldersTail =>
-              try {
-                openFolder(currentFolder)
-                val messages = fetchFolderMessagesWithUIDs(currentFolder)
-                val folderURLName = currentFolder.getURLName
-                val (_, uidValidity, messageUidsAlreadyAdded, _) = watchedFolders(folderURLName)
-                val messagesToAdd = if (messageUidsAlreadyAdded.nonEmpty) {
-                  // some Messages have already been inserted, we must filter some additions and do some removals in order to sync the KB.
-                  val messagesWithUids = messages.map {
-                    case (message) => (currentFolder.getUID(message), message)
-                  }
-                  val messageUidsToAdd = messagesWithUids.map(_._1).toSet
-                  val uidsToRemove = messageUidsAlreadyAdded -- messageUidsToAdd
-                  val removedDocuments = uidsToRemove.toVector.map {
-                    uid => documentForAction(RemovedMessage(folderURLName, uidValidity, uid))
-                  }
-                  folderRemoveUids(currentFolder, uidsToRemove)
-                  if (removedDocuments.nonEmpty) {
-                    logger.info(s"Resuming import of email folder ${currentFolder.getFullName}: ${removedDocuments.length} messages to remove.")
-                  }
-                  queueDocuments(removedDocuments)
-                  messagesWithUids.collect {
-                    case (uid, message) if !messageUidsAlreadyAdded.contains(uid) => message
-                  }
-                } else {
-                  messages
-                }
-                if (messagesToAdd.nonEmpty) {
-                  logger.info(s"Resuming import of email folder ${currentFolder.getFullName}: ${messagesToAdd.length} messages to add.")
-                }
-                Result(Some(((currentFolder, Some((true, messagesToAdd))) +: foldersTail, queuedConfigs)), Vector.empty)
-              } catch {
-                case e: FolderNotFoundException =>
-                  logger.error(s"Cannot find folder ${currentFolder.getFullName}, skipping.")
-                  unsubscribeFolder(currentFolder)
-                  Result(Some((foldersTail, queuedConfigs)), Vector.empty)
-                case e@(_: MessagingException | _: IllegalStateException) =>
-                  logger.error(s"Error processing folder ${currentFolder.getFullName}, retrying.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                  Thread.sleep(retryTime.toMillis)
-                  Result(Some(state), Vector.empty)
-              }
-            case _ =>
-              queuedConfigs match {
-                case headConfig +: tailConfigs =>
-                  try {
-                    if (!headConfig.store.isConnected) {
-                      headConfig.store.connect()
-                    }
-                    val folders = getStoreFolders(headConfig.store, headConfig.folderNamesToKeep)
-                    Result(Some(folders.map((_, None)), tailConfigs), Vector.empty)
-                  } catch {
-                    case e: AuthenticationFailedException =>
-                      logger.error(s"Invalid authentication for ${headConfig.store}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                      Result(Some(Vector.empty, tailConfigs), Vector.empty)
-                    case e@(_: MessagingException | _: IllegalStateException) =>
-                      logger.error(s"Error reading folders from ${headConfig.store}, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
-                      try {
-                        headConfig.store.close()
-                      } catch {
-                        case (_: MessagingException | _: IllegalStateException) =>
-                      }
-                      Result(Some(Vector.empty, tailConfigs), Vector.empty)
-                  }
-                case _ =>
-                  Result(None, Vector.empty)
-              }
-          }
-        }
-    }
-
     private def getStoreFolders(store: Store, folderNamesToKeep: Option[Set[String]]): Vector[IMAPFolder] = {
       //TODO: import all folders?
       val keepFolder = folderNamesToKeep.map(x => x.contains(_: String)).getOrElse((_: String) => true)
@@ -383,11 +649,11 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       }.toVector
     }
 
-    private def folderHoldsInterestingMessages(folder: Folder): Boolean = {
+    private def folderHoldsInterestingMessages(folder: IMAPFolder): Boolean = {
       folderHoldsMessages(folder) && !ignoredFolderNames.contains(folder.getName)
     }
 
-    private def folderHoldsMessages(folder: Folder): Boolean = {
+    private def folderHoldsMessages(folder: IMAPFolder): Boolean = {
       (folder.getType & javax.mail.Folder.HOLDS_MESSAGES) != 0
     }
 
@@ -409,27 +675,70 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
               case e: FolderClosedException =>
                 unrecoverableError = true
                 remainingMessages += message
+              case e: MessageRemovedException =>
+                logger.warn(s"$serviceAccountSource: Message $message was removed, skipping.")
               case e: MessagingException =>
-                logger.error(s"Error processing $message, skipping.\n${ExceptionUtils.getUnrolledStackTrace(e)}")
+                logger.error(s"$serviceAccountSource: Error processing $message, skipping.", e)
             }
           }
       }
       (documentBuilder.result(), remainingMessages.result())
     }
 
-    private def applyDiff(diff: ModelDiff): UpdateResults = {
-      //TODO: support at least email deletion
-      //We tag only the messages from IMAP as failed
-      UpdateResults.merge(
-        diff.contexts().asScala
-          .filter(_.stringValue().startsWith("imap://"))
-          .map(context => UpdateResults.allFailed(
-            diff.filter(null, null, null, context),
-            new ConverterException("IMAP repository could not be modified")
-          ))
-      )
+    def syncFolder(firstSync: Boolean, currentFolder: IMAPFolder, syncStatus: FolderSyncStatus) = {
+      try {
+        val messages = fetchFolderMessagesWithUIDs(currentFolder)
+        val folderURLName = currentFolder.getURLName
+        val messageUidsAlreadyAdded = syncStatus.addedMessageUids
+        val (messagesToAdd, messageUidsToRemove) = if (messageUidsAlreadyAdded.nonEmpty) {
+          // some Messages have already been inserted, we must filter some additions and do some removals in order to sync the KB.
+          val messagesWithUids = messages.map {
+            case (message) => (currentFolder.getUID(message), message)
+          }
+          val messageUidsToAdd = messagesWithUids.map(_._1).toSet
+          val uidsToRemove = messageUidsAlreadyAdded -- messageUidsToAdd
+          val removedDocuments = uidsToRemove.toVector.map {
+            uid => documentForAction(RemovedMessage(folderURLName, syncStatus.uidValidity, uid))
+          }
+          if (removedDocuments.nonEmpty) {
+            logger.info(s"$serviceAccountSource: Resuming import of email folder ${currentFolder.getFullName}. ${removedDocuments.length} messages to remove.")
+          }
+          publishDocuments(removedDocuments)
+          (messagesWithUids.collect {
+            case (uid, message) if !messageUidsAlreadyAdded.contains(uid) => message
+          }, uidsToRemove)
+        } else {
+          (messages, Set.empty)
+        }
+        if (firstSync) {
+          logger.info(s"$serviceAccountSource: Starting import of email folder ${currentFolder.getFullName}: ${messagesToAdd.length} messages to add.")
+        } else {
+          logger.info(s"$serviceAccountSource: Resuming import of email folder ${currentFolder.getFullName}: ${messagesToAdd.length} messages to add.")
+        }
+        Left(syncStatus.copy(addedMessageUids = syncStatus.addedMessageUids -- messageUidsToRemove,
+          messagesToAdd = messagesToAdd,
+          messagesToRemove = Vector.empty))
+      } catch {
+        case e: FolderNotFoundException =>
+          logger.error(s"$serviceAccountSource: Cannot find folder ${currentFolder.getFullName}, skipping.")
+          removeMessagesFromFolder(currentFolder.getURLName, syncStatus)
+          Right(true)
+        case e@(_: MessagingException | _: IllegalStateException) =>
+          logger.error(s"$serviceAccountSource: Error processing folder ${currentFolder.getFullName}, retrying.", e)
+          Right(false)
+      }
     }
-  }
 
-  object Tick
+    def fetchFolderMessagesWithUIDs(folder: IMAPFolder) = {
+      TimeExecution.timeInfo(s"$serviceAccountSource: Fetching message UIDs for folder ${folder.getFullName}", logger, {
+        scala.concurrent.blocking {
+          val messages = folder.getMessages
+          folder.fetch(messages, uidFetchProfile)
+          messages
+        }.toVector.asInstanceOf[Vector[IMAPMessage]]
+      })
+    }
+
+
+  }
 }

@@ -18,17 +18,19 @@ trait Service {
   def routeName: String
 }
 
-case class ServiceAccount(id: String, sources: Map[String, Source])
+case class ServiceAccount(service: Service, accountId: String, sources: Map[String, Source])
 
-case class ServiceAccountTask(service: Service, account: ServiceAccount, name: String, status: TaskStatus)
+case class ServiceAccountSource(service: Service, accountId: String, sourceName: String)
+
+case class ServiceAccountSourceTask(source: ServiceAccountSource, taskName: String, status: TaskStatus)
 
 sealed trait TaskStatus
 
 case object Idle extends TaskStatus
 
-case class Progress(startDate: Instant, progress: Option[Int]) extends TaskStatus
+case class Working(startDate: Instant = Instant.now(), progress: Option[Int] = None) extends TaskStatus
 
-case class Done(startDate: Instant, endDate: Instant) extends TaskStatus
+case class Done(startDate: Instant, endDate: Instant = Instant.now()) extends TaskStatus
 
 trait OAuth2Service extends Service {
   def oAuth2(redirectUri: String)(implicit config: Config): OAuth2

@@ -1,12 +1,11 @@
 package com.thymeflow.enricher
 
-import akka.actor.{ActorSystem, Cancellable}
+import akka.actor.Cancellable
 import akka.stream.ActorAttributes.SupervisionStrategy
 import akka.stream._
 import akka.stream.stage.{GraphStage, GraphStageLogic, InHandler, OutHandler}
 import com.typesafe.scalalogging.StrictLogging
 
-import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.FiniteDuration
 import scala.util.control.NonFatal
 
@@ -14,7 +13,6 @@ import scala.util.control.NonFatal
   * @author Thomas Pellissier Tanon
   */
 case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, delay: FiniteDuration)
-                                (implicit system: ActorSystem, executionContext: ExecutionContext)
   extends GraphStage[FlowShape[In, Out]] with StrictLogging {
 
   val in = Inlet[In]("DelayedBatch.in")
@@ -22,7 +20,6 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
   override val shape: FlowShape[In, Out] = FlowShape.of(in, out)
 
   override def createLogic(inheritedAttributes: Attributes): GraphStageLogic = new GraphStageLogic(shape) {
-
     lazy val decider = inheritedAttributes.get[SupervisionStrategy].map(_.decider).getOrElse(Supervision.stoppingDecider)
 
     private var agg: Option[Out] = None
@@ -31,11 +28,17 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
 
     override def preStart() = {
       if (tickScheduler.isEmpty) {
-        tickScheduler = Some(system.scheduler.schedule(delay, delay, getStageActor {
+        val tickActorRef = getStageActor {
           case (actorRef, DelayedBatch.Tick) =>
             pull()
             flush()
-        }.ref, DelayedBatch.Tick))
+        }.ref
+        tickScheduler = Some(this.materializer.schedulePeriodically(delay, delay,
+          new Runnable {
+            def run = {
+              tickActorRef ! DelayedBatch.Tick
+            }
+          }))
       }
 
       pull(in)
@@ -121,9 +124,8 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
 }
 
 object DelayedBatch {
-  def apply[T](aggregate: (T, T) => T, delay: FiniteDuration)
-              (implicit system: ActorSystem, executionContext: ExecutionContext): DelayedBatch[T, T] =
-    DelayedBatch[T, T](identity, aggregate, delay)(system, executionContext)
+  def apply[T](aggregate: (T, T) => T, delay: FiniteDuration): DelayedBatch[T, T] =
+    DelayedBatch[T, T](identity, aggregate, delay)
 
   private object Tick
 

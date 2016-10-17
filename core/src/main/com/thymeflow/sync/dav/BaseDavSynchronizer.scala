@@ -4,12 +4,16 @@ import java.io.{ByteArrayInputStream, IOException}
 import java.net.URI
 import javax.xml.namespace.QName
 
+import akka.actor.ActorRef
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
+import com.github.sardine.impl.SardineImpl
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.service._
+import com.thymeflow.service.source.DavSource
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.dav.BaseDavSynchronizer._
@@ -30,14 +34,23 @@ import scala.language.postfixOps
   */
 trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
-  protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory)
+  protected abstract class BaseDavPublisher[DocumentFetcher <: BaseDavDocumentsFetcher](valueFactory: ValueFactory, supervisor: ActorRef)
     extends BasePublisher {
 
-    private val fetchers = new mutable.HashMap[String, DocumentFetcher]()
+    private val fetchers = new mutable.HashMap[ServiceAccountSource, DocumentFetcher]()
     private val fetcherForDirectory = new mutable.HashMap[String, DocumentFetcher]
     private val queue = new mutable.Queue[Document]
 
+    protected def isValidSource(davSource: DavSource): Boolean
+
     override def receive: Receive = {
+      case account: ServiceAccount =>
+        account.sources.foreach {
+          case (sourceName, source: DavSource) if isValidSource(source) =>
+            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
+            addOrUpdateFetcher(sourceId, source)
+          case _ =>
+        }
       case Request(_) =>
         deliverWaitingDocuments()
       case Cancel =>
@@ -58,10 +71,16 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       this.self ! Tick
     })
 
-    protected def addFetcher(newFetcher: DocumentFetcher): Unit = {
-      //If it is a fetcher for the same base URI we only updates Sardine
-      val fetcher = fetchers.getOrElseUpdate(newFetcher.baseUri, newFetcher)
-      fetcher.updateSardine(newFetcher.sardine)
+    def newFetcher(source: DavSource, task: ServiceAccountSourceTask): DocumentFetcher
+
+    protected def addOrUpdateFetcher(sourceId: ServiceAccountSource, source: DavSource): Unit = {
+      // If there exists a fetcher for his sourceId we only update its source
+      val fetcher = fetchers.getOrElseUpdate(sourceId, {
+        val f = newFetcher(source, ServiceAccountSourceTask(sourceId, "sync", Idle))
+        supervisor ! f.task
+        f
+      })
+      fetcher.updateSource(source)
       fetcher.directories.foreach(fetcherForDirectory.put(_, fetcher))
 
       deliverWaitingDocuments()
@@ -83,6 +102,8 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
+      val taskStartStatus = Working()
+      supervisor ! fetcher.task.copy(status = taskStartStatus)
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
           onNext(document)
@@ -90,6 +111,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           queue.enqueue(document)
         }
       )
+      supervisor ! fetcher.task.copy(status = Done(taskStartStatus.startDate))
     }
 
     private def applyDiff(diff: ModelDiff): UpdateResults = {
@@ -107,12 +129,21 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
   }
 
-  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, var sardine: Sardine, val baseUri: String) {
+  protected def sardineFromSource(source: DavSource) = new SardineImpl(source.accessToken)
+
+  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, val task: ServiceAccountSourceTask, protected var source: DavSource) {
+
+    protected var sardine: Sardine = sardineFromSource(source)
+
+    def updateSource(newSource: DavSource): Unit = {
+      source = newSource
+      sardine = sardineFromSource(source)
+    }
 
     protected val mimeType: String
 
     private val elementsEtag = new mutable.HashMap[String, String]()
-    val directories = getDirectoryUris(baseUri)
+    val directories = getDirectoryUris(source.baseUri)
 
     def newDocuments: Traversable[Document] = {
       directories.flatMap(newDocumentsFromDirectory)
@@ -151,10 +182,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         val documentIri = valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath))
         Document(documentIri, convert(data, documentIri))
       })
-    }
-
-    def updateSardine(newSardine: Sardine): Unit = {
-      sardine = newSardine
     }
 
     protected def dataNodeName: QName
@@ -201,5 +228,4 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 object BaseDavSynchronizer {
 
   object Tick
-
 }

@@ -28,9 +28,13 @@ sealed trait TaskStatus
 
 case object Idle extends TaskStatus
 
-case class Working(startDate: Instant = Instant.now(), progress: Option[Int] = None) extends TaskStatus
+case class Progress(value: Long, total: Long)
+
+case class Working(startDate: Instant = Instant.now(), progress: Option[Progress] = None) extends TaskStatus
 
 case class Done(startDate: Instant, endDate: Instant = Instant.now()) extends TaskStatus
+
+case class Error(startDate: Instant, errorDate: Instant = Instant.now()) extends TaskStatus
 
 trait OAuth2Service extends Service {
   def oAuth2(redirectUri: String)(implicit config: Config): OAuth2

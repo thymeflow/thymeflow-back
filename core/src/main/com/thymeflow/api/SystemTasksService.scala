@@ -8,7 +8,7 @@ import akka.util.Timeout
 import com.thymeflow.Supervisor
 import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.api.SystemTasksService._
-import com.thymeflow.service.{Done, Idle, Working}
+import com.thymeflow.service.{Done, Error, Idle, Working}
 import com.thymeflow.utilities.JsonFormats
 import spray.json._
 
@@ -36,7 +36,13 @@ trait SystemTasksService extends Directives with CorsSupport {
             val (startDate, status, progress) = serviceAccountTask.status match {
               case Idle => (None, s"Idle", None)
               case Done(start, end) => (Some(start), s"Done $end", None)
-              case Working(start, p) => (Some(start), "Working", p)
+              case Working(start, progressOption) =>
+                val progressPercentageOption = progressOption.map {
+                  progress => (BigDecimal(progress.value) / BigDecimal(progress.total) * 100).toInt
+                }
+                (Some(start), "Working", progressPercentageOption)
+              case Error(start, end) =>
+                (Some(start), s"Error $end", None)
             }
             ResourceObject(
               Some(taskId.toString),

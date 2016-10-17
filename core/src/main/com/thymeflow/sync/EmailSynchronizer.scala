@@ -12,7 +12,7 @@ import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.service.source.ImapSource
-import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, Done => DoneService, Idle => IdleService, Working => WorkingService}
+import com.thymeflow.service.{Progress, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
 import com.thymeflow.update.UpdateResults
@@ -132,10 +132,9 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     def notifyTask(fetcher: EmailFetcher, fetcherTask: EmailFetcherTask) = {
       val serviceTask = fetcherTask match {
         case Idle =>
-          ServiceAccountSourceTask(fetcher.serviceAccountSource, "", IdleService)
+          ServiceAccountSourceTask(fetcher.serviceAccountSource, "Synchronization", IdleService)
         case Working(folderURLName, startDate, processed, toProcess) =>
-          val progress = (BigDecimal(processed) / BigDecimal(toProcess) * 100).toInt
-          ServiceAccountSourceTask(fetcher.serviceAccountSource, Some(folderURLName.getFile).getOrElse(""), WorkingService(startDate, Some(progress)))
+          ServiceAccountSourceTask(fetcher.serviceAccountSource, Some(folderURLName.getFile).getOrElse(""), WorkingService(startDate, Some(Progress(value = processed, total = toProcess))))
         case Done(folderURLName, startDate, endDate) =>
           ServiceAccountSourceTask(fetcher.serviceAccountSource, Some(folderURLName.getFile).getOrElse(""), DoneService(startDate, endDate))
       }

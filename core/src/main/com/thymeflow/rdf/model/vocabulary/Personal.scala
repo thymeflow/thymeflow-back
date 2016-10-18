@@ -8,6 +8,12 @@ object Personal {
   val PREFIX: String = "personal"
   val ONTOLOGY_DEFINITION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ontologyDefinition")
 
+  val SERVICE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Service")
+  val SERVICE_ACCOUNT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ServiceAccount")
+  val ACCOUNT_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "accountOf")
+  val SERVICE_ACCOUNT_SOURCE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ServiceAccountSource")
+  val SOURCE_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "sourceOf")
+
   val AGENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Agent")
   val CELLPHONE_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "CellphoneNumber")
   val CLUSTER_EVENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ClusterEvent")

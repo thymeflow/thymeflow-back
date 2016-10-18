@@ -1,5 +1,7 @@
 package com.thymeflow
 
+import java.net.URLEncoder
+
 import akka.actor.{Actor, ActorRef, Props}
 import akka.pattern.ask
 import akka.stream.scaladsl.GraphDSL.Implicits._
@@ -7,7 +9,8 @@ import akka.stream.scaladsl._
 import akka.stream.{SourceShape, _}
 import akka.util.Timeout
 import com.thymeflow.Supervisor.{AddServiceAccount, ApplyUpdate, ListTasks}
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.Synchronizer
@@ -15,6 +18,7 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.VectorExtensions
 import com.typesafe.config.Config
+import org.openrdf.model.vocabulary.RDF
 
 import scala.concurrent.Future
 
@@ -30,6 +34,8 @@ class Supervisor(config: Config,
   protected val taskMap = new scala.collection.mutable.HashMap[ServiceAccountSource, (Long, ServiceAccountSourceTask[_])]
 
   require(synchronizers.nonEmpty, "Supervisor requires at least one synchronizer")
+
+  val connection = repository.newConnection()
 
   def createPipeline() = {
     val sources = synchronizers
@@ -52,6 +58,22 @@ class Supervisor(config: Config,
     })
   }
 
+  def serviceAccountModel(serviceAccount: ServiceAccount) = {
+    val model = new SimpleHashModel()
+    val serviceNode = repository.valueFactory.createIRI(Personal.SERVICE.toString, "/" + URLEncoder.encode(serviceAccount.service.name, "UTF-8"))
+    val accountNode = repository.valueFactory.createIRI(serviceNode.toString, "/" + URLEncoder.encode(serviceAccount.accountId, "UTF-8"))
+    model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
+    model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
+    model.add(accountNode, Personal.ACCOUNT_OF, serviceNode)
+    serviceAccount.sources.foreach{
+      case (sourceName, _) =>
+        val sourceNode = repository.valueFactory.createIRI(accountNode.toString, "/" + URLEncoder.encode(sourceName, "UTF-8"))
+        model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE)
+        model.add(sourceNode, Personal.SOURCE_OF, accountNode)
+    }
+    model
+  }
+
   override def receive: Receive = {
     case serviceAccountTask: ServiceAccountSourceTask[_] =>
       val taskId = taskMap.get(serviceAccountTask.source).map(_._1).getOrElse {
@@ -63,6 +85,9 @@ class Supervisor(config: Config,
       sender() ! taskMap.values.toVector
     case AddServiceAccount(serviceAccount) =>
       pipeline.addServiceAccount(serviceAccount)
+      connection.begin()
+      connection.add(serviceAccountModel(serviceAccount))
+      connection.commit()
     case ApplyUpdate(update) =>
       implicit val timeout = com.thymeflow.actors.timeout
       sender() ! pipeline.applyUpdate(update)

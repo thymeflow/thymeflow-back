@@ -53,7 +53,7 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
                 path("token") {
                   parameter('code) { code =>
                     logger.info(s"${service.name} token received at time $durationSinceStart")
-                    oAuth2.accessToken(code).foreach(oAuth2TokenRenewal(_, onOAuth2Token(service)))
+                    oAuth2.accessToken(code).foreach(oAuth2TokenRenewal(service, _, onOAuth2Token(service)))
                     redirect(frontendUri, StatusCodes.TemporaryRedirect)
                   }
                 }
@@ -102,12 +102,24 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
   }
 
-  private def oAuth2TokenRenewal[T, R](token: OAuth2.RenewableToken[T], onNewToken: (OAuth2.RenewableToken[T] => R)): Unit = {
+
+  private def oAuth2TokenRenewal[R](service: Service, token: OAuth2.RenewableToken, onNewToken: (OAuth2.RenewableToken => R)): Unit = {
     onNewToken(token)
-    token.onRefresh(() => onNewToken(token))
+    import scala.concurrent.duration._
+    import scala.language.postfixOps
+    token.refreshAction match {
+      case Some(action) =>
+        val secondsDuration = token.expiresIn / 60
+        logger.info(s"$service service: Scheduling OAuth2 token refresh in $secondsDuration seconds.")
+        system.scheduler.scheduleOnce(secondsDuration seconds)(action().foreach {
+          refreshedToken => oAuth2TokenRenewal(service, refreshedToken, onNewToken)
+        })
+      case None =>
+        logger.warn(s"$service service: Received a non-refreshable token.")
+    }
   }
 
-  private def onOAuth2Token(service: OAuth2Service)(token: OAuth2.RenewableToken[_]): Unit = {
+  private def onOAuth2Token(service: OAuth2Service)(token: OAuth2.RenewableToken): Unit = {
     service.account(token.accessToken).foreach(onAccount)
   }
 

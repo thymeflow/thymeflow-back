@@ -71,7 +71,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       this.self ! Tick
     })
 
-    def newFetcher(source: DavSource, task: ServiceAccountSourceTask): DocumentFetcher
+    def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentFetcher
 
     protected def addOrUpdateFetcher(sourceId: ServiceAccountSource, source: DavSource): Unit = {
       // If there exists a fetcher for his sourceId we only update its source
@@ -131,7 +131,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
   protected def sardineFromSource(source: DavSource) = new SardineImpl(source.accessToken)
 
-  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, val task: ServiceAccountSourceTask, protected var source: DavSource) {
+  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, val task: ServiceAccountSourceTask[TaskStatus], protected var source: DavSource) {
 
     protected var sardine: Sardine = sardineFromSource(source)
 

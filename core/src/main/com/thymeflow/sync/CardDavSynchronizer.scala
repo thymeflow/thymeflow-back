@@ -8,8 +8,8 @@ import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
-import com.thymeflow.service.ServiceAccountSourceTask
 import com.thymeflow.service.source.{CardDavSource, DavSource}
+import com.thymeflow.service.{ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.converter.VCardConverter
 import com.thymeflow.sync.dav._
 import com.thymeflow.update.UpdateResults
@@ -26,12 +26,12 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory, supervisor) {
-    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
+    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
 
     override protected def isValidSource(davSource: DavSource): Boolean = davSource.isInstanceOf[CardDavSource]
   }
 
-  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask, source: DavSource)(implicit config: Config)
+  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
     extends BaseDavDocumentsFetcher(valueFactory, task, source) {
 
     private val CardDavNamespace = "urn:ietf:params:xml:ns:carddav"

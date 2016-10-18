@@ -8,8 +8,8 @@ import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
-import com.thymeflow.service.ServiceAccountSourceTask
 import com.thymeflow.service.source.{CalDavSource, DavSource}
+import com.thymeflow.service.{ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.converter.ICalConverter
 import com.thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
 import com.thymeflow.update.UpdateResults
@@ -26,12 +26,12 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory, supervisor) {
-    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
+    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
 
     override protected def isValidSource(davSource: DavSource): Boolean = davSource.isInstanceOf[CalDavSource]
   }
 
-  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask, source: DavSource)(implicit config: Config)
+  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
     extends BaseDavDocumentsFetcher(valueFactory, task, source) {
 
     private val CalDavNamespace = "urn:ietf:params:xml:ns:caldav"

@@ -9,7 +9,7 @@ import akka.util.Timeout
 import com.thymeflow.Supervisor.{AddServiceAccount, ApplyUpdate, ListTasks}
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.repository.Repository
-import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask}
+import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
@@ -27,7 +27,7 @@ class Supervisor(config: Config,
                  synchronizers: Seq[Synchronizer],
                  enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _]) extends Actor {
   protected var taskCounter = 0L
-  protected val taskMap = new scala.collection.mutable.HashMap[ServiceAccountSource, (Long, ServiceAccountSourceTask)]
+  protected val taskMap = new scala.collection.mutable.HashMap[ServiceAccountSource, (Long, ServiceAccountSourceTask[_])]
 
   require(synchronizers.nonEmpty, "Supervisor requires at least one synchronizer")
 
@@ -53,7 +53,7 @@ class Supervisor(config: Config,
   }
 
   override def receive: Receive = {
-    case serviceAccountTask: ServiceAccountSourceTask =>
+    case serviceAccountTask: ServiceAccountSourceTask[_] =>
       val taskId = taskMap.get(serviceAccountTask.source).map(_._1).getOrElse {
         taskCounter += 1
         taskCounter
@@ -81,7 +81,7 @@ object Supervisor {
     }
 
     def listTasks()(implicit timeout: Timeout, sender: ActorRef = Actor.noSender) = {
-      (supervisor ? ListTasks).asInstanceOf[Future[Seq[(Long, ServiceAccountSourceTask)]]]
+      (supervisor ? ListTasks).asInstanceOf[Future[Seq[(Long, ServiceAccountSourceTask[TaskStatus])]]]
     }
 
     def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {

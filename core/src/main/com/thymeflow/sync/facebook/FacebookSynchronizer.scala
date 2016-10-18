@@ -35,9 +35,9 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
   sealed trait FacebookState
 
-  case class Initial(task: ServiceAccountSourceTask, token: String) extends FacebookState
+  case class Initial(task: ServiceAccountSourceTask[TaskStatus], token: String) extends FacebookState
 
-  case class Scroll(task: ServiceAccountSourceTask, token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
+  case class Scroll(task: ServiceAccountSourceTask[TaskStatus], token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {

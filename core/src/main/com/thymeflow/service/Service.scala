@@ -24,7 +24,7 @@ case class ServiceAccount(service: Service, accountId: String, sources: Map[Stri
 
 case class ServiceAccountSource(service: Service, accountId: String, sourceName: String)
 
-case class ServiceAccountSourceTask(source: ServiceAccountSource, taskName: String, status: TaskStatus)
+case class ServiceAccountSourceTask[+T <: TaskStatus](source: ServiceAccountSource, taskName: String, status: T)
 
 sealed trait TaskStatus
 

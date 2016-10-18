@@ -12,7 +12,7 @@ import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.service.source.ImapSource
-import com.thymeflow.service.{Progress, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, Done => DoneService, Idle => IdleService, Working => WorkingService}
+import com.thymeflow.service.{Progress, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
 import com.thymeflow.update.UpdateResults
@@ -90,7 +90,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
   private case class FolderSubscription(folder: IMAPFolder, messageCountListener: MessageCountListener, connectionListener: ConnectionListener, inSync: Boolean)
 
-  private case class ConnectedSource(task: ServiceAccountSourceTask, source: ImapSource)
+  private case class ConnectedSource(task: ServiceAccountSourceTask[TaskStatus], source: ImapSource)
 
   private object Tick
 

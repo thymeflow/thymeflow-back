@@ -9,8 +9,8 @@ import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.service._
 import com.thymeflow.service.source.PathSource
-import com.thymeflow.service.{Idle, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter._
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
@@ -59,17 +59,17 @@ object FileSynchronizer extends Synchronizer {
 
   private sealed trait State
 
-  private case class PathState(filePath: Path, documentPath: Path, mimeType: Option[String] = None) extends State
+  private case class PathState(serviceAccountSource: ServiceAccountSource, filePath: Path, documentPath: Path, mimeType: Option[String] = None) extends State
 
-  private case class ZipFileState(zipFile: ZipFile, documentPath: Path) extends State
+  private case class ZipFileState(serviceAccountSource: ServiceAccountSource, zipFile: ZipFile, documentPath: Path) extends State
 
   private case class ZipIteration(zipFile: ZipFile, iterator: Iterator[ConvertibleFile]) extends State
 
-  private case class DocumentIteration(iterator: Iterator[Document]) extends State
+  private case class DocumentIteration(task: ServiceAccountSourceTask[Working], iterator: Iterator[Document]) extends State
 
   private case class DirectoryIteration(directoryStream: DirectoryStream[Path], iterator: Iterator[State], directories: scala.collection.mutable.Builder[PathState, Vector[PathState]]) extends State
 
-  private case class ConvertibleFile(path: Path, converter: Converter, inputStream: InputStream) extends State
+  private case class ConvertibleFile(serviceAccountSource: ServiceAccountSource, path: Path, converter: Converter, inputStream: InputStream) extends State
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, (Vector[State])] with BasePublisher {
@@ -83,9 +83,10 @@ object FileSynchronizer extends Synchronizer {
       case account: ServiceAccount =>
         account.sources.foreach {
           case (sourceName, source: PathSource) =>
-            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
-            queue(Vector(PathState(source.path, source.documentPath.getOrElse(source.path), source.mimeType)))
-            supervisor ! ServiceAccountSourceTask(source = sourceId, "Synchronization", Idle)
+            val serviceAccountSource = ServiceAccountSource(account.service, account.accountId, sourceName)
+            val documentPath = source.documentPath.getOrElse(source.path)
+            queue(Vector(PathState(serviceAccountSource, source.path, documentPath, source.mimeType)))
+            supervisor ! ServiceAccountSourceTask(source = serviceAccountSource, documentPath.toString, Idle)
           case _ =>
         }
       case Update(diff) => sender() ! applyDiff(diff)
@@ -113,16 +114,19 @@ object FileSynchronizer extends Synchronizer {
             val (nextStates, hit) =
               try {
                 state match {
-                  case documentIteration@DocumentIteration(iterator) =>
+                  case documentIteration@DocumentIteration(task, iterator) =>
                     if (iterator.hasNext) {
                       (Vector(documentIteration), Some(iterator.next()))
                     } else {
+                      supervisor ! task.copy(status = Done(startDate = task.status.startDate))
                       (Vector.empty, None)
                     }
                   case (convertibleFile: ConvertibleFile) =>
+                    val task = ServiceAccountSourceTask[Working](source = convertibleFile.serviceAccountSource, convertibleFile.path.toString, status = Working())
+                    supervisor ! task
                     val documentIterator = readConvertibleFile(convertibleFile)
-                    (Vector(DocumentIteration(documentIterator)), None)
-                  case PathState(path, documentPath, mimeType) =>
+                    (Vector(DocumentIteration(task, documentIterator)), None)
+                  case PathState(serviceAccountSource, path, documentPath, mimeType) =>
                     try {
                       if (Files.isDirectory(path)) {
                         val directories = Vector.newBuilder[PathState]
@@ -132,10 +136,10 @@ object FileSynchronizer extends Synchronizer {
                             val documentPathInsideDirectory = documentPath.resolve(pathInsideDirectory.getFileName)
                             try {
                               if (Files.isDirectory(pathInsideDirectory)) {
-                                directories += PathState(pathInsideDirectory, documentPathInsideDirectory)
+                                directories += PathState(serviceAccountSource, pathInsideDirectory, documentPathInsideDirectory)
                                 None
                               } else {
-                                retrieveFile(pathInsideDirectory, None, documentPathInsideDirectory)
+                                retrieveFile(serviceAccountSource, pathInsideDirectory, None, documentPathInsideDirectory)
                               }
                             } catch {
                               case e: SecurityException =>
@@ -145,7 +149,7 @@ object FileSynchronizer extends Synchronizer {
                         }.flatten
                         (Vector(DirectoryIteration(directoryStream, iterator, directories)), None)
                       } else {
-                        (retrieveFile(path, mimeType, documentPath).toVector, None)
+                        (retrieveFile(serviceAccountSource, path, mimeType, documentPath).toVector, None)
                       }
                     } catch {
                       case e@(_: IOException | _: SecurityException) =>
@@ -176,10 +180,10 @@ object FileSynchronizer extends Synchronizer {
                       }
                       (Vector.empty, None)
                     }
-                  case ZipFileState(zipfile: ZipFile, documentPath: Path) =>
+                  case ZipFileState(serviceAccountSource, zipfile: ZipFile, documentPath: Path) =>
                     (Vector(ZipIteration(zipfile, zipfile.entries().asScala.collect {
                       case entry if !entry.isDirectory =>
-                        retrieveFile(documentPath.resolve(entry.getName), () => zipfile.getInputStream(entry))
+                        retrieveFile(serviceAccountSource, documentPath.resolve(entry.getName), () => zipfile.getInputStream(entry))
                     }.flatten)), None)
                 }
               } catch {
@@ -201,26 +205,26 @@ object FileSynchronizer extends Synchronizer {
       }
     }
 
-    private def retrieveFile(path: Path, mimeTypeOption: Option[String], documentPath: Path): Option[State] = {
-      retrieveFile(path, mimeTypeOption.getOrElse(mimeTypeFromPath(documentPath)), documentPath) match {
+    private def retrieveFile(serviceAccountSource: ServiceAccountSource, path: Path, mimeTypeOption: Option[String], documentPath: Path): Option[State] = {
+      retrieveFile(serviceAccountSource, path, mimeTypeOption.getOrElse(mimeTypeFromPath(documentPath)), documentPath) match {
         case Some(state) => Some(state)
         case None =>
           mimeTypeOption match {
             case Some(mimeType) if mimeType != mimeTypeFromPath(documentPath) =>
-              retrieveFile(path, mimeTypeFromPath(documentPath), documentPath)
+              retrieveFile(serviceAccountSource, path, mimeTypeFromPath(documentPath), documentPath)
             case _ => None
           }
       }
     }
 
-    private def retrieveFile(path: Path, mimeType: String, documentPath: Path): Option[State] = {
+    private def retrieveFile(serviceAccountSource: ServiceAccountSource, path: Path, mimeType: String, documentPath: Path): Option[State] = {
       try {
         if (Files.exists(path)) {
           mimeType match {
             case "application/zip" | "application/x-zip-compressed" =>
-              Some(ZipFileState(new ZipFile(path.toFile), documentPath))
+              Some(ZipFileState(serviceAccountSource, new ZipFile(path.toFile), documentPath))
             case _ =>
-              retrieveFile(documentPath, mimeType, () => Files.newInputStream(path))
+              retrieveFile(serviceAccountSource, documentPath, mimeType, () => Files.newInputStream(path))
           }
         } else {
           logger.warn(s"File does not exist: $path")
@@ -233,13 +237,13 @@ object FileSynchronizer extends Synchronizer {
       }
     }
 
-    private def retrieveFile(path: Path, streamClosure: () => InputStream): Option[ConvertibleFile] = {
-      retrieveFile(path, mimeTypeFromPath(path), streamClosure)
+    private def retrieveFile(serviceAccountSource: ServiceAccountSource, path: Path, streamClosure: () => InputStream): Option[ConvertibleFile] = {
+      retrieveFile(serviceAccountSource, path, mimeTypeFromPath(path), streamClosure)
     }
 
-    private def retrieveFile(path: Path, mimeType: String, streamClosure: () => InputStream): Option[ConvertibleFile] = {
+    private def retrieveFile(serviceAccountSource: ServiceAccountSource, path: Path, mimeType: String, streamClosure: () => InputStream): Option[ConvertibleFile] = {
       converters.get(mimeType).map {
-        case converter => ConvertibleFile(path, converter, streamClosure())
+        case converter => ConvertibleFile(serviceAccountSource, path, converter, streamClosure())
       }.orElse {
         logger.warn(s"Unsupported MIME type $mimeType for $path")
         None

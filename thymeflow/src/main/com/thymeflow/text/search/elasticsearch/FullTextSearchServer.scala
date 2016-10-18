@@ -3,6 +3,9 @@ package com.thymeflow.text.search.elasticsearch
 import java.io.{File, IOException, InputStream}
 import java.util.UUID
 
+import akka.actor.Scheduler
+import akka.stream.Materializer
+import akka.stream.scaladsl.Source
 import com.thymeflow.text.search.FullTextSearchAgent
 import com.thymeflow.text.search.elasticsearch.ListenableActionFutureExtensions._
 import com.thymeflow.text.search.elasticsearch.exceptions.{ElasticSearchAggregateException, ElasticSearchBulkException, ElasticSearchShardFailure}
@@ -24,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class FullTextSearchServer[T] private(indexName: String,
                                       entityDeserialize: String => T,
                                       entitySerialize: T => String,
-                                      searchSize: Int = 100)(implicit executionContext: ExecutionContext)
+                                      searchSize: Int = 100)(implicit executionContext: ExecutionContext, scheduler: Scheduler)
   extends StrictLogging with FullTextSearchAgent[T] {
 
   private val entityFieldName = "entity"
@@ -50,17 +53,20 @@ class FullTextSearchServer[T] private(indexName: String,
     deleteIndex()
   }
 
-  def add(valuedEntities: Traversable[(T, String)]): Future[Unit] = {
-    val bulkRequest = esClient.prepareBulk()
-    valuedEntities.foreach {
-      case (entity, value) =>
-        bulkRequest.add(new IndexRequest(indexName).`type`("literal").source(literalJsonBuilder(entity, value)))
-    }
-    if (bulkRequest.numberOfActions() > 0) {
-      bulkRequest.execute.future.map(handleBulkResponseFailures)
-    } else {
-      Future.successful()
-    }
+  def add(valuedEntities: Traversable[(T, String)])(implicit materializer: Materializer): Future[Unit] = {
+    Source.fromIterator(() => valuedEntities.toIterator).grouped(500).mapAsync(1) {
+      batchValuedEntities =>
+        val bulkRequest = esClient.prepareBulk()
+        batchValuedEntities.foreach {
+          case (entity, value) =>
+            bulkRequest.add(new IndexRequest(indexName).`type`("literal").source(literalJsonBuilder(entity, value)))
+        }
+        if (bulkRequest.numberOfActions() > 0) {
+          bulkRequest.execute.future.map(handleBulkResponseFailures)
+        } else {
+          Future.successful()
+        }
+    }.runForeach(_ => ()).map(_ => ())
   }
 
   private def handleBulkResponseFailures(response: BulkResponse): Unit = {
@@ -99,16 +105,18 @@ class FullTextSearchServer[T] private(indexName: String,
   }
 
   private def recreateIndex() = {
-    deleteIndex().flatMap {
-      case _ =>
-        val mappings: InputStream = Thread.currentThread.getContextClassLoader.getResourceAsStream("textsearch/mappings.json")
-        val indexSettings: InputStream = Thread.currentThread.getContextClassLoader.getResourceAsStream("textsearch/index_settings.json")
-        esClient.admin.indices.prepareCreate(indexName).setSettings(IO.toString(indexSettings)).execute.future.flatMap {
-          case _ =>
-            esClient.admin.indices.preparePutMapping(indexName).setType("literal").setSource(IO.toString(mappings)).execute.future
-        }
-    }.map {
-      case _ => ()
+    FullTextSearchServer.isClusterReady().flatMap {
+      _ => deleteIndex().flatMap {
+        case _ =>
+          val mappings: InputStream = Thread.currentThread.getContextClassLoader.getResourceAsStream("textsearch/mappings.json")
+          val indexSettings: InputStream = Thread.currentThread.getContextClassLoader.getResourceAsStream("textsearch/index_settings.json")
+          esClient.admin.indices.prepareCreate(indexName).setSettings(IO.toString(indexSettings)).execute.future.flatMap {
+            case _ =>
+              esClient.admin.indices.preparePutMapping(indexName).setType("literal").setSource(IO.toString(mappings)).execute.future
+          }
+      }.map {
+        case _ => ()
+      }
     }
   }
 
@@ -135,11 +143,35 @@ object FullTextSearchServer extends StrictLogging {
     val settings: Settings = sBuilder.build
     val esNode = nodeBuilder.clusterName(clusterName).loadConfigSettings(true).settings(settings).node
     logger.info("[elastic-search] Started search node.")
-    (esNode, esNode.client())
+    (esNode, esNode.client)
+  }
+
+  import scala.concurrent.duration._
+
+  def isClusterReady(checkPeriod: FiniteDuration = 5 seconds)
+                    (implicit executionContext: ExecutionContext, scheduler: Scheduler): Future[Boolean] = {
+    def execute() = {
+      esClient.admin.cluster.preparePendingClusterTasks().execute().future.map {
+        tasks => tasks.pendingTasks().isEmpty
+      }.recover {
+        case _ => false
+      }
+    }
+    def recurrent(result: Future[Boolean]): Future[Boolean] = {
+      result.flatMap {
+        case false =>
+          logger.info(s"Cluster is not ready, checking again in $checkPeriod.")
+          akka.pattern.after(checkPeriod, scheduler)(recurrent(execute()))
+        case true =>
+          logger.info("Cluster is ready !")
+          Future.successful(true)
+      }
+    }
+    recurrent(execute())
   }
   private lazy val esDirectory: File = setupDirectories(dataDirectory)
 
-  def apply[T](entityDeserialize: String => T)(entitySerialize: T => String, searchSize: Int = 100)(implicit executionContext: ExecutionContext) = {
+  def apply[T](entityDeserialize: String => T)(entitySerialize: T => String, searchSize: Int = 100)(implicit executionContext: ExecutionContext, scheduler: Scheduler) = {
     // randomized index name
     val indexName = UUID.randomUUID().toString
     val server = new FullTextSearchServer[T](indexName, entityDeserialize, entitySerialize, searchSize)

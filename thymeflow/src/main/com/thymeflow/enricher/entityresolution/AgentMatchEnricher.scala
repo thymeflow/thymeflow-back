@@ -228,6 +228,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
     implicit val orderedAgents = (thisValue: Resource) => new Ordered[Resource] {
       override def compare(that: Resource): Int = thisValue.stringValue().compare(that.stringValue())
     }
+    implicit val scheduler = system.scheduler
     val result = FullTextSearchServer[Resource](agentRepresentativeIRIToResourceMap.apply)(_.stringValue(), searchSize = searchSize).flatMap {
       case textSearchServer =>
         // add all terms to the index
@@ -333,7 +334,9 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
             repositoryConnection.commit()
         }
     }
-    Await.result(result, Duration.Inf)
+    Await.result(result.recover {
+      case error => logger.error("[agent-attribute-identity-resolution-enricher] - Error.", error)
+    }, Duration.Inf)
   }
 
   protected def saveAgentsNameEmails() = {

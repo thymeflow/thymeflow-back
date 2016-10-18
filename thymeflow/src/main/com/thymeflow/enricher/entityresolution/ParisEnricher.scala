@@ -117,7 +117,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
     } else {
       _ => 1d
     }
-
+    implicit val scheduler = system.scheduler
     val result = FullTextSearchServer[ParisLiteral](x => literalIdToLiteral.apply(x.toInt))(_.id.toString, searchSize = searchSize).flatMap {
       case textSearchServer =>
         // add all terms to the index

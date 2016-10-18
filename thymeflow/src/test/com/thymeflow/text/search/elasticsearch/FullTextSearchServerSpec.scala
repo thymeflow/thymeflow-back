@@ -17,6 +17,7 @@ class FullTextSearchServerSpec extends FlatSpec with Matchers with ScalaFutures 
     val results = Vector(Set("John Doe", "Does John"), Set("John Doe", "Does John"), Set("Alice Wonders", "Alic Wondrs"), Set("Alice Wonders"))
 
     val matchPercent = 80
+    implicit val scheduler = system.scheduler
     val resultFuture = FullTextSearchServer(identity)(identity).flatMap {
       case server =>
         server.add(texts.zip(texts)).flatMap {

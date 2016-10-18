@@ -37,7 +37,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
   case class Initial(task: ServiceAccountSourceTask[TaskStatus], token: String) extends FacebookState
 
-  case class Scroll(task: ServiceAccountSourceTask[TaskStatus], token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
+  case class Scroll(task: ServiceAccountSourceTask[Working], token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
@@ -77,19 +77,19 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
               _ =>
                 if (tail.nonEmpty) {
                   val resultTask = scroll.task.status match {
-                    case status@Working(_, Some(progress)) =>
-                      scroll.task.copy(status = status.copy(progress = Some(progress.copy(value = progress.value + eventIds.size))))
+                    case Working(_, Some(progress)) =>
+                      scroll.task.copy(status = scroll.task.status.copy(progress = Some(progress.copy(value = progress.value + eventIds.size))))
                     case _ =>
-                      throw new java.lang.AssertionError("Excepted a Working TaskStatus with Some(Progress).")
+                      scroll.task
                   }
                   supervisor ! resultTask
                   Result(Some(scroll.copy(eventIds = tail)), Vector.empty)
                 } else {
                   val resultTask = scroll.task.status match {
-                    case status@Working(startDate, Some(progress)) =>
+                    case Working(startDate, Some(progress)) =>
                       scroll.task.copy(status = Done(startDate = startDate, endDate = Instant.now()))
                     case _ =>
-                      throw new java.lang.AssertionError("Excepted a Working TaskStatus with Some(Progress).")
+                      scroll.task
                   }
                   supervisor ! resultTask
                   Result(None, Vector(Document(scroll.context, scroll.model)))

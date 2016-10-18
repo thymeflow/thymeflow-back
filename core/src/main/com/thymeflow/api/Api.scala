@@ -109,7 +109,7 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
     import scala.language.postfixOps
     token.refreshAction match {
       case Some(action) =>
-        val secondsDuration = token.expiresIn / 60
+        val secondsDuration = token.expiresIn / 2
         logger.info(s"$service service: Scheduling OAuth2 token refresh in $secondsDuration seconds.")
         system.scheduler.scheduleOnce(secondsDuration seconds)(action().foreach {
           refreshedToken => oAuth2TokenRenewal(service, refreshedToken, onNewToken)

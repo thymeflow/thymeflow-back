@@ -16,6 +16,8 @@ trait Service {
   def name: String
 
   def routeName: String
+
+  override def toString: String = name
 }
 
 case class ServiceAccount(service: Service, accountId: String, sources: Map[String, Source])

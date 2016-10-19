@@ -7,10 +7,10 @@ import akka.http.scaladsl.server.Directives
 import akka.util.Timeout
 import com.thymeflow.Supervisor
 import com.thymeflow.actors.ActorSystemContext
+import com.thymeflow.api.JsonApi.{ResourceObject, ResourceObjects}
 import com.thymeflow.api.SystemTasksService._
 import com.thymeflow.service.{Done, Error, Idle, Working}
-import com.thymeflow.utilities.JsonFormats
-import spray.json._
+import spray.json.RootJsonFormat
 
 import scala.concurrent.duration._
 import scala.language.{implicitConversions, postfixOps}
@@ -91,17 +91,8 @@ object SystemTasksService {
                   endDate: Option[Instant],
                   progress: Option[Int])
 
-  case class ResourceObject[T](id: Option[String], `type`: String, attributes: T)
-
-  case class ResourceObjects[T](data: Seq[ResourceObject[T]])
-
-  object JsonProtocol extends DefaultJsonProtocol with JsonFormats.InstantJsonFormat {
-    implicit val printer: CompactPrinter = CompactPrinter
+  object JsonProtocol extends JsonApi.JsonProtocol {
     implicit val taskFormat: RootJsonFormat[Task] = jsonFormat9(Task)
-
-    implicit def resourceObjectFormat[T](implicit innerFormat: JsonFormat[T]): RootJsonFormat[ResourceObject[T]] = jsonFormat3(ResourceObject[T])
-
-    implicit def resourceObjectsFormat[T](implicit resourceObjectFormat: JsonFormat[ResourceObject[T]]): RootJsonFormat[ResourceObjects[T]] = jsonFormat1(ResourceObjects[T])
   }
 
 }

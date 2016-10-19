@@ -7,6 +7,7 @@ import com.thymeflow.actors._
 import com.thymeflow.rdf.FileSynchronization
 import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.repository.RepositoryFactory
+import com.thymeflow.service.{Email, Facebook, Google, Microsoft, File => FileService}
 import com.thymeflow.update.{UpdateSailInterceptor, Updater}
 
 import scala.language.postfixOps
@@ -19,6 +20,9 @@ trait MainApiDef extends Api {
   override protected val repository = RepositoryFactory.initializeRepository(Some(sailInterceptor))
 
   override protected val supervisor = Thymeflow.initialize(repository)
+  override protected val services = Vector(Google, Microsoft, Facebook, Email, FileService)
+
+  supervisor.addServices(services)
   sailInterceptor.setUpdater(new Updater(repository.newConnection(), supervisor))
 
   def main(args: Array[String]): Unit = {

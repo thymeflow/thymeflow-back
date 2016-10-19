@@ -21,7 +21,7 @@ import scala.concurrent.duration.Duration
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-trait Api extends SparqlService with SystemTasksService with CorsSupport {
+trait Api extends SparqlService with SystemTasksService with ServicesService with CorsSupport {
   protected implicit val actorSystemContext: ActorSystemContext
 
   import actorSystemContext.Implicits._
@@ -34,7 +34,11 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
     backendUri.withPath(backendUri.path / "oauth" / serviceName / "token").toString
   }
 
-  private val oAuth2Services = Vector(Google, Microsoft, Facebook)
+  protected def services: Seq[Service]
+
+  protected def oAuth2Services = services.collect {
+    case service: OAuth2Service => service
+  }
 
   private val uploadsPath = Paths.get(config.getString("thymeflow.data-directory"), "uploads")
 
@@ -86,6 +90,9 @@ trait Api extends SparqlService with SystemTasksService with CorsSupport {
       } ~
       path("system-tasks") {
         systemTasksRoute
+      } ~
+      path("services") {
+        servicesRoute
       }
   }
 

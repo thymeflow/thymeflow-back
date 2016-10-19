@@ -8,8 +8,8 @@ import akka.stream.scaladsl.GraphDSL.Implicits._
 import akka.stream.scaladsl._
 import akka.stream.{SourceShape, _}
 import akka.util.Timeout
-import com.thymeflow.Supervisor.{AddServiceAccount, ApplyUpdate, ListTasks}
-import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.Supervisor._
+import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
@@ -18,6 +18,7 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.VectorExtensions
 import com.typesafe.config.Config
+import org.openrdf.model.Model
 import org.openrdf.model.vocabulary.RDF
 
 import scala.concurrent.Future
@@ -58,17 +59,22 @@ class Supervisor(config: Config,
     })
   }
 
+  def serviceIRI(service: Service) = {
+    repository.valueFactory.createIRI(Personal.SERVICE.toString, "/" + URLEncoder.encode(service.name, "UTF-8"))
+  }
+
   def serviceAccountModel(serviceAccount: ServiceAccount) = {
     val model = new SimpleHashModel()
-    val serviceNode = repository.valueFactory.createIRI(Personal.SERVICE.toString, "/" + URLEncoder.encode(serviceAccount.service.name, "UTF-8"))
+    val serviceNode = serviceIRI(serviceAccount.service)
     val accountNode = repository.valueFactory.createIRI(serviceNode.toString, "/" + URLEncoder.encode(serviceAccount.accountId, "UTF-8"))
-    model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
     model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
+    model.add(accountNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(serviceAccount.accountId))
     model.add(accountNode, Personal.ACCOUNT_OF, serviceNode)
     val sources = serviceAccount.sources.toVector.map {
       case (sourceName, source) =>
         val sourceNode = repository.valueFactory.createIRI(accountNode.toString, "/" + URLEncoder.encode(sourceName, "UTF-8"))
         model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE)
+        model.add(sourceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(sourceName))
         model.add(sourceNode, Personal.SOURCE_OF, accountNode)
         (ServiceAccountSource(
           service = serviceAccount.service,
@@ -77,6 +83,13 @@ class Supervisor(config: Config,
           iri = sourceNode), source)
     }
     (model, sources)
+  }
+
+  def convertService(model: Model, service: Service) = {
+    val serviceNode = serviceIRI(service)
+    model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
+    model.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name))
+    model
   }
 
   override def receive: Receive = {
@@ -88,6 +101,12 @@ class Supervisor(config: Config,
       taskMap += serviceAccountTask.source -> (taskId, serviceAccountTask)
     case ListTasks =>
       sender() ! taskMap.values.toVector
+    case AddServices(services) =>
+      connection.begin()
+      connection.add(services.foldLeft(new SimpleHashModel(): Model) {
+        case (model, service) => convertService(model, service)
+      })
+      connection.commit()
     case AddServiceAccount(serviceAccount) =>
       val (model, sources) = serviceAccountModel(serviceAccount)
       connection.begin()
@@ -118,6 +137,10 @@ object Supervisor {
     def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {
       (supervisor ? ApplyUpdate(update)).asInstanceOf[Future[UpdateResults]]
     }
+
+    def addServices(services: Seq[Service]) = {
+      supervisor ! AddServices(services)
+    }
   }
 
   def props(repository: Repository,
@@ -129,5 +152,7 @@ object Supervisor {
   case class ApplyUpdate(update: Update)
 
   case class AddServiceAccount(serviceAccount: ServiceAccount)
+
+  case class AddServices(services: Seq[Service])
 
 }

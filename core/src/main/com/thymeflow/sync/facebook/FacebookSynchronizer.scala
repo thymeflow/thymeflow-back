@@ -45,10 +45,9 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
     private val facebookConverter = new FacebookConverter(valueFactory)
 
     override def receive: Receive = super.receive orElse {
-      case account: ServiceAccount =>
-        account.sources.foreach {
-          case (sourceName, source: FacebookGraphApiSource) =>
-            val serviceAccountSource = ServiceAccountSource(account.service, account.accountId, sourceName)
+      case serviceAccountSources: ServiceAccountSources =>
+        serviceAccountSources.sources.foreach {
+          case (serviceAccountSource, source: FacebookGraphApiSource) =>
             val task = ServiceAccountSourceTask(source = serviceAccountSource, "Synchronization", Idle)
             queue(Initial(task, source.accessToken))
             supervisor ! task

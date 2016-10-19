@@ -12,7 +12,7 @@ import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Negation
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.rdf.repository.Repository
-import com.thymeflow.service.ServiceAccount
+import com.thymeflow.service.ServiceAccountSources
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
@@ -41,8 +41,8 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     .to(Sink.ignore)
     .run()
 
-  def addServiceAccount(serviceAccount: ServiceAccount)(implicit sender: ActorRef = Actor.noSender): Unit = {
-    sourceRefs.foreach(_ ! serviceAccount)
+  def addServiceAccount(serviceAccountSources: ServiceAccountSources)(implicit sender: ActorRef = Actor.noSender): Unit = {
+    sourceRefs.foreach(_ ! serviceAccountSources)
   }
 
   def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {

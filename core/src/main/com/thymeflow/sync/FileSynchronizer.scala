@@ -80,10 +80,9 @@ object FileSynchronizer extends Synchronizer {
     }
 
     override def receive: Receive = super.receive orElse {
-      case account: ServiceAccount =>
-        account.sources.foreach {
-          case (sourceName, source: PathSource) =>
-            val serviceAccountSource = ServiceAccountSource(account.service, account.accountId, sourceName)
+      case serviceAccountSources: ServiceAccountSources =>
+        serviceAccountSources.sources.foreach {
+          case (serviceAccountSource, source: PathSource) =>
             val documentPath = source.documentPath.getOrElse(source.path)
             queue(Vector(PathState(serviceAccountSource, source.path, documentPath, source.mimeType)))
             supervisor ! ServiceAccountSourceTask(source = serviceAccountSource, documentPath.toString, Idle)

@@ -9,10 +9,10 @@ import akka.stream.scaladsl._
 import akka.stream.{SourceShape, _}
 import akka.util.Timeout
 import com.thymeflow.Supervisor.{AddServiceAccount, ApplyUpdate, ListTasks}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.rdf.repository.Repository
-import com.thymeflow.service.{ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, TaskStatus}
+import com.thymeflow.service._
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
@@ -65,13 +65,18 @@ class Supervisor(config: Config,
     model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
     model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
     model.add(accountNode, Personal.ACCOUNT_OF, serviceNode)
-    serviceAccount.sources.foreach{
-      case (sourceName, _) =>
+    val sources = serviceAccount.sources.toVector.map {
+      case (sourceName, source) =>
         val sourceNode = repository.valueFactory.createIRI(accountNode.toString, "/" + URLEncoder.encode(sourceName, "UTF-8"))
         model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE)
         model.add(sourceNode, Personal.SOURCE_OF, accountNode)
+        (ServiceAccountSource(
+          service = serviceAccount.service,
+          accountId = serviceAccount.accountId,
+          sourceName = sourceName,
+          iri = sourceNode), source)
     }
-    model
+    (model, sources)
   }
 
   override def receive: Receive = {
@@ -84,10 +89,11 @@ class Supervisor(config: Config,
     case ListTasks =>
       sender() ! taskMap.values.toVector
     case AddServiceAccount(serviceAccount) =>
-      pipeline.addServiceAccount(serviceAccount)
+      val (model, sources) = serviceAccountModel(serviceAccount)
       connection.begin()
-      connection.add(serviceAccountModel(serviceAccount))
+      connection.add(model)
       connection.commit()
+      pipeline.addServiceAccount(ServiceAccountSources(sources))
     case ApplyUpdate(update) =>
       implicit val timeout = com.thymeflow.actors.timeout
       sender() ! pipeline.applyUpdate(update)

@@ -12,7 +12,7 @@ import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.service.source.ImapSource
-import com.thymeflow.service.{Progress, ServiceAccount, ServiceAccountSource, ServiceAccountSourceTask, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
+import com.thymeflow.service.{Progress, ServiceAccountSource, ServiceAccountSourceTask, ServiceAccountSources, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.converter.{ConverterException, EmailMessageConverter}
 import com.thymeflow.update.UpdateResults
@@ -269,11 +269,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     }
 
     def receive: Receive = {
-      case account: ServiceAccount =>
-        account.sources.foreach {
-          case (sourceName, source: ImapSource) =>
-            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
-            addOrUpdateFetcher(sourceId, source)
+      case serviceAccountSources: ServiceAccountSources =>
+        serviceAccountSources.sources.foreach {
+          case (serviceAccountSource, source: ImapSource) =>
+            addOrUpdateFetcher(serviceAccountSource, source)
           case _ =>
         }
         handleFetchersState()

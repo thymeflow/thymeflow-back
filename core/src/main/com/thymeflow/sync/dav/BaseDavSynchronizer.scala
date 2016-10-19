@@ -44,11 +44,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     protected def isValidSource(davSource: DavSource): Boolean
 
     override def receive: Receive = {
-      case account: ServiceAccount =>
-        account.sources.foreach {
-          case (sourceName, source: DavSource) if isValidSource(source) =>
-            val sourceId = ServiceAccountSource(account.service, account.accountId, sourceName)
-            addOrUpdateFetcher(sourceId, source)
+      case serviceAccountSources: ServiceAccountSources =>
+        serviceAccountSources.sources.foreach {
+          case (serviceAccountSource, source: DavSource) if isValidSource(source) =>
+            addOrUpdateFetcher(serviceAccountSource, source)
           case _ =>
         }
       case Request(_) =>

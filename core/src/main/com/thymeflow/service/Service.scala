@@ -6,6 +6,7 @@ import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source.Source
 import com.typesafe.config.Config
+import org.openrdf.model.IRI
 
 import scala.concurrent.Future
 
@@ -22,7 +23,9 @@ trait Service {
 
 case class ServiceAccount(service: Service, accountId: String, sources: Map[String, Source])
 
-case class ServiceAccountSource(service: Service, accountId: String, sourceName: String)
+case class ServiceAccountSources(sources: Traversable[(ServiceAccountSource, Source)])
+
+case class ServiceAccountSource(service: Service, accountId: String, sourceName: String, iri: IRI)
 
 case class ServiceAccountSourceTask[+T <: TaskStatus](source: ServiceAccountSource, taskName: String, status: T)
 

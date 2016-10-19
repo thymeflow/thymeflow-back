@@ -473,20 +473,25 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     } else {
                       syncStatusAfterRemove
                     }
-                    val newTask = task match {
-                      case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
-                        folder.getURLName
-                        working.copy(processed = processed + justProcessed)
-                      case _ => Working(folderURLName = folder.getURLName,
-                        startDate = Instant.now,
-                        processed = 0L,
-                        toProcess = syncStatusAfterAdd.messagesToAdd.length.toLong + syncStatusAfterAdd.messagesToRemove.length.toLong)
-                    }
-                    val finalTask = if (syncStatusAfterAdd.messagesToAdd.isEmpty && syncStatusAfterAdd.messagesToRemove.isEmpty) {
+                    val toProcess = syncStatusAfterAdd.messagesToAdd.length.toLong + syncStatusAfterAdd.messagesToRemove.length.toLong
+                    val finalTask = if (toProcess == 0L) {
                       logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} fully synchronized.")
-                      Done(folderURLName = newTask.folderURLName, startDate = newTask.startDate, endDate = Instant.now())
+                      val startDate = task match {
+                        case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
+                          working.startDate
+                        case _ => Instant.now()
+                      }
+                      Done(folderURLName = folder.getURLName, startDate = startDate, endDate = Instant.now())
                     } else {
-                      newTask
+                      task match {
+                        case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
+                          working.copy(processed = processed + justProcessed)
+                        case _ =>
+                          Working(folderURLName = folder.getURLName,
+                            startDate = Instant.now(),
+                            processed = 0L,
+                            toProcess = toProcess)
+                      }
                     }
                     (connected.copy(
                       folders = folders + (folder.getURLName -> (subscribedFolder, Some(syncStatusAfterAdd)))
@@ -527,11 +532,19 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     }
                     syncFolder(previousFolderSyncStatusOption.isEmpty, folder, initialFolderSyncStatus) match {
                       case Left(folderSyncStatus) =>
-                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = true), Some(folderSyncStatus)))),
+                        val toProcess = folderSyncStatus.messagesToAdd.length.toLong + folderSyncStatus.messagesToRemove.length.toLong
+                        val newTask = if (toProcess != 0L) {
                           Working(folderURLName = folder.getURLName,
                             startDate = Instant.now(),
                             processed = 0L,
-                            toProcess = folderSyncStatus.messagesToAdd.length.toLong + folderSyncStatus.messagesToRemove.length.toLong))
+                            toProcess = toProcess)
+                        } else {
+                          logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} fully synchronized.")
+                          Done(folderURLName = folder.getURLName,
+                            startDate = Instant.now(),
+                            endDate = Instant.now())
+                        }
+                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = true), Some(folderSyncStatus)))), newTask)
                       case Right(true) =>
                         unsubscribeFolder(folderSubscription)
                         (connected.copy(folders = folders - folder.getURLName), Idle)

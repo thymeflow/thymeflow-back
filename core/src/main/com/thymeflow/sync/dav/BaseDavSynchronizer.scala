@@ -76,7 +76,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     protected def addOrUpdateFetcher(sourceId: ServiceAccountSource, source: DavSource): Unit = {
       // If there exists a fetcher for his sourceId we only update its source
       val fetcher = fetchers.getOrElseUpdate(sourceId, {
-        val f = newFetcher(source, ServiceAccountSourceTask(sourceId, "sync", Idle))
+        val f = newFetcher(source, ServiceAccountSourceTask(sourceId, "Synchronization", Idle))
         supervisor ! f.task
         f
       })

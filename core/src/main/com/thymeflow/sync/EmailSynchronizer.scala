@@ -10,6 +10,7 @@ import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
 import akka.stream.scaladsl.Source
 import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.service.source.ImapSource
 import com.thymeflow.service.{Progress, ServiceAccountSource, ServiceAccountSourceTask, ServiceAccountSources, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
@@ -633,7 +634,9 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       val context = messageContext(action.folderURLName, action.uidValidity, action.messageUid)
       action match {
         case action: AddedMessage =>
-          Document(context, emailMessageConverter.convert(action.message, context))
+          val model = emailMessageConverter.convert(action.message, context)
+          model.add(context, Personal.DOCUMENT_OF, serviceAccountSource.iri, context)
+          Document(context, model)
         case action: RemovedMessage =>
           Document(context, SimpleHashModel.empty)
       }

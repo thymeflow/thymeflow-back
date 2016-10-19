@@ -11,6 +11,7 @@ import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.service._
 import com.thymeflow.service.source.FacebookGraphApiSource
 import com.thymeflow.sync.Synchronizer
@@ -90,6 +91,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                     case _ =>
                       scroll.task
                   }
+                  scroll.model.add(scroll.context, Personal.DOCUMENT_OF, scroll.task.source.iri, scroll.context)
                   supervisor ! resultTask
                   Result(None, Vector(Document(scroll.context, scroll.model)))
                 }

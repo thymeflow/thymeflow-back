@@ -12,6 +12,7 @@ import com.github.sardine.{DavResource, Sardine}
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.service._
 import com.thymeflow.service.source.DavSource
 import com.thymeflow.sync.Synchronizer
@@ -179,7 +180,9 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       elementsEtag.put(davResource.getPath, davResource.getEtag)
       Option(davResource.getCustomPropsNS.get(dataNodeName)).map(data => {
         val documentIri = valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath))
-        Document(documentIri, convert(data, documentIri))
+        val model = convert(data, documentIri)
+        model.add(documentIri, Personal.DOCUMENT_OF, task.source.iri, documentIri)
+        Document(documentIri, model)
       })
     }
 

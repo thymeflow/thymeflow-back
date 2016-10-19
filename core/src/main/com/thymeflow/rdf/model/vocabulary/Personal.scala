@@ -13,6 +13,7 @@ object Personal {
   val ACCOUNT_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "accountOf")
   val SERVICE_ACCOUNT_SOURCE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ServiceAccountSource")
   val SOURCE_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "sourceOf")
+  val DOCUMENT_OF: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "documentOf")
 
   val AGENT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Agent")
   val CELLPHONE_NUMBER: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "CellphoneNumber")

@@ -9,6 +9,7 @@ import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.service._
 import com.thymeflow.service.source.PathSource
 import com.thymeflow.sync.Synchronizer.Update
@@ -260,7 +261,9 @@ object FileSynchronizer extends Synchronizer {
       }
       try {
         val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context).map {
-          case (documentIri, model) => Document(documentIri, model)
+          case (documentIri, model) =>
+            model.add(documentIri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, documentIri)
+            Document(documentIri, model)
         }
         new Iterator[Document] {
           override def hasNext: Boolean = {

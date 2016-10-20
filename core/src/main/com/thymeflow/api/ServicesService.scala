@@ -124,7 +124,7 @@ trait ServicesService extends Directives with CorsSupport {
                 }
                 ResourceObject(
                   id = Some(service.stringValue()),
-                  `type` = "service",
+                  `type` = "data-service",
                   Service(name = serviceName.stringValue(),
                     eventsCount = accounts.map(_.eventsCount).sum,
                     locationsCount = accounts.map(_.locationsCount).sum,

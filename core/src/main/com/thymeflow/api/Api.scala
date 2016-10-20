@@ -91,7 +91,7 @@ trait Api extends SparqlService with SystemTasksService with ServicesService wit
       path("system-tasks") {
         systemTasksRoute
       } ~
-      path("services") {
+      path("data-services") {
         servicesRoute
       }
   }

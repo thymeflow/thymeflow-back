@@ -21,7 +21,7 @@ import scala.concurrent.duration.Duration
   * @author Thomas Pellissier Tanon
   * @author David Montoya
   */
-trait Api extends SparqlService with SystemTasksService with ServicesService with CorsSupport {
+trait Api extends SparqlService with SystemTasksService with DataServicesService with CorsSupport {
   protected implicit val actorSystemContext: ActorSystemContext
 
   import actorSystemContext.Implicits._
@@ -91,7 +91,7 @@ trait Api extends SparqlService with SystemTasksService with ServicesService wit
       path("system-tasks") {
         systemTasksRoute
       } ~
-      path("services") {
+      path("data-services") {
         servicesRoute
       }
   }

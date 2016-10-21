@@ -2,8 +2,8 @@ package com.thymeflow.api
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.server.Directives
+import com.thymeflow.api.DataServicesService.{Account, JsonProtocol, Service}
 import com.thymeflow.api.JsonApi.{ResourceObject, ResourceObjects}
-import com.thymeflow.api.ServicesService.{Account, JsonProtocol, Service}
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.repository.Repository
@@ -16,7 +16,7 @@ import scala.language.{implicitConversions, postfixOps}
 /**
   * @author David Montoya
   */
-trait ServicesService extends Directives with CorsSupport {
+trait DataServicesService extends Directives with CorsSupport {
   protected def repository: Repository
 
   import JsonProtocol._
@@ -124,7 +124,7 @@ trait ServicesService extends Directives with CorsSupport {
                 }
                 ResourceObject(
                   id = Some(service.stringValue()),
-                  `type` = "service",
+                  `type` = "data-service",
                   Service(name = serviceName.stringValue(),
                     eventsCount = accounts.map(_.eventsCount).sum,
                     locationsCount = accounts.map(_.locationsCount).sum,
@@ -143,7 +143,7 @@ trait ServicesService extends Directives with CorsSupport {
   }
 }
 
-object ServicesService {
+object DataServicesService {
 
   case class Account(name: String, eventsCount: Long, locationsCount: Long, messagesCount: Long, agentsCount: Long)
 

@@ -1,6 +1,6 @@
 package com.thymeflow.sync.converter
 
-import java.io.{ByteArrayInputStream, InputStream}
+import java.io.InputStream
 import javax.mail.Message.RecipientType
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message, Multipart, Part}
@@ -24,23 +24,19 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
     val wholeContext = context(None)
-    Iterator((wholeContext, convert(new MimeMessage(null, stream), wholeContext)))
+    Iterator((wholeContext, convert(new MimeMessage(null, stream), wholeContext, createSourceContext)))
   }
 
-  def convert(str: String, context: Resource): Model = {
-    convert(new MimeMessage(null, new ByteArrayInputStream(str.getBytes)), context)
-  }
-
-  def convert(message: Message, context: Resource): Model = {
+  def convert(message: Message, context: Resource, createSourceContext: (Model, String) => IRI): Model = {
     val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context)
+    val converter = new ToModelConverter(model, context, createSourceContext)
     converter.convert(message)
     model
   }
 
-  private class ToModelConverter(model: Model, context: Resource) {
+  private class ToModelConverter(model: Model, context: Resource, createSourceContext: (Model, String) => IRI) {
     def convert(message: Message): Resource = {
       val messageResource = resourceForMessage(message)
       model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
@@ -97,14 +93,14 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
 
     private def convert(address: InternetAddress): Option[Resource] = {
       emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = uuidConverter.createIRI(address)
-        model.add(personResource, RDF.TYPE, Personal.AGENT)
+        val personResource = uuidConverter.createIRI(address, id => createSourceContext(model, id))
+        model.add(personResource, RDF.TYPE, Personal.AGENT, personResource)
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(name, address.getAddress).foreach(name =>
-            model.add(personResource, SchemaOrg.NAME, name)
+            model.add(personResource, SchemaOrg.NAME, name, personResource)
           )
         )
-        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource)
+        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, personResource)
         personResource
       })
     }

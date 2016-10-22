@@ -34,7 +34,7 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
     val wholeContext = context(None)
     Iterator((wholeContext, convert(Ezvcard.parse(stream).all.asScala, wholeContext)))
   }

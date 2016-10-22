@@ -1,5 +1,6 @@
 package com.thymeflow.sync
 
+import java.net.URLEncoder
 import java.time.Instant
 import javax.mail.event._
 import javax.mail.{FolderClosedException, _}
@@ -20,7 +21,7 @@ import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, ValueFactory}
+import org.openrdf.model.{IRI, Model, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -204,9 +205,8 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       if (shouldFetch) {
         processMessageQueue()
         fetchers.values.view.map {
-          case (fetcher, fetcherState, fetcherTask) => {
+          case (fetcher, fetcherState, fetcherTask) =>
             (fetcher, fetcher.stateHandler(fetcherState, fetcherTask, totalDemand))
-          }
         }.collectFirst {
           case (fetcher, Some(handler)) => (fetcher, handler)
         }.exists {
@@ -647,7 +647,12 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       val context = messageContext(action.folderURLName, action.uidValidity, action.messageUid)
       action match {
         case action: AddedMessage =>
-          val model = emailMessageConverter.convert(action.message, context)
+          val contextIRI = (model: Model, id: String) => {
+            val iri = valueFactory.createIRI(s"${serviceAccountSource.iri.toString}?id=${URLEncoder.encode(id, "UTF-8")}")
+            model.add(iri, Personal.DOCUMENT_OF, serviceAccountSource.iri, iri)
+            iri
+          }
+          val model = emailMessageConverter.convert(action.message, context, contextIRI)
           model.add(context, Personal.DOCUMENT_OF, serviceAccountSource.iri, context)
           Document(context, model)
         case action: RemovedMessage =>

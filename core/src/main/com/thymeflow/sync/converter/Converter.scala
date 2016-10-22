@@ -11,7 +11,7 @@ import org.openrdf.model.{IRI, Model}
   */
 trait Converter {
 
-  def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)]
+  def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)]
 
   def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
     (str, UpdateResults.allFailed(diff,

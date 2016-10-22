@@ -18,7 +18,7 @@ import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
 import org.apache.commons.io.FilenameUtils
-import org.openrdf.model.{IRI, ValueFactory}
+import org.openrdf.model.{IRI, Model, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -243,7 +243,7 @@ object FileSynchronizer extends Synchronizer {
 
     private def retrieveFile(serviceAccountSource: ServiceAccountSource, path: Path, mimeType: String, streamClosure: () => InputStream): Option[ConvertibleFile] = {
       converters.get(mimeType).map {
-        case converter => ConvertibleFile(serviceAccountSource, path, converter, streamClosure())
+        converter => ConvertibleFile(serviceAccountSource, path, converter, streamClosure())
       }.orElse {
         logger.warn(s"Unsupported MIME type $mimeType for $path")
         None
@@ -259,8 +259,13 @@ object FileSynchronizer extends Synchronizer {
           valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
         case None => valueFactory.createIRI(baseUri)
       }
+      def createSourceContext(model: Model, id: String): IRI = {
+        val iri = valueFactory.createIRI(s"${convertibleFile.serviceAccountSource.iri.toString}?id=${URLEncoder.encode(id, "UTF-8")}")
+        model.add(iri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, iri)
+        iri
+      }
       try {
-        val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context).map {
+        val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context, createSourceContext).map {
           case (documentIri, model) =>
             model.add(documentIri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, documentIri)
             Document(documentIri, model)

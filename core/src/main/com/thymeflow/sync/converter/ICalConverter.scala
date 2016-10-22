@@ -44,7 +44,7 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
     model
   }
 
-  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
     val wholeContext = context(None)
     Iterator((wholeContext, convert(Biweekly.parse(stream).all.asScala, wholeContext)))
   }

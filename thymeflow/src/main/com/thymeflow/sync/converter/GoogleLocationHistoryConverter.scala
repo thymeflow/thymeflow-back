@@ -25,7 +25,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory)(implicit config
   implicit val locationFormat = jsonFormat7(Location)
   implicit val locationHistoryFormat = jsonFormat1(LocationHistory)
 
-  override def convert(stream: InputStream, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
     convert(JsonParser(IOUtils.toByteArray(stream)), context)
   }
 
@@ -41,7 +41,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory)(implicit config
 
   private def convert(locationHistory: LocationHistory, context: Option[String] => IRI): Iterator[(IRI, Model)] = {
     val locationsGroupedByDay = locationHistory.locations.view.map {
-      case location => (location.time, location)
+      location => (location.time, location)
     }.collect {
       case (Some(time), location) => (time, location)
     }.groupBy {

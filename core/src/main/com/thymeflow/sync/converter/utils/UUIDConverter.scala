@@ -9,8 +9,15 @@ import org.openrdf.model.{BNode, IRI, ValueFactory}
   */
 class UUIDConverter(valueFactory: ValueFactory) {
 
-  def uuidBasedOnString(base: String) = {
-    UUID.nameUUIDFromBytes(base.getBytes)
+  def uuidFromByteArrayBase(base: Array[Byte]) = {
+    UUID.nameUUIDFromBytes(base)
+  }
+
+  def uuidFromBase(base: Any) = {
+    base match {
+      case byteArray: Array[Byte] => uuidFromByteArrayBase(byteArray)
+      case _ => uuidFromByteArrayBase(base.toString.getBytes)
+    }
   }
 
   def convert(rawUuid: String): IRI = {
@@ -24,7 +31,7 @@ class UUIDConverter(valueFactory: ValueFactory) {
   }
 
   def createIRI(base: Any, iriCreator: String => IRI): IRI = {
-    iriCreator(uuidBasedOnString(base.toString).toString)
+    iriCreator(uuidFromBase(base).toString)
   }
 
   def createIRI(base: Any): IRI = {
@@ -32,6 +39,6 @@ class UUIDConverter(valueFactory: ValueFactory) {
   }
 
   def createBNode(base: Any): BNode = {
-    valueFactory.createBNode(uuidBasedOnString(base.toString).toString)
+    valueFactory.createBNode(uuidFromBase(base).toString)
   }
 }

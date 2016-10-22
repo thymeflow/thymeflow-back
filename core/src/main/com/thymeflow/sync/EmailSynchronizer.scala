@@ -68,14 +68,14 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
 
     def messageUid: Long
 
-    def folderURLName: URLName
+    def folderURLName: String
   }
 
   private case class AddedMessage(uidValidity: Long, messageUid: Long, message: Message) extends ImapAction {
-    def folderURLName = message.getFolder.getURLName
+    def folderURLName = message.getFolder.getURLName.toString
   }
 
-  private case class RemovedMessage(folderURLName: URLName, uidValidity: Long, messageUid: Long) extends ImapAction
+  private case class RemovedMessage(folderURLName: String, uidValidity: Long, messageUid: Long) extends ImapAction
 
   private sealed trait QueuedMessage
 
@@ -115,10 +115,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
   private sealed trait FoldersEmailFetcherState extends EmailFetcherState
 
   private case class Connected(source: ImapSource,
-                               folders: Map[URLName, (FolderSubscription, Option[FolderSyncStatus])]) extends FoldersEmailFetcherState
+                               folders: Map[String, (FolderSubscription, Option[FolderSyncStatus])]) extends FoldersEmailFetcherState
 
   private case class Error(source: ImapSource,
-                           foldersOption: Option[Map[URLName, (FolderSubscription, Option[FolderSyncStatus])]]) extends FoldersEmailFetcherState
+                           foldersOption: Option[Map[String, (FolderSubscription, Option[FolderSyncStatus])]]) extends FoldersEmailFetcherState
 
   private case class NewSource(source: ImapSource, state: FoldersEmailFetcherState) extends EmailFetcherState
 
@@ -226,9 +226,9 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         case ConnectionClosed(fetcher, folder) =>
           fetchers.get(fetcher.serviceAccountSource) match {
             case Some((_, connected@Connected(_, folders), task)) =>
-              val newFolders = folders.get(folder.getURLName) match {
+              val newFolders = folders.get(folder.getURLName.toString) match {
                 case Some((folderSubscription@FolderSubscription(_, _, _, true), syncStatusOption)) =>
-                  folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), syncStatusOption))
+                  folders + (folder.getURLName.toString -> (folderSubscription.copy(inSync = false), syncStatusOption))
                 case _ => folders
               }
               fetchers += fetcher.serviceAccountSource -> (fetcher, connected.copy(folders = newFolders), task)
@@ -250,14 +250,14 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
             case Some((_, fetcherState, task)) =>
               val newState = fetcherState match {
                 case connected@Connected(_, folders) =>
-                  val newFolders = folders.get(folder.getURLName) match {
+                  val newFolders = folders.get(folder.getURLName.toString) match {
                     case Some((folderSubscription@FolderSubscription(_, _, _, true), Some(syncStatus))) =>
                       val newSyncStatus = if (added) {
                         syncStatus.copy(messagesToAdd = syncStatus.messagesToAdd ++ messages)
                       } else {
                         syncStatus.copy(messagesToRemove = syncStatus.messagesToRemove ++ messages)
                       }
-                      folders + (folder.getURLName -> (folderSubscription, Some(newSyncStatus)))
+                      folders + (folder.getURLName.toString -> (folderSubscription, Some(newSyncStatus)))
                     case _ => folders
                   }
                   fetchers += fetcher.serviceAccountSource -> (fetcher, connected.copy(folders = newFolders), task)
@@ -355,10 +355,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                 case e: FolderNotFoundException =>
                   logger.error(s"$serviceAccountSource: Cannot find folder ${folder.getFullName}, skipping.")
                   unsubscribeFolder(folderSubscription, close = true)
-                  foldedConnected.copy(folders = folders - folder.getURLName)
+                  foldedConnected.copy(folders = folders - folder.getURLName.toString)
                 case e@(_: MessagingException | _: IllegalStateException) =>
                   logger.error(s"$serviceAccountSource: Error reading folder ${folder.getFullName}, retrying later.", e)
-                  foldedConnected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), syncStatus)))
+                  foldedConnected.copy(folders = folders + (folder.getURLName.toString -> (folderSubscription.copy(inSync = false), syncStatus)))
               }
           }, task)
         case _ =>
@@ -379,7 +379,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
             try {
               val store = newSource.connect()
               val newFolders = getStoreFolders(store, newSource.folderNamesToKeep)
-              val newFolderURLNameSet = newFolders.map(_.getURLName).toSet
+              val newFolderURLNameSet = newFolders.map(_.getURLName.toString).toSet
               val removedFolders = folders.keySet -- newFolderURLNameSet
               removedFolders.foreach {
                 removedFolderURLName =>
@@ -391,7 +391,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
               }
               val folderStatus = newFolders.map {
                 folder =>
-                  val folderSyncStatus = folders.get(folder.getURLName) match {
+                  val folderSyncStatus = folders.get(folder.getURLName.toString) match {
                     case Some((_, previousFolderSyncStatusOption)) =>
                       previousFolderSyncStatusOption.map {
                         previousFolderSyncStatus => previousFolderSyncStatus.copy(messagesToAdd = Vector.empty, messagesToRemove = Vector.empty)
@@ -400,7 +400,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                       None
                   }
                   val folderSubscription = subscribeFolder(folder)
-                  folder.getURLName -> (folderSubscription, folderSyncStatus)
+                  folder.getURLName.toString -> (folderSubscription, folderSyncStatus)
               }
               (Connected(newSource, folderStatus.toMap), Idle)
             } catch {
@@ -419,7 +419,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
             try {
               val store = source.connect()
               val folders = getStoreFolders(store, source.folderNamesToKeep).map {
-                folder => folder.getURLName -> (subscribeFolder(folder), None)
+                folder => folder.getURLName.toString -> (subscribeFolder(folder), None)
               }
               (Connected(source, folders.toMap), Idle)
             } catch {
@@ -438,7 +438,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                 try {
                   if (openFolder(folder)) {
                     logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} needs to be reloaded.")
-                    (connected.copy(folders = folders + (folder.getURLName -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
+                    (connected.copy(folders = folders + (folder.getURLName.toString -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
                   } else {
                     var justProcessed = 0L
                     val syncStatusAfterRemove = if (syncStatus.messagesToRemove.nonEmpty) {
@@ -447,7 +447,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                         try {
                           // message UID is retrieved from the cache, only if the message had been fetched already.
                           val messageUid = folder.getUID(message)
-                          Some((messageUid, documentForAction(RemovedMessage(folder.getURLName, uidValidity = uidValidity, messageUid = messageUid))))
+                          Some((messageUid, documentForAction(RemovedMessage(folder.getURLName.toString, uidValidity = uidValidity, messageUid = messageUid))))
                         } catch {
                           case e: MessageRemovedException =>
                             logger.warn(s"$serviceAccountSource: Message $message was removed before it had been fetched, skipping.")
@@ -477,14 +477,14 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     val finalTask = if (toProcess == 0L) {
                       logger.info(s"$serviceAccountSource: Email folder ${folder.getFullName} fully synchronized.")
                       val startDate = task match {
-                        case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
+                        case working@Working(folderURLName, _, processed, _) if folderURLName.toString == folder.getURLName.toString =>
                           working.startDate
                         case _ => Instant.now()
                       }
                       Done(folderURLName = folder.getURLName, startDate = startDate, endDate = Instant.now())
                     } else {
                       task match {
-                        case working@Working(folderURLName, _, processed, _) if folderURLName == folder.getURLName =>
+                        case working@Working(folderURLName, _, processed, _) if folderURLName.toString == folder.getURLName.toString =>
                           working.copy(processed = processed + justProcessed)
                         case _ =>
                           Working(folderURLName = folder.getURLName,
@@ -494,7 +494,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                       }
                     }
                     (connected.copy(
-                      folders = folders + (folder.getURLName -> (subscribedFolder, Some(syncStatusAfterAdd)))
+                      folders = folders + (folder.getURLName.toString -> (subscribedFolder, Some(syncStatusAfterAdd)))
                     ), finalTask)
                   }
                 } catch {
@@ -502,7 +502,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     logger.error(s"$serviceAccountSource: Cannot find folder ${folder.getFullName}, skipping.")
                     unsubscribeFolder(subscribedFolder)
                     removeMessagesFromFolder(folder.getURLName, syncStatus)
-                    (connected.copy(folders = folders - folder.getURLName), Idle)
+                    (connected.copy(folders = folders - folder.getURLName.toString), Idle)
                   case e@(_: MessagingException | _: IllegalStateException) =>
                     logger.error(s"$serviceAccountSource: Error reading messages from folder ${folder.getFullName}, retrying.", e)
                     try {
@@ -512,7 +512,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     } catch {
                       case _: MessagingException | _: IllegalStateException =>
                     }
-                    (connected.copy(folders = folders + (folder.getURLName -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
+                    (connected.copy(folders = folders + (folder.getURLName.toString -> (subscribedFolder.copy(inSync = false), Some(syncStatus)))), Idle)
                 }
             case (folderSubscription@FolderSubscription(folder, _, _, false), previousFolderSyncStatusOption) =>
               () =>
@@ -544,13 +544,13 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                             startDate = Instant.now(),
                             endDate = Instant.now())
                         }
-                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = true), Some(folderSyncStatus)))), newTask)
+                        (connected.copy(folders = folders + (folder.getURLName.toString -> (folderSubscription.copy(inSync = true), Some(folderSyncStatus)))), newTask)
                       case Right(true) =>
                         unsubscribeFolder(folderSubscription)
-                        (connected.copy(folders = folders - folder.getURLName), Idle)
+                        (connected.copy(folders = folders - folder.getURLName.toString), Idle)
                       case Right(false) =>
                         unsubscribeFolder(folderSubscription)
-                        (connected.copy(folders = folders + (folder.getURLName -> (folderSubscription.copy(inSync = false), Some(initialFolderSyncStatus)))), Idle)
+                        (connected.copy(folders = folders + (folder.getURLName.toString -> (folderSubscription.copy(inSync = false), Some(initialFolderSyncStatus)))), Idle)
                     }
                   } catch {
                     case e@(_: MessagingException | _: IllegalStateException) =>
@@ -564,7 +564,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
                     previousFolderSyncStatusOption.foreach {
                       previousFolderSyncStatus => removeMessagesFromFolder(folder.getURLName, previousFolderSyncStatus)
                     }
-                    (connected.copy(folders = folders - folder.getURLName), Idle)
+                    (connected.copy(folders = folders - folder.getURLName.toString), Idle)
                   case e@(_: MessagingException | _: IllegalStateException) =>
                     logger.error(s"$serviceAccountSource: Error processing folder ${folder.getFullName}, retrying.", e)
                     (connected, Idle)
@@ -618,8 +618,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
-    def removeMessagesFromFolder(folderURLName: URLName,
-                                 folderSyncStatus: FolderSyncStatus) = {
+    def removeMessagesFromFolder(folderURLName: URLName, folderSyncStatus: FolderSyncStatus): Unit = removeMessagesFromFolder(folderURLName.toString, folderSyncStatus)
+
+    def removeMessagesFromFolder(folderURLName: String,
+                                 folderSyncStatus: FolderSyncStatus): Unit = {
       val documents = folderSyncStatus.addedMessageUids.toVector.map {
         uid => documentForAction(RemovedMessage(folderURLName, folderSyncStatus.uidValidity, uid))
       }
@@ -639,7 +641,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       }
     }
 
-    private def messageContext(folderURLName: URLName, uidValidity: Long, messageUid: Long): IRI = {
+    private def messageContext(folderURLName: String, uidValidity: Long, messageUid: Long): IRI = {
       valueFactory.createIRI(s"$folderURLName#$uidValidity-$messageUid")
     }
 
@@ -717,7 +719,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
           val messageUidsToAdd = messagesWithUids.map(_._1).toSet
           val uidsToRemove = messageUidsAlreadyAdded -- messageUidsToAdd
           val removedDocuments = uidsToRemove.toVector.map {
-            uid => documentForAction(RemovedMessage(folderURLName, syncStatus.uidValidity, uid))
+            uid => documentForAction(RemovedMessage(folderURLName.toString, syncStatus.uidValidity, uid))
           }
           if (removedDocuments.nonEmpty) {
             logger.info(s"$serviceAccountSource: Resuming import of email folder ${currentFolder.getFullName}. ${removedDocuments.length} messages to remove.")

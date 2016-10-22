@@ -1,6 +1,6 @@
 package com.thymeflow.sync.converter
 
-import java.io.InputStream
+import java.io.{ByteArrayOutputStream, InputStream}
 import javax.mail.Message.RecipientType
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message, Multipart, Part}
@@ -162,6 +162,12 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
       Option(part.getDisposition).exists(_.equalsIgnoreCase(Part.ATTACHMENT))
     }
 
+    private def messageBlankNode(message: Message) = {
+      val os = new ByteArrayOutputStream()
+      message.writeTo(os)
+      uuidConverter.createIRI(os.toByteArray)
+    }
+
     private def resourceForMessage(message: Message): Resource = {
       message match {
         case mimeMessage: MimeMessage =>
@@ -170,10 +176,10 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
               emailMessageUriConverter.convert(messageId)
             } catch {
               case _: IllegalArgumentException =>
-                valueFactory.createBNode()
+                messageBlankNode(message)
             }
           ).getOrElse(valueFactory.createBNode())
-        case _ => valueFactory.createBNode()
+        case _ => messageBlankNode(message)
       }
     }
   }

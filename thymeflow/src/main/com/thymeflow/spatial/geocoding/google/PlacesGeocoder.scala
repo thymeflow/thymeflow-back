@@ -32,12 +32,10 @@ class PlacesGeocoder(api: Api, radius: Long = 5000)(implicit executionContext: E
   override def direct(address: String): Future[Traversable[BaseFeature]] = {
     api.doQuery[AutocompleteResult](autocompleteUri, Query("input" -> address)).flatMap {
       result =>
-        result.predictions.headOption match {
-          case Some(prediction) =>
+        Future.sequence(result.predictions.take(2).map {
+          prediction =>
             api.doQuery[PlaceDetailsResult](detailsUri, Query("placeid" -> prediction.place_id)).map(_.result: Traversable[BaseFeature])
-          case _ =>
-            Future.successful(Traversable.empty)
-        }
+        }).map(_.flatten)
     }
   }
 
@@ -51,9 +49,9 @@ class PlacesGeocoder(api: Api, radius: Long = 5000)(implicit executionContext: E
 
 private[google] case class Prediction(place_id: String)
 
-private[google] case class AutocompleteResult(predictions: Array[Prediction])
+private[google] case class AutocompleteResult(predictions: Seq[Prediction])
 
-private[google] case class PlacesResult(results: Array[Place])
+private[google] case class PlacesResult(results: Seq[Place])
 
 private[google] case class PlaceDetailsResult(result: Option[Place])
 

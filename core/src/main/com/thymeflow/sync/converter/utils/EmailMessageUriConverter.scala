@@ -1,7 +1,6 @@
 package com.thymeflow.sync.converter.utils
 
 import java.net.{URI, URISyntaxException}
-import java.util.regex.Pattern
 
 import org.openrdf.model.{IRI, ValueFactory}
 
@@ -10,7 +9,7 @@ import org.openrdf.model.{IRI, ValueFactory}
   */
 class EmailMessageUriConverter(valueFactory: ValueFactory) {
 
-  private val messageIdPattern = Pattern.compile("^(?://)?(?:%3[cC]|<)(.*)(?:%3[eE]|>).*$")
+  private val messageIdPattern = "^(?://)?(?:%3[cC]|<)(.*)(?:%3[eE]|>).*$".r
 
   /**
     * Creates an email URI from a message: URI like "message:<fffffff@gmail.com>" or "mid:fffff@gmail.com"
@@ -24,11 +23,10 @@ class EmailMessageUriConverter(valueFactory: ValueFactory) {
     */
   def convert(messageId: String): IRI = {
     var cleanMessageId = messageId
-    val matcher = messageIdPattern.matcher(cleanMessageId)
-    if (matcher.find) {
-      cleanMessageId = matcher.group(1)
-    } else {
-      throw new IllegalArgumentException(s"Invalid email message id: $messageId")
+    cleanMessageId match {
+      case messageIdPattern(id) => cleanMessageId = id
+      case _ =>
+        throw new IllegalArgumentException(s"Invalid email message id: $messageId")
     }
     try {
       val messageResource = valueFactory.createIRI(new URI("mid", cleanMessageId, null).toString)

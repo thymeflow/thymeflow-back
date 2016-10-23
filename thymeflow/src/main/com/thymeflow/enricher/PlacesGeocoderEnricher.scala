@@ -32,6 +32,7 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
   private val valueFactory = repositoryConnection.getValueFactory
   private val featureConverter = new FeatureConverter(valueFactory)
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "PlacesGeocoderEnricher")
+  private val uncertainInferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "UncertainPlacesGeocoderEnricher")
 
   override def enrich(diff: ModelDiff): Unit = {
     val places = diff.added.filter(null, RDF.TYPE, SchemaOrg.PLACE).subjects().asScala
@@ -73,18 +74,21 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
           }).map((placeResource, _))
       }.map {
         case (placeResource, geocoderResults) =>
-          if (geocoderResults.size == 1) {
-            // We only add the geocoder result if there is only one result
-            geocoderResults
-              .map(featureConverter.convert(_, model))
-              .filterNot(isDifferentFrom(_, placeResource))
-              .foreach(resource => {
-                model.add(placeResource, Personal.SAME_AS, resource, inferencerContext)
-                model.add(resource, Personal.SAME_AS, placeResource, inferencerContext)
-              })
-          } else if (geocoderResults.size > 1) {
-            logger.info(s"${geocoderResults.size} results: $geocoderResults")
-          }
+          // We only add the first result.
+          // If more than 1 result is returned, we consider the relation "Uncertain"
+          val context =
+            if (geocoderResults.size > 1) {
+              uncertainInferencerContext
+            } else {
+              inferencerContext
+            }
+          geocoderResults.headOption
+            .map(featureConverter.convert(_, model))
+            .filterNot(isDifferentFrom(_, placeResource))
+            .foreach(resource => {
+              model.add(placeResource, Personal.SAME_AS, resource, context)
+              model.add(resource, Personal.SAME_AS, placeResource, context)
+            })
       }
       try {
         val done = process.runForeach((x) => ())

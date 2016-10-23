@@ -38,10 +38,6 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
         ?event <${SchemaOrg.LOCATION}> ?place .
         ?place a <${SchemaOrg.PLACE}> ;
                <${SchemaOrg.NAME}> ?placeName .
-
-        FILTER NOT EXISTS {
-          ?place <${Personal.SAME_AS}>*/<${SchemaOrg.GEO}> ?geoPlace .
-        }
       }
     }"""
   )
@@ -62,23 +58,21 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
           ) match {
           case (_, Some(stay), Some(place), Some(name), Some(lat), Some(lon)) =>
             geocoder.direct(name, Geography.point(lon, lat)).flatMap {
-              results1 =>
-                geocoder.reverse(Geography.point(lon, lat)).flatMap {
-                  results2 => geocoder.direct(name).map {
-                    results3 => Some((Right(place), stay, results1, results2, results3))
-                  }
+              resultsFromStayAndEventPlace =>
+                geocoder.reverse(Geography.point(lon, lat)).map {
+                  resultsFromStay => Some((Right(place), stay, resultsFromStayAndEventPlace, resultsFromStay))
                 }
             }
           case (Some(event), Some(stay), None, None, Some(lat), Some(lon)) =>
             geocoder.reverse(Geography.point(lon, lat)).map {
-              results => Some((Left(event), stay, results, Vector.empty, Vector.empty))
+              resultsFromStay => Some((Left(event), stay, Vector.empty, resultsFromStay))
             }
           case _ => Future.successful(None)
         }
     }.collect {
-      case Some((resource, stayResource, results1, results2, results3)) =>
+      case Some((resource, stayResource, resultsFromStayAndEventPlace, resultsFromStay)) =>
         // TODO: We keep only the first feature
-        results1.headOption.foreach(feature => {
+        resultsFromStayAndEventPlace.headOption.foreach(feature => {
           val featureResource = featureConverter.convert(feature, model)
           resource match {
             case Left(event) =>
@@ -90,28 +84,19 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
               }
           }
         })
-        results2.headOption.foreach(feature => {
-          val featureResource = featureConverter.convert(feature, model)
-          resource match {
-            case Left(event) =>
-            case Right(place) =>
-              if (!isDifferentFrom(place, featureResource)) {
-                model.add(place, Personal.SAME_AS_TEMP, featureResource, stayResource)
-                model.add(featureResource, Personal.SAME_AS_TEMP, place, stayResource)
-              }
-          }
-        })
-        results3.headOption.foreach(feature => {
-          val featureResource = featureConverter.convert(feature, model)
-          resource match {
-            case Left(event) =>
-            case Right(place) =>
-              if (!isDifferentFrom(place, featureResource)) {
-                val property = if (results3.size == 1) Personal.SAME_AS_TEMP_SINGLE else Personal.SAME_AS_TEMP_AMBIGUOUS
-                model.add(place, property, featureResource, stayResource)
-              }
-          }
-        })
+        if (resultsFromStayAndEventPlace.isEmpty) {
+          resultsFromStay.headOption.foreach(feature => {
+            val featureResource = featureConverter.convert(feature, model)
+            resource match {
+              case Left(event) =>
+              case Right(place) =>
+                if (!isDifferentFrom(place, featureResource)) {
+                  model.add(place, Personal.SAME_AS, featureResource, stayResource)
+                  model.add(featureResource, Personal.SAME_AS, place, stayResource)
+                }
+            }
+          })
+        }
     }
     try {
       val done = process.runForeach((x) => ())

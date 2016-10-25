@@ -56,11 +56,11 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
           Option(bindingSet.getValue("lat").asInstanceOf[Literal]).map(_.floatValue()),
           Option(bindingSet.getValue("lon").asInstanceOf[Literal]).map(_.floatValue())
           ) match {
-          case (_, Some(stay), Some(place), Some(name), Some(lat), Some(lon)) =>
+          case (Some(event), Some(stay), Some(place), Some(name), Some(lat), Some(lon)) =>
             geocoder.direct(name, Geography.point(lon, lat)).flatMap {
               resultsFromStayAndEventPlace =>
                 geocoder.reverse(Geography.point(lon, lat)).map {
-                  resultsFromStay => Some((Right(place), stay, resultsFromStayAndEventPlace, resultsFromStay))
+                  resultsFromStay => Some((Right((place, event)), stay, resultsFromStayAndEventPlace, resultsFromStay))
                 }
             }
           case (Some(event), Some(stay), None, None, Some(lat), Some(lon)) =>
@@ -76,8 +76,7 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
           val featureResource = featureConverter.convert(feature, model)
           resource match {
             case Left(event) =>
-              model.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
-            case Right(place) =>
+            case Right((place, _)) =>
               if (!isDifferentFrom(place, featureResource)) {
                 model.add(place, Personal.SAME_AS, featureResource, stayResource)
                 model.add(featureResource, Personal.SAME_AS, place, stayResource)
@@ -89,10 +88,10 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
             val featureResource = featureConverter.convert(feature, model)
             resource match {
               case Left(event) =>
-              case Right(place) =>
+                model.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
+              case Right((place, event)) =>
                 if (!isDifferentFrom(place, featureResource)) {
-                  model.add(place, Personal.SAME_AS, featureResource, stayResource)
-                  model.add(featureResource, Personal.SAME_AS, place, stayResource)
+                  model.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
                 }
             }
           })

@@ -1,8 +1,12 @@
 # thymeflow-back [![Build Status](https://travis-ci.org/thymeflow/thymeflow-back.svg?branch=master)](https://travis-ci.org/thymeflow/thymeflow-back)
 
-`thymeflow-back` is the backend implementation of Thymeflow, a Web application that provides that:
+`thymeflow-back` is the backend implementation of Thymeflow, a Web application that provides the following features:
 
- - Loads mail (IMAP/RFC2822), calendar (CalDav/iCalendar), contact (CardDav/vCard), location data (Google Location History) into an RDF store.
+ - Loads personal information into an RDF store. The following sources of personal information are currently supported:
+   - Email (IMAP/RFC2822)
+   - Calendar (CalDav/iCalendar)
+   - Contact (CardDav/vCard)
+   - Location data (Google Location History)
  - Provides easy to use configurators for Google/Microsoft accounts using OAuth.
  - Extracts Stays/Moves from Location data.
  - Automatically infers alignments between contact and mail data (persons), calendar and location data (event locations).

@@ -33,11 +33,15 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
 
   private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?event ?start ?end ?lat ?lon WHERE {
-      ?event a <${SchemaOrg.EVENT}> ;
-             <${SchemaOrg.START_DATE}> ?start ;
+      GRAPH ?eventSource {
+        ?event a <${SchemaOrg.EVENT}> .
+      }
+      ?event <${SchemaOrg.START_DATE}> ?start ;
              <${SchemaOrg.END_DATE}> ?end .
       OPTIONAL {
-        ?event <${SchemaOrg.LOCATION}>/<${Personal.SAME_AS}>* ?location .
+        GRAPH ?eventSource {
+          ?event <${SchemaOrg.LOCATION}> ?location .
+        }
         ?location a <${SchemaOrg.PLACE}> ;
                   <${SchemaOrg.GEO}> ?geo .
         ?geo <${SchemaOrg.LATITUDE}> ?lat ;

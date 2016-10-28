@@ -24,70 +24,27 @@ trait DataServicesService extends Directives with CorsSupport {
 
   private val servicesQuery =
     s"""
-  SELECT ?service (SAMPLE(?serviceName) AS ?serviceName) ?account (SAMPLE(?accountName) as ?accountName) (SUM(?sourceMessagesN) as ?messagesN) (SUM(?sourceLocationN) as ?locationsN) (SUM(?sourceEventsN) as ?eventsN) (SUM(?sourceAgentsN) as ?agentsN)
-  WHERE {
-    ?service a <${Personal.SERVICE}> ;
-      <${SchemaOrg.NAME}> ?serviceName .
-    OPTIONAL {
-      ?account <${Personal.ACCOUNT_OF}> ?service ;
-        <${SchemaOrg.NAME}> ?accountName .
+SELECT ?service (SAMPLE(?serviceName) AS ?serviceName) ?account (SAMPLE(?accountName) as ?accountName) ?type (COUNT(?instance) AS ?count)
+WHERE {
+  ?service a <${Personal.SERVICE}> ;
+    <${SchemaOrg.NAME}> ?serviceName .
 
-      ?source <${Personal.SOURCE_OF}> ?account .
-      {
-        SELECT ?source (COUNT(?message) as ?sourceMessagesN)
-        WHERE {
-          ?source a <${Personal.SERVICE_ACCOUNT_SOURCE}> .
-          OPTIONAL{
-            ?document <${Personal.DOCUMENT_OF}> ?source .
-            GRAPH ?document {
-              ?message a <${SchemaOrg.EMAIL_MESSAGE}> .
-            }
-          }
-        }
-        GROUP BY ?source
-      }
-      {
-        SELECT ?source (COUNT(?location) as ?sourceLocationN)
-        WHERE {
-          ?source a <${Personal.SERVICE_ACCOUNT_SOURCE}> .
-          OPTIONAL{
-            ?document <${Personal.DOCUMENT_OF}> ?source .
-            GRAPH ?document {
-              ?location a <${Personal.LOCATION}> .
-            }
-          }
-        }
-        GROUP BY ?source
-      }
-      {
-        SELECT ?source (COUNT(?event) as ?sourceEventsN)
-        WHERE {
-          ?source a <${Personal.SERVICE_ACCOUNT_SOURCE}> .
-          OPTIONAL{
-            ?document <${Personal.DOCUMENT_OF}> ?source .
-            GRAPH ?document {
-             ?event a <${SchemaOrg.EVENT}> .
-            }
-          }
-        }
-        GROUP BY ?source
-      }
-      {
-        SELECT ?source (COUNT(?agent) as ?sourceAgentsN)
-        WHERE {
-          ?source a <${Personal.SERVICE_ACCOUNT_SOURCE}> .
-          OPTIONAL {
-            ?document <${Personal.DOCUMENT_OF}> ?source .
-            GRAPH ?document {
-              ?agent a <${Personal.AGENT}> .
-            }
-          }
-        }
-        GROUP BY ?source
+  OPTIONAL {
+    ?account <${Personal.ACCOUNT_OF}> ?service ;
+      <${SchemaOrg.NAME}> ?accountName .
+
+    ?source <${Personal.SOURCE_OF}> ?account .
+
+    OPTIONAL {
+      ?document <${Personal.DOCUMENT_OF}> ?source .
+      GRAPH ?document {
+        ?instance a ?type .
+        FILTER(?type = <${SchemaOrg.EVENT}> || ?type = <${Personal.LOCATION}> || ?type = <${SchemaOrg.EMAIL_MESSAGE}> || ?type = <${Personal.AGENT}> )
       }
     }
   }
-  GROUP BY ?service ?account
+}
+GROUP BY ?service ?account ?type
 """
 
 
@@ -102,26 +59,39 @@ trait DataServicesService extends Directives with CorsSupport {
               Option(bindingSet.getValue("serviceName")),
               Option(bindingSet.getValue("account")),
               Option(bindingSet.getValue("accountName")),
-              Option(bindingSet.getValue("eventsN")),
-              Option(bindingSet.getValue("messagesN")),
-              Option(bindingSet.getValue("locationsN")),
-              Option(bindingSet.getValue("agentsN")))
+              Option(bindingSet.getValue("type")),
+              Option(bindingSet.getValue("count")))
           ).toVector
           val result = ResourceObjects(
 
             v.collect {
-              case (Some(service: IRI), Some(serviceName: Literal), account, accountName, Some(eventsN: Literal), Some(messagesN: Literal), Some(locationsN: Literal), Some(agentsN: Literal)) =>
-                ((service, serviceName), account, accountName, eventsN, messagesN, locationsN, agentsN)
+              case (Some(service: IRI), Some(serviceName: Literal), account, accountName, instanceType, Some(count: Literal)) =>
+                ((service, serviceName), account, accountName, instanceType, count)
             }.groupBy(_._1).map {
               case ((service, serviceName), g) =>
                 val accounts = g.collect {
-                  case (_, Some(account: IRI), Some(accountName: Literal), eventsN, messagesN, locationsN, agentsN) =>
-                    Account(name = accountName.stringValue(),
-                      eventsCount = eventsN.longValue(),
-                      locationsCount = locationsN.longValue(),
-                      messagesCount = messagesN.longValue(),
-                      agentsCount = agentsN.longValue())
-                }
+                  case (_, Some(account: IRI), Some(accountName: Literal), instanceType, count) =>
+                    (account, accountName, instanceType, count)
+                }.groupBy(_._1).map {
+                  case (account, h) =>
+                    val eventsCount = h.collectFirst {
+                      case (_, _, Some(SchemaOrg.EVENT), count) => count.longValue()
+                    }.getOrElse(0L)
+                    val agentsCount = h.collectFirst {
+                      case (_, _, Some(Personal.AGENT), count) => count.longValue()
+                    }.getOrElse(0L)
+                    val messagesCount = h.collectFirst {
+                      case (_, _, Some(SchemaOrg.EMAIL_MESSAGE), count) => count.longValue()
+                    }.getOrElse(0L)
+                    val locationsCount = h.collectFirst {
+                      case (_, _, Some(Personal.LOCATION), count) => count.longValue()
+                    }.getOrElse(0L)
+                    Account(h.head._2.stringValue(),
+                      eventsCount = eventsCount,
+                      messagesCount = messagesCount,
+                      locationsCount = locationsCount,
+                      agentsCount = agentsCount)
+                }.toVector
                 ResourceObject(
                   id = Some(service.stringValue()),
                   `type` = "data-service",

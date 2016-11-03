@@ -155,19 +155,31 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def davResourcesOfUpdatedDocuments(directoryUri: String): Traversable[DavResource] = {
       try {
-        if (elementsEtag.isEmpty) {
-          //We load everything
-          sardine.report(directoryUri, 1, buildQueryReport(true))
-        } else {
-          //We load only new documents
-          val newPaths = sardine.report(directoryUri, 1, buildQueryReport(false)).filter(davResource =>
-            !elementsEtag.get(davResource.getPath).contains(davResource.getEtag)
-          ).map(davResource => davResource.getPath)
-          if (newPaths.isEmpty) {
-            None
+        val caldav = sardine.report(directoryUri, 1, buildQueryReport(false))
+        logger.info(s"Found ${caldav.size} events.")
+        val filteredPaths = (if (elementsEtag.isEmpty) {
+            caldav
           } else {
-            sardine.report(directoryUri, 1, buildMultigetReport(newPaths))
-          }
+            //We load only new documents
+            caldav.filter(davResource =>
+              !elementsEtag.get(davResource.getPath).contains(davResource.getEtag)
+            )
+          }).map(davResource => davResource.getPath).toVector
+        logger.info(s"including ${filteredPaths.size} new events.")
+        if (filteredPaths.isEmpty) {
+          None
+        } else {
+          filteredPaths.grouped(100).zipWithIndex.flatMap{
+            case (group,i) => {
+              logger.info(s"Retrieving group $i");
+              try {
+                sardine.report(directoryUri, 1, buildMultigetReport(group))
+              } catch {
+                case e: IOException => 
+                  logger.error(s"CalDav error for group $i", e)
+                  Traversable.empty
+              }
+          }}.toTraversable
         }
       } catch {
         case e: IOException =>

@@ -14,7 +14,7 @@ import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.vocabulary.{RDF, XMLSchema}
 import org.openrdf.model.{IRI, Literal, Resource}
@@ -90,7 +90,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
           createCluster(createClusterRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
       }.recover {
         case throwable =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          logger.error("[location-stay-enricher] - Error during stage 1.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
 
@@ -113,7 +113,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
           createStay(createClusterRepositoryConnection, cluster, locations)
       }.recover {
         case throwable =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          logger.error("[location-stay-enricher] - Error during stage 2/3.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
       deleteTempInferencerGraph()

@@ -12,7 +12,7 @@ import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
 import org.openrdf.model.{IRI, Resource}
 import org.openrdf.query.QueryLanguage
@@ -181,7 +181,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
         }
     }
     result.onFailure {
-      case throwable => logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+      case throwable => logger.error("[paris-enricher] - Failure.", throwable)
     }
     Await.ready(result, scala.concurrent.duration.Duration.Inf)
   }

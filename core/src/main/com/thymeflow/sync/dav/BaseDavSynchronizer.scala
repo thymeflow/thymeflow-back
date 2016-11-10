@@ -19,7 +19,6 @@ import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.dav.BaseDavSynchronizer._
 import com.thymeflow.update.UpdateResults
-import com.thymeflow.utilities.ExceptionUtils
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
 import org.apache.http.client.utils.URIBuilder
@@ -193,7 +192,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         }
       } catch {
         case e: IOException =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(e))
+          logger.error("Error fetching WebDAV resource", e)
           Iterator.empty
       }
     }

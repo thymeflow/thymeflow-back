@@ -7,7 +7,6 @@ import java.time.temporal.ChronoUnit
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.GeoCoordinatesConverter
-import com.thymeflow.utilities.ExceptionUtils
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
@@ -34,7 +33,7 @@ class GoogleLocationHistoryConverter(valueFactory: ValueFactory)(implicit config
       convert(json.convertTo[LocationHistory], context)
     } catch {
       case e: DeserializationException =>
-        logger.error(ExceptionUtils.getUnrolledStackTrace(e))
+        logger.error("Error parsing LocationHistory from JSON value.", e)
         Iterator.empty
     }
   }

@@ -101,8 +101,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def retrieveDocuments(fetcher: BaseDavDocumentsFetcher): Unit = {
-      val taskStartStatus = Working()
-      supervisor ! fetcher.task.copy(status = taskStartStatus)
       fetcher.newDocuments.foreach(document =>
         if (waitingForData) {
           onNext(document)
@@ -110,7 +108,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
           queue.enqueue(document)
         }
       )
-      supervisor ! fetcher.task.copy(status = Done(taskStartStatus.startDate))
     }
 
     private def applyDiff(diff: ModelDiff): UpdateResults = {
@@ -130,8 +127,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
   protected def sardineFromSource(source: DavSource) = new SardineImpl(source.accessToken)
 
-  protected abstract class BaseDavDocumentsFetcher(valueFactory: ValueFactory, val task: ServiceAccountSourceTask[TaskStatus], protected var source: DavSource) {
+  // TODO: Async document fetching
+  protected abstract class BaseDavDocumentsFetcher(supervisor: ActorRef, valueFactory: ValueFactory, val task: ServiceAccountSourceTask[TaskStatus], protected var source: DavSource) {
 
+    protected val resourceFetchingBatchSize = 100
     protected var sardine: Sardine = sardineFromSource(source)
 
     def updateSource(newSource: DavSource): Unit = {
@@ -149,29 +148,52 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def newDocumentsFromDirectory(directoryUri: String): Traversable[Document] = {
-      davResourcesOfUpdatedDocuments(directoryUri: String).flatMap(documentFromDavResource(_, directoryUri))
+      val workingTask = task.copy(status = Working(), taskName = s"Synchronizing $directoryUri")
+      def reportProgress(progress: Long, total: Long) = {
+        supervisor ! workingTask.copy(status = workingTask.status.copy(progress = Some(Progress(value = progress, total = total))))
+      }
+      supervisor ! workingTask
+      val documents = davResourcesOfUpdatedDocuments(reportProgress, directoryUri: String).flatMap(documentFromDavResource(_, directoryUri)).toVector
+      supervisor ! workingTask.copy(status = Done(workingTask.status.startDate))
+      documents
     }
 
-    private def davResourcesOfUpdatedDocuments(directoryUri: String): Traversable[DavResource] = {
+    private def davResourcesOfUpdatedDocuments(reportProgress: (Long, Long) => Unit, directoryUri: String): Iterator[DavResource] = {
       try {
-        if (elementsEtag.isEmpty) {
-          //We load everything
-          sardine.report(directoryUri, 1, buildQueryReport(true))
-        } else {
-          //We load only new documents
-          val newPaths = sardine.report(directoryUri, 1, buildQueryReport(false)).filter(davResource =>
-            !elementsEtag.get(davResource.getPath).contains(davResource.getEtag)
-          ).map(davResource => davResource.getPath)
-          if (newPaths.isEmpty) {
-            None
+        val davReport = sardine.report(directoryUri, 1, buildQueryReport(false))
+        val filteredDavResourcesPath = (if (elementsEtag.isEmpty) {
+          davReport
           } else {
-            sardine.report(directoryUri, 1, buildMultigetReport(newPaths))
-          }
+          // We load only new documents
+          davReport.filter(davResource =>
+              !elementsEtag.get(davResource.getPath).contains(davResource.getEtag)
+            )
+          }).map(davResource => davResource.getPath).toVector
+        if (filteredDavResourcesPath.isEmpty) {
+          Iterator.empty
+        } else {
+          reportProgress(0, filteredDavResourcesPath.size)
+          logger.info(s"${task.source}: Retrieving ${filteredDavResourcesPath.size} new DAV resources.")
+          filteredDavResourcesPath.grouped(resourceFetchingBatchSize).zipWithIndex.map {
+            case (group, i) =>
+              try {
+                (sardine.report(directoryUri, 1, buildMultigetReport(group)), i)
+              } catch {
+                case e: IOException =>
+                  logger.error(s"${task.source}: Error for group $i when retrieving ${filteredDavResourcesPath.size} DAV resources.", e)
+                  (Traversable.empty, i)
+              }
+          }.map {
+            case (groupResources, i) =>
+              // progress works here because grouped returns an iterator
+              reportProgress(i * resourceFetchingBatchSize, filteredDavResourcesPath.size)
+              groupResources
+          }.flatten
         }
       } catch {
         case e: IOException =>
           logger.error("Error fetching WebDAV resource", e)
-          None
+          Iterator.empty
       }
     }
 

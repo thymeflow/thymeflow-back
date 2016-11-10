@@ -26,13 +26,13 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory, supervisor) {
-    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
+    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(supervisor, valueFactory, task, source)
 
     override protected def isValidSource(davSource: DavSource): Boolean = davSource.isInstanceOf[CalDavSource]
   }
 
-  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
-    extends BaseDavDocumentsFetcher(valueFactory, task, source) {
+  private class DocumentsFetcher(supervisor: ActorRef, valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
+    extends BaseDavDocumentsFetcher(supervisor, valueFactory, task, source) {
 
     private val CalDavNamespace = "urn:ietf:params:xml:ns:caldav"
     override protected val mimeType = "text/calendar"

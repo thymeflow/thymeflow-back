@@ -29,9 +29,10 @@ class GeoCoordinatesConverterSpec extends FlatSpec with Matchers with StrictLogg
           BigDecimal(rand.nextDouble * 360d - 180d).setScale(i % 16, BigDecimal.RoundingMode.FLOOR).toDouble
           val latitude = generateRandomNumber(-89d, 90d, i % 16)
           val elevation = if (rand.nextBoolean) Some(generateRandomNumber(0d, 20000d, i % 16)) else None
-          val uncertainty = if (rand.nextBoolean) Some(generateRandomNumber(0d, 1000d, i % 16)) else None
+          val uncertainty = if (rand.nextBoolean) Some(generateRandomNumber(0d, 100000d, i % 16)) else None
           val model = new SimpleHashModel()
           val geo = converter.convert(longitude, latitude, elevation, uncertainty, model)
+          converter.convertGeoUri(geo.stringValue(), model) should contain(geo.stringValue())
           withClue(geo.stringValue()) {
             geo.stringValue() match {
               case geoUriRegex(geoLatitude, geoLongitude, geoElevation, geoCrsn, geoUncertainty) =>

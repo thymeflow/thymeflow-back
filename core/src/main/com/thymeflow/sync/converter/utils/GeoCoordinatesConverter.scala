@@ -10,6 +10,7 @@ import scala.language.implicitConversions
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
 class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging {
 
@@ -33,11 +34,9 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     * Creates a simple geo from a (longitude,latitude,elevation,accuracy) tuple
     */
   def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Double], model: Model): IRI = {
-    val uriBuilder = new GeoUri.Builder(latitude, longitude)
-    elevationOption.foreach(uriBuilder.coordC(_))
-    uncertaintyOption.foreach(uriBuilder.uncertainty(_))
-
-    val geoResource = valueFactory.createIRI(uriBuilder.build().toString(Integer.MAX_VALUE))
+    val elevationSuffix = elevationOption.map(x => s",${x.toString}").getOrElse("")
+    val uncertaintySuffix = uncertaintyOption.map(x => s";u=${x.toString}").getOrElse("")
+    val geoResource = valueFactory.createIRI(s"geo:${latitude.toString},${longitude.toString}$elevationSuffix$uncertaintySuffix")
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))
@@ -50,7 +49,7 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     model.add(
       geoResource,
       GEO.AS_WKT,
-      valueFactory.createLiteral(s"POINT ($longitude $latitude)", GEO.WKT_LITERAL)
+      valueFactory.createLiteral(s"POINT (${longitude.toString} ${latitude.toString})", GEO.WKT_LITERAL)
     )
     geoResource
   }

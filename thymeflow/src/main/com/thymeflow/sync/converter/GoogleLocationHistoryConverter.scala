@@ -10,8 +10,8 @@ import com.thymeflow.sync.converter.utils.GeoCoordinatesConverter
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.openrdf.model.{IRI, Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model.{IRI, Model, Resource, ValueFactory}
 import spray.json.{DefaultJsonProtocol, DeserializationException, JsValue, JsonParser}
 
 /**

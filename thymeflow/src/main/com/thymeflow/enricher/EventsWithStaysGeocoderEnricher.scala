@@ -8,9 +8,9 @@ import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.spatial.geographic.Geography
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{Literal, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{Literal, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}

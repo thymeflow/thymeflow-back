@@ -3,10 +3,10 @@ package com.thymeflow.enricher
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{Resource, Value}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{Resource, Value}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 

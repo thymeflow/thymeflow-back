@@ -6,7 +6,7 @@ import akka.stream.{Graph, SourceShape}
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
 import com.typesafe.config.Config
-import org.openrdf.model.ValueFactory
+import org.eclipse.rdf4j.model.ValueFactory
 
 /**
   * @author Thomas Pellissier Tanon

@@ -21,7 +21,7 @@ import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._

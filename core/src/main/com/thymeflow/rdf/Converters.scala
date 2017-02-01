@@ -1,6 +1,6 @@
 package com.thymeflow.rdf
 
-import info.aduna.iteration.CloseableIteration
+import org.eclipse.rdf4j.common.iteration.CloseableIteration
 
 /**
   * @author Thomas Pellissier Tanon

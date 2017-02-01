@@ -17,7 +17,7 @@ import com.thymeflow.service.source.FacebookGraphApiSource
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.typesafe.config.Config
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 import spray.json._
 
 /**

@@ -1,12 +1,12 @@
 package com.thymeflow.rdf.sail;
 
-import org.openrdf.model.IRI;
-import org.openrdf.model.Resource;
-import org.openrdf.model.Value;
-import org.openrdf.sail.NotifyingSailConnection;
-import org.openrdf.sail.SailException;
-import org.openrdf.sail.UpdateContext;
-import org.openrdf.sail.helpers.NotifyingSailConnectionWrapper;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 
 /**
  * @author Thomas Pellissier Tanon

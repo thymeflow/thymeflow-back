@@ -16,8 +16,8 @@ import ezvcard.parameter.{AddressType, EmailType, ImageType, TelephoneType}
 import ezvcard.property._
 import ezvcard.util.{DataUri, TelUri}
 import ezvcard.{Ezvcard, VCard}
-import org.openrdf.model._
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model._
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._

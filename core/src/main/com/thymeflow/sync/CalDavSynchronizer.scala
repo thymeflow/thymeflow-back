@@ -14,7 +14,7 @@ import com.thymeflow.sync.converter.ICalConverter
 import com.thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
-import org.openrdf.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.{Model, Resource, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

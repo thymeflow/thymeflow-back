@@ -3,10 +3,10 @@ package com.thymeflow.rdf.query.algebra.evaluation.function
 import javax.xml.datatype.DatatypeFactory
 
 import com.thymeflow.rdf.model.vocabulary.Personal
-import org.openrdf.model.datatypes.XMLDatatypeUtil
-import org.openrdf.model.vocabulary.XMLSchema
-import org.openrdf.model.{Literal, Value, ValueFactory}
-import org.openrdf.query.algebra.evaluation.{ValueExprEvaluationException, function}
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema
+import org.eclipse.rdf4j.model.{Literal, Value, ValueFactory}
+import org.eclipse.rdf4j.query.algebra.evaluation.{ValueExprEvaluationException, function}
 
 /**
   * @author Thomas Pellissier Tanon

@@ -22,7 +22,7 @@ import com.thymeflow.update.UpdateResults
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
 import org.apache.http.client.utils.URIBuilder
-import org.openrdf.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.{Model, Resource, ValueFactory}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable

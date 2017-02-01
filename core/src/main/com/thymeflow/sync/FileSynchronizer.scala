@@ -18,7 +18,7 @@ import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
 import org.apache.commons.io.FilenameUtils
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._

@@ -18,7 +18,7 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Future

@@ -7,8 +7,8 @@ import com.thymeflow.api.JsonApi.{ResourceObject, ResourceObjects}
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.rdf.repository.Repository
-import org.openrdf.model.{IRI, Literal}
-import org.openrdf.query.QueryLanguage
+import org.eclipse.rdf4j.model.{IRI, Literal}
+import org.eclipse.rdf4j.query.QueryLanguage
 import spray.json.{JsonFormat, RootJsonFormat}
 
 import scala.language.{implicitConversions, postfixOps}

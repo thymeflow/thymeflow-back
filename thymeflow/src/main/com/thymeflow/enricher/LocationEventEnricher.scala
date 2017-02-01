@@ -10,10 +10,10 @@ import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.spatial.geographic.metric.models.WGS84SphereHaversinePointMetric
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.XMLSchema
-import org.openrdf.model.{Literal, Resource}
-import org.openrdf.query.{BindingSet, QueryLanguage}
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema
+import org.eclipse.rdf4j.model.{Literal, Resource}
+import org.eclipse.rdf4j.query.{BindingSet, QueryLanguage}
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration

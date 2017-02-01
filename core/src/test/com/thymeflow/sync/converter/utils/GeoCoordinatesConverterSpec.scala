@@ -2,7 +2,7 @@ package com.thymeflow.sync.converter.utils
 
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.util.Random

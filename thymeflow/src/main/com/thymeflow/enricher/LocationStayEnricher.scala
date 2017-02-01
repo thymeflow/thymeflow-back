@@ -16,10 +16,10 @@ import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.openrdf.model.{IRI, Literal, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model.{IRI, Literal, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.concurrent.Await
 

@@ -4,7 +4,7 @@ import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.rdf.sail.SailInterceptor
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, Model, Resource, Value}
+import org.eclipse.rdf4j.model.{IRI, Model, Resource, Value}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 

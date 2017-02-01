@@ -4,7 +4,7 @@ import java.util.Locale
 
 import com.thymeflow.utilities.text.Normalization
 import org.apache.commons.lang3.StringUtils
-import org.openrdf.model.{Literal, ValueFactory}
+import org.eclipse.rdf4j.model.{Literal, ValueFactory}
 
 import scala.util.matching.Regex
 

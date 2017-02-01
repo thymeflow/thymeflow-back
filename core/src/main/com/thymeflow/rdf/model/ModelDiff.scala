@@ -2,7 +2,7 @@ package com.thymeflow.rdf.model
 
 import java.util
 
-import org.openrdf.model._
+import org.eclipse.rdf4j.model._
 
 import scala.collection.JavaConverters._
 

@@ -18,8 +18,8 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.VectorExtensions
 import com.typesafe.config.Config
-import org.openrdf.model.Model
-import org.openrdf.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.Model
+import org.eclipse.rdf4j.model.vocabulary.RDF
 
 import scala.concurrent.Future
 

@@ -9,7 +9,9 @@ val rootSettings = Seq(
   scalaVersion := "2.11.8",
   javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions += "-target:jvm-1.8",
-  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
+  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+" % "test"
+    exclude("org.scala-lang", "scala-reflect")
+    exclude("org.scala-lang.modules", "scala-xml_2.11"),
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+"
 )

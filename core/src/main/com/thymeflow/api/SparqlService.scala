@@ -11,14 +11,14 @@ import com.thymeflow.api.SparqlService.SparqlQuery
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.repository.Repository
 import com.typesafe.scalalogging.StrictLogging
-import info.aduna.lang.FileFormat
-import info.aduna.lang.service.FileFormatServiceRegistry
-import org.openrdf.model.Model
-import org.openrdf.model.vocabulary.{RDF, SD}
-import org.openrdf.query._
-import org.openrdf.query.parser.QueryParserUtil
-import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.openrdf.rio.{RDFWriterRegistry, Rio}
+import org.eclipse.rdf4j.common.lang.FileFormat
+import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry
+import org.eclipse.rdf4j.model.Model
+import org.eclipse.rdf4j.model.vocabulary.{RDF, SD}
+import org.eclipse.rdf4j.query._
+import org.eclipse.rdf4j.query.parser.QueryParserUtil
+import org.eclipse.rdf4j.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
+import org.eclipse.rdf4j.rio.{RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._

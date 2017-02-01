@@ -3,8 +3,8 @@ package com.thymeflow.enricher
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import org.openrdf.model.{Model, Statement}
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{Model, Statement}
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 

@@ -8,7 +8,7 @@ import java.util.function.Consumer
 import com.opencsv.CSVReader
 import com.thymeflow.mathematics.probability.{DiscreteRand, Rand}
 import com.thymeflow.utilities.IO
-import org.openrdf.model.Resource
+import org.eclipse.rdf4j.model.Resource
 
 import scala.collection.JavaConverters._
 import scala.collection.SeqView

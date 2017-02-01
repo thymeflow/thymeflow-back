@@ -2,9 +2,9 @@ package com.thymeflow.rdf
 
 import java.io.{File, FileOutputStream}
 
-import org.openrdf.model.Resource
-import org.openrdf.repository.RepositoryConnection
-import org.openrdf.rio.{Rio, UnsupportedRDFormatException}
+import org.eclipse.rdf4j.model.Resource
+import org.eclipse.rdf4j.repository.RepositoryConnection
+import org.eclipse.rdf4j.rio.{Rio, UnsupportedRDFormatException}
 
 import scala.compat.java8.OptionConverters._
 

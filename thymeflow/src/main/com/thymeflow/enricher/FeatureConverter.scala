@@ -3,8 +3,8 @@ package com.thymeflow.enricher
 import com.thymeflow.rdf.model.vocabulary.SchemaOrg
 import com.thymeflow.spatial.geocoding.Feature
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, PostalAddressConverter}
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{Model, Resource, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

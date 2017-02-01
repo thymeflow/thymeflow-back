@@ -3,8 +3,8 @@ package com.thymeflow.sync.converter.utils
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.typesafe.scalalogging.StrictLogging
 import ezvcard.util.GeoUri
-import org.openrdf.model.vocabulary.{GEO, RDF}
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.vocabulary.{GEO, RDF}
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 
 import scala.language.implicitConversions
 

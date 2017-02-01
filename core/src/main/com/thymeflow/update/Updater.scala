@@ -7,8 +7,8 @@ import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{Model, Resource, Statement}
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{Model, Resource, Statement}
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global

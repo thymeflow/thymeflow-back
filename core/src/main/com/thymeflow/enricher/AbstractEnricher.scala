@@ -4,9 +4,9 @@ import java.util
 
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
-import org.openrdf.model.{Resource, Statement}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{Resource, Statement}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 

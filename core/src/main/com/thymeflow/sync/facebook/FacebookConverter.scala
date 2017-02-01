@@ -12,8 +12,8 @@ import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.spatial.Address
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, GeoCoordinatesConverter, PostalAddressConverter}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model._
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model._
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
 
 /**
   * @author David Montoya

@@ -1,7 +1,7 @@
 package com.thymeflow.enricher
 
 import com.thymeflow.rdf.model.ModelDiff
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 /**
   * @author Thomas Pellissier Tanon

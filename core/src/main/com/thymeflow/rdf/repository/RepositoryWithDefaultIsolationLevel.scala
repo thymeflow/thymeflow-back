@@ -1,15 +1,15 @@
 package com.thymeflow.rdf.repository
 
-import org.openrdf.IsolationLevel
-import org.openrdf.model.ValueFactory
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.IsolationLevel
+import org.eclipse.rdf4j.model.ValueFactory
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 /**
   * Encapsulates a Repository by providing new repository connection with a default isolation level
   *
   * @author David Montoya
   */
-case class RepositoryWithDefaultIsolationLevel(repository: org.openrdf.repository.Repository,
+case class RepositoryWithDefaultIsolationLevel(repository: org.eclipse.rdf4j.repository.Repository,
                                                defaultIsolationLevel: IsolationLevel)
   extends Repository {
 

@@ -1,8 +1,8 @@
 package com.thymeflow.rdf.sail.inferencer
 
-import org.openrdf.sail.inferencer.InferencerConnection
-import org.openrdf.sail.inferencer.fc.AbstractForwardChainingInferencer
-import org.openrdf.sail.{NotifyingSail, SailException}
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection
+import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencer
+import org.eclipse.rdf4j.sail.{NotifyingSail, SailException}
 
 /**
   * The baseSail should do RDFS inferencing

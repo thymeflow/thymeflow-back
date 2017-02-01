@@ -5,8 +5,8 @@ import java.net.URI
 import com.google.i18n.phonenumbers.{NumberParseException, PhoneNumberUtil, Phonenumber}
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

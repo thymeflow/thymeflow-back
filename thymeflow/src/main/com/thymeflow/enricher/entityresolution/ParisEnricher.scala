@@ -14,9 +14,9 @@ import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{IRI, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.immutable.NumericRange
 import scala.concurrent.Await

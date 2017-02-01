@@ -1,10 +1,13 @@
 import sbt.Keys._
 
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
+
 scalacOptions += "-target:jvm-1.8"
 
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
+  javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions += "-target:jvm-1.8",
   libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
@@ -51,22 +54,22 @@ val coreProject = Project(
 ).settings(commonSettings: _*).settings(
   libraryDependencies += "org.apache.james" % "apache-mime4j-core" % "0.7.+",
   libraryDependencies += "org.apache.james" % "apache-mime4j-dom" % "0.7.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-nativerdf" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-ntriples" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-nquads" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-n3" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfjson" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfxml" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trig" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trix" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqljson" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqlxml" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-text" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryalgebra-geosparql" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-lucene4" % "4.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-repository-sail" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-memory" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-nativerdf" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-ntriples" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-nquads" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-n3" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-rdfjson" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-rdfxml" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-trig" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-trix" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-turtle" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-sparqljson" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-sparqlxml" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-text" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryalgebra-geosparql" % "2.1.+",
+  //libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-lucene" % "2.1.+",
   libraryDependencies += "commons-logging" % "commons-logging" % "1.+",
   libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+",
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
@@ -76,8 +79,7 @@ val coreProject = Project(
   libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
-  libraryDependencies += "org.apache.lucene" % "lucene-suggest" % "4.+"
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+"
 ).dependsOn(utilitiesProject)
 
 // TODO: Consider making thymeflowProject the root one.

@@ -6,7 +6,7 @@ import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source.Source
 import com.typesafe.config.Config
-import org.openrdf.model.IRI
+import org.eclipse.rdf4j.model.IRI
 
 import scala.concurrent.Future
 

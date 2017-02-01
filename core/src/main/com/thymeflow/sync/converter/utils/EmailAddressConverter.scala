@@ -6,8 +6,8 @@ import java.util.Locale
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.james.mime4j.field.address.AddressBuilder
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

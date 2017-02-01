@@ -14,8 +14,8 @@ import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model._
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model._
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
 
 import scala.collection.JavaConverters._
 import scala.language.implicitConversions

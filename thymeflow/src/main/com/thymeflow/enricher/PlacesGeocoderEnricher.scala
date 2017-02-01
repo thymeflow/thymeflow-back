@@ -8,9 +8,9 @@ import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{Literal, Resource}
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{Literal, Resource}
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Await

@@ -1,6 +1,6 @@
 package com.thymeflow.rdf.model.document
 
-import org.openrdf.model.{IRI, Model}
+import org.eclipse.rdf4j.model.{IRI, Model}
 
 /**
   * @author Thomas Pellissier Tanon

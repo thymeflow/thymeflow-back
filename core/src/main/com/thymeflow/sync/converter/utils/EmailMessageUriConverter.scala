@@ -2,7 +2,7 @@ package com.thymeflow.sync.converter.utils
 
 import java.net.{URI, URISyntaxException}
 
-import org.openrdf.model.{IRI, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

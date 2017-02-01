@@ -3,8 +3,8 @@ package com.thymeflow.rdf.model
 import java.util
 import java.util.{Collections, Optional}
 
-import org.openrdf.model._
-import org.openrdf.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model._
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
 import scala.collection.JavaConverters._
 

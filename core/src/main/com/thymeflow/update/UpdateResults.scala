@@ -2,7 +2,7 @@ package com.thymeflow.update
 
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.utilities.{Error, Ok}
-import org.openrdf.model.Statement
+import org.eclipse.rdf4j.model.Statement
 
 import scala.collection.JavaConverters._
 

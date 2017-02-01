@@ -2,8 +2,8 @@ package com.thymeflow.rdf.model.vocabulary
 
 import java.net.URLEncoder
 
-import org.openrdf.model.IRI
-import org.openrdf.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model.IRI
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
 /**
   * @author Thomas Pellissier Tanon

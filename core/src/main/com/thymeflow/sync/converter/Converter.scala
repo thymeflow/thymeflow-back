@@ -4,7 +4,7 @@ import java.io.InputStream
 
 import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.update.UpdateResults
-import org.openrdf.model.{IRI, Model}
+import org.eclipse.rdf4j.model.{IRI, Model}
 
 /**
   * @author Thomas Pellissier Tanon

@@ -11,20 +11,20 @@ import com.thymeflow.rdf.sail.{InterceptingSail, SailInterceptor}
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.Statement
-import org.openrdf.query.algebra.evaluation.function.FunctionRegistry
-import org.openrdf.repository.RepositoryConnection
-import org.openrdf.repository.sail.SailRepository
-import org.openrdf.repository.util.RDFLoader
-import org.openrdf.rio.{RDFFormat, RDFHandler}
-import org.openrdf.sail.helpers.AbstractNotifyingSail
-import org.openrdf.sail.inferencer.fc.ForwardChainingRDFSInferencer
-import org.openrdf.sail.lucene.LuceneSail
-import org.openrdf.sail.lucene4.LuceneIndex
-import org.openrdf.sail.memory.{MemoryStore, SimpleMemoryStore}
-import org.openrdf.sail.nativerdf.NativeStore
-import org.openrdf.sail.{NotifyingSail, Sail}
-import org.openrdf.{IsolationLevel, IsolationLevels}
+import org.eclipse.rdf4j.model.Statement
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry
+import org.eclipse.rdf4j.repository.RepositoryConnection
+import org.eclipse.rdf4j.repository.sail.SailRepository
+import org.eclipse.rdf4j.repository.util.RDFLoader
+import org.eclipse.rdf4j.rio.{RDFFormat, RDFHandler}
+import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail
+import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer
+
+//import org.eclipse.rdf4j.sail.lucene.{LuceneIndex, LuceneSail}
+import org.eclipse.rdf4j.sail.memory.MemoryStore
+import org.eclipse.rdf4j.sail.nativerdf.NativeStore
+import org.eclipse.rdf4j.sail.{NotifyingSail, Sail}
+import org.eclipse.rdf4j.{IsolationLevel, IsolationLevels}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -63,7 +63,7 @@ object RepositoryFactory extends StrictLogging {
       store.setSyncDelay(config.persistenceSyncDelay)
       store
     } else {
-      val store = new SimpleMemoryStore()
+      val store = new MemoryStore()
       store.setPersist(config.persistToDisk)
       store.setSyncDelay(config.persistenceSyncDelay)
       store
@@ -151,11 +151,12 @@ object RepositoryFactory extends StrictLogging {
 
   private def addFullTextSearch(notifyingSail: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {
     if (withFullTextSearch) {
-      val luceneSail = new LuceneSail()
-      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
-      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
-      luceneSail.setBaseSail(notifyingSail)
-      luceneSail
+      //      val luceneSail = new LuceneSail()
+      //      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
+      //      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
+      //      luceneSail.setBaseSail(notifyingSail)
+      //      luceneSail
+      notifyingSail
     } else {
       notifyingSail
     }

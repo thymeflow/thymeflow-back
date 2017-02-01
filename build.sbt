@@ -1,10 +1,13 @@
 import sbt.Keys._
 
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
+
 scalacOptions += "-target:jvm-1.8"
 
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
+  javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions += "-target:jvm-1.8",
   libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
@@ -66,7 +69,7 @@ val coreProject = Project(
   libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-sparqlxml" % "2.1.+",
   libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-text" % "2.1.+",
   libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryalgebra-geosparql" % "2.1.+",
-  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-lucene" % "2.1.+",
+  //libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-lucene" % "2.1.+",
   libraryDependencies += "commons-logging" % "commons-logging" % "1.+",
   libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+",
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
@@ -76,8 +79,7 @@ val coreProject = Project(
   libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+",
   libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+",
-  libraryDependencies += "org.apache.lucene" % "lucene-suggest" % "4.+"
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+"
 ).dependsOn(utilitiesProject)
 
 // TODO: Consider making thymeflowProject the root one.

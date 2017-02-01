@@ -19,7 +19,8 @@ import org.eclipse.rdf4j.repository.util.RDFLoader
 import org.eclipse.rdf4j.rio.{RDFFormat, RDFHandler}
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail
 import org.eclipse.rdf4j.sail.inferencer.fc.ForwardChainingRDFSInferencer
-import org.eclipse.rdf4j.sail.lucene.{LuceneIndex, LuceneSail}
+
+//import org.eclipse.rdf4j.sail.lucene.{LuceneIndex, LuceneSail}
 import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
 import org.eclipse.rdf4j.sail.{NotifyingSail, Sail}
@@ -150,11 +151,12 @@ object RepositoryFactory extends StrictLogging {
 
   private def addFullTextSearch(notifyingSail: NotifyingSail, withFullTextSearch: Boolean): NotifyingSail = {
     if (withFullTextSearch) {
-      val luceneSail = new LuceneSail()
-      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
-      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
-      luceneSail.setBaseSail(notifyingSail)
-      luceneSail
+      //      val luceneSail = new LuceneSail()
+      //      luceneSail.setParameter(LuceneSail.INDEX_CLASS_KEY, classOf[LuceneIndex].getName)
+      //      luceneSail.setParameter(LuceneSail.LUCENE_RAMDIR_KEY, "true")
+      //      luceneSail.setBaseSail(notifyingSail)
+      //      luceneSail
+      notifyingSail
     } else {
       notifyingSail
     }

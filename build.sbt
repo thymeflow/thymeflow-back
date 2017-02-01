@@ -76,10 +76,10 @@ val coreProject = Project(
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",
   libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+",
   libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.+", //TOOD: migrate to the stable version
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.+"
+  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.+",
+  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.4.+",
+  libraryDependencies += "com.typesafe.akka" %% "akka-http" % "10.0.+",
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.+"
 ).dependsOn(utilitiesProject)
 
 // TODO: Consider making thymeflowProject the root one.

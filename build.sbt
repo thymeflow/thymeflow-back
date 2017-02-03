@@ -40,6 +40,7 @@ val graphProject = Project(
   id = "graph",
   base = file("graph")
 ).settings(commonSettings: _*).settings(
+  libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "1.0.4"
 )
 
 val spatialProject = Project(

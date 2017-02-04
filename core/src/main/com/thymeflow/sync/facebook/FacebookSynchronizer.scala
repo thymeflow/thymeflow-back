@@ -5,7 +5,7 @@ import java.time.Instant
 import akka.actor.{ActorRef, Props}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import akka.http.scaladsl.model.Uri.{Path, Query}
+import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
@@ -20,14 +20,13 @@ import com.typesafe.config.Config
 import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
 import spray.json._
 
+
 /**
   * @author David Montoya
   */
 object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
-  final val apiEndpoint = Uri("https://graph.facebook.com")
-  final val namespace = "https://graph.facebook.com"
-  final val apiPath = Path("/v2.6")
+  import Facebook.{apiEndpoint, apiPath, namespace}
 
   def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
@@ -100,7 +99,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
             val queryMe = HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "me").withQuery(
               Query(
                 ("access_token", initial.token),
-                ("fields", "about,bio,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
+                ("fields", "about,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
               )
             ))
             val startDate = Instant.now
@@ -111,7 +110,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
               case HttpResponse(StatusCodes.OK, _, entity, _) =>
                 Unmarshal(entity.withContentType(ContentTypes.`application/json`)).to[Me].map {
                   me =>
-                    val context = valueFactory.createIRI(s"http://graph.facebook.com")
+                    val context = valueFactory.createIRI(namespace)
                     val events = me.events.data.map(_.id)
                     val model = facebookConverter.convert(me, context)
                     val resultTask = initialTask.copy(status = initialTaskStatus.copy(progress = Some(Progress(value = 0L, total = events.size))))

@@ -9,6 +9,7 @@ import java.util.Locale
 
 import com.thymeflow.rdf.model.SimpleHashModel
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
+import com.thymeflow.service.Facebook
 import com.thymeflow.spatial.Address
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, GeoCoordinatesConverter, PostalAddressConverter}
 import com.typesafe.scalalogging.StrictLogging
@@ -20,7 +21,7 @@ import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
   */
 class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
 
-  final val namespace = "https://graph.facebook.com/"
+  import Facebook.namespace
   private val emailAddressConverter = new EmailAddressConverter(valueFactory)
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)

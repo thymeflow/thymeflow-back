@@ -32,7 +32,7 @@ class GeoCoordinatesConverterSpec extends FlatSpec with Matchers with StrictLogg
           val uncertainty = if (rand.nextBoolean) Some(generateRandomNumber(0d, 100000d, i % 16)) else None
           val model = new SimpleHashModel()
           val geo = converter.convert(longitude, latitude, elevation, uncertainty, model)
-          converter.convertGeoUri(geo.stringValue(), model) should contain(geo.stringValue())
+          converter.convertGeoUri(geo.stringValue(), model).map(_.toString) should contain(geo.stringValue())
           withClue(geo.stringValue()) {
             geo.stringValue() match {
               case geoUriRegex(geoLatitude, geoLongitude, geoElevation, geoCrsn, geoUncertainty) =>

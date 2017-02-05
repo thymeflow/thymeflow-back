@@ -1,5 +1,8 @@
 package com.thymeflow.sync.converter.utils
 
+import java.text.{DecimalFormat, DecimalFormatSymbols}
+import java.util.Locale
+
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.typesafe.scalalogging.StrictLogging
 import ezvcard.util.GeoUri
@@ -30,13 +33,22 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     }
   }
 
+  val decimalFormat = new DecimalFormat("0", DecimalFormatSymbols.getInstance(Locale.ROOT))
+  decimalFormat.setMaximumFractionDigits(340)
+
+  def format(d: Double) = decimalFormat.format(d)
+
   /**
     * Creates a simple geo from a (longitude,latitude,elevation,accuracy) tuple
     */
   def convert(longitude: Double, latitude: Double, elevationOption: Option[Double], uncertaintyOption: Option[Double], model: Model): IRI = {
-    val elevationSuffix = elevationOption.map(x => s",${x.toString}").getOrElse("")
-    val uncertaintySuffix = uncertaintyOption.map(x => s";u=${x.toString}").getOrElse("")
-    val geoResource = valueFactory.createIRI(s"geo:${latitude.toString},${longitude.toString}$elevationSuffix$uncertaintySuffix")
+    val elevationSuffix = elevationOption.map(x => s",${format(x)}").getOrElse("")
+    val uncertaintySuffix = uncertaintyOption.map(x => s";u=${format(x)}").getOrElse("")
+    val geoResource = valueFactory.createIRI(s"geo:${format(latitude)},${format(longitude)}$elevationSuffix$uncertaintySuffix")
+
+    val uriBuilder = new GeoUri.Builder(latitude, longitude)
+    elevationOption.foreach(uriBuilder.coordC(_))
+    uncertaintyOption.foreach(uriBuilder.uncertainty(_))
     model.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
     model.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
     model.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))

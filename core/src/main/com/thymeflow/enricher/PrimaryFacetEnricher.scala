@@ -20,8 +20,12 @@ class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) 
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
     QueryLanguage.SPARQL,
     s"""SELECT ?facet WHERE {
-      ?facet <${Personal.SAME_AS}>* ?startFacet .
-      ?facet ?descriptionProperty ?descriptionValue
+      {
+        SELECT ?facet {
+          ?facet <${Personal.SAME_AS}>* ?startFacet .
+        }
+      }
+      ?facet ?descriptionProperty ?descriptionValue .
     } GROUP BY ?facet ORDER BY DESC(COUNT(?descriptionProperty))"""
   )
 

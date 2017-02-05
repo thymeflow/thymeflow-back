@@ -20,9 +20,9 @@ object Facebook extends Service with OAuth2Service with DefaultJsonProtocol with
   val name = "Facebook"
   val routeName = "facebook"
 
-  final val namespace = "http://graph.facebook.com"
-  final val apiEndpoint = Uri("https://graph.facebook.com")
-  final val apiPath = Path("/v2.8")
+  val namespace = "http://graph.facebook.com/"
+  val apiEndpoint = Uri("https://graph.facebook.com")
+  val apiPath = Path("/v2.8")
 
   case class Me(id: String, name: Option[String], email: Option[String])
 

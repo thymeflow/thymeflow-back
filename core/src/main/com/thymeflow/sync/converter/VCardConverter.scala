@@ -297,32 +297,39 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
 
     private def addCardStatement(statement: Statement): Boolean = {
       //TODO: we do not support alternative representation for structured name (only VCard 4.0)
+      def getOrCreateStructuredName() = {
+        Option(vCard.getStructuredName).getOrElse({
+          val name = new StructuredName()
+          vCard.setStructuredName(name)
+          name
+        })
+      }
       statement.getPredicate match {
         case SchemaOrg.ADDITIONAL_NAME =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getAdditionalNames.add(statement.getObject.toString)
+          getOrCreateStructuredName().getAdditionalNames.add(statement.getObject.stringValue())
         case SchemaOrg.BIRTH_DATE => vCard.getBirthdays.add(toBirthdayProperty(statement.getObject))
         case SchemaOrg.DEATH_DATE => vCard.getDeathdates.add(toDeathdateProperty(statement.getObject))
         case SchemaOrg.EMAIL => vCard.getEmails.add(toEmailProperty(statement.getObject))
         case SchemaOrg.FAMILY_NAME =>
-          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
-          val newFamily = statement.getObject.toString
-          Option(structuredName).filter(_.getFamily != newFamily).foreach(
-            throw new ConverterException("The family name is already set to a different value")
-          )
-          structuredName.setFamily(statement.getObject.toString)
+          val structuredName = getOrCreateStructuredName()
+          val newFamily = statement.getObject.stringValue()
+          Option(structuredName.getFamily).filter(_ != newFamily).foreach {
+            _ => throw new ConverterException("The family name is already set to a different value")
+          }
+          structuredName.setFamily(newFamily)
           true
         case SchemaOrg.GIVEN_NAME =>
-          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
-          val newGiven = statement.getObject.toString
-          Option(structuredName).filter(_.getGiven != newGiven).foreach(
-            throw new ConverterException("The given name is already set to a different value")
-          )
-          structuredName.setGiven(statement.getObject.toString)
+          val structuredName = getOrCreateStructuredName()
+          val newGiven = statement.getObject.stringValue()
+          Option(structuredName.getGiven).filter(_ != newGiven).foreach {
+            _ => throw new ConverterException("The given name is already set to a different value")
+          }
+          structuredName.setGiven(newGiven)
           true
         case SchemaOrg.HONORIFIC_PREFIX =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getPrefixes.add(statement.getObject.toString)
+          getOrCreateStructuredName().getPrefixes.add(statement.getObject.stringValue())
         case SchemaOrg.HONORIFIC_SUFFIX =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getSuffixes.add(statement.getObject.toString)
+          getOrCreateStructuredName().getSuffixes.add(statement.getObject.stringValue())
         case SchemaOrg.IMAGE => vCard.getPhotos.add(toPhotoProperty(statement.getObject))
         case SchemaOrg.JOB_TITLE => vCard.getTitles.add(toTitleProperty(statement.getObject))
         case SchemaOrg.NAME => vCard.getFormattedNames.add(toFormattedNameProperty(statement.getObject))

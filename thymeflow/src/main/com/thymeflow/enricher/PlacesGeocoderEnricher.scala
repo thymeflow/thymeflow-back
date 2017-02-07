@@ -4,7 +4,7 @@ import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.typesafe.scalalogging.StrictLogging
@@ -33,7 +33,7 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "PlacesGeocoderEnricher")
   private val uncertainInferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "UncertainPlacesGeocoderEnricher")
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     val places = diff.added.collect {
       case statement if statement.getPredicate == RDF.TYPE && statement.getObject == SchemaOrg.PLACE =>
         statement.getSubject

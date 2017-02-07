@@ -7,7 +7,7 @@ import akka.stream.scaladsl.Source
 import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
 import com.thymeflow.rdf.model.document.Document
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service.source.{CardDavSource, DavSource}
 import com.thymeflow.service.{ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.converter.VCardConverter
@@ -52,7 +52,7 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
       vCardConverter.convert(str, context)
     }
 
-    override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
+    override def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults) = {
       vCardConverter.applyDiff(str, diff)
     }
   }

@@ -5,7 +5,7 @@ import java.text.SimpleDateFormat
 import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.spatial
 import com.thymeflow.sync.converter.utils._
 import com.thymeflow.update.{UpdateResult, UpdateResults}
@@ -50,7 +50,7 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
     statements
   }
 
-  override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
+  override def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults) = {
     val updateResult = UpdateResults()
     (Ezvcard.write(Ezvcard.parse(str).all().asScala.map(vCard => {
       val diffAppplication = new DiffApplication(vCard)

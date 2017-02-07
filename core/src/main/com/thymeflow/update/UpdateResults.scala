@@ -1,6 +1,6 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.utilities.{Error, Ok}
 import org.eclipse.rdf4j.model.Statement
 
@@ -39,12 +39,12 @@ object UpdateResults {
 
   def apply(): UpdateResults = new UpdateResults(Map.empty, Map.empty)
 
-  def allFailed(diff: ModelDiff): UpdateResults = new UpdateResults(
+  def allFailed(diff: StatementSetDiff): UpdateResults = new UpdateResults(
     diff.added.map(statement => statement -> Error(List()))(scala.collection.breakOut),
     diff.removed.map(statement => statement -> Error(List()))(scala.collection.breakOut)
   )
 
-  def allFailed(diff: ModelDiff, error: Exception): UpdateResults = new UpdateResults(
+  def allFailed(diff: StatementSetDiff, error: Exception): UpdateResults = new UpdateResults(
     diff.added.map(statement => statement -> Error(List(error)))(scala.collection.breakOut),
     diff.removed.map(statement => statement -> Error(List(error)))(scala.collection.breakOut)
   )

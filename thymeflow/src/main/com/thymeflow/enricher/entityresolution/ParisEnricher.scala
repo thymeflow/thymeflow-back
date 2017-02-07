@@ -9,7 +9,7 @@ import com.thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimil
 import com.thymeflow.enricher.entityresolution.ParisEnricher.{EqualityStore, ParisLiteral}
 import com.thymeflow.graph.ConnectedComponents
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
 import com.thymeflow.utilities.TimeExecution
@@ -77,7 +77,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
   /**
     * @return enrichs the repository the Enricher is linked to based on the diff
     */
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     val agentNames = getAgentNames
     val agentEmails = getAgentEmails
     val literalToAgent = (agentNames.toIndexedSeq.flatMap {

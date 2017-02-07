@@ -12,7 +12,7 @@ import akka.stream.scaladsl.Source
 import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service.source.ImapSource
 import com.thymeflow.service.{Progress, ServiceAccountSource, ServiceAccountSourceTask, ServiceAccountSources, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
@@ -310,7 +310,7 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         handleFetchersState()
     }
 
-    private def applyDiff(diff: ModelDiff): UpdateResults = {
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       //TODO: support at least email deletion
       //We tag only the messages from IMAP as failed
       UpdateResults.merge(

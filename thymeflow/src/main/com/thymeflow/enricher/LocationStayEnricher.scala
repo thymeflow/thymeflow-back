@@ -11,7 +11,7 @@ import com.thymeflow.location.Clustering
 import com.thymeflow.location.cluster.MaxLikelihoodCluster
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
 import com.thymeflow.utilities.TimeExecution
@@ -41,7 +41,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricher")
   private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     if (
       !diff.added.exists(statement => statement.getPredicate == RDF.TYPE && statement.getObject == Personal.LOCATION)
     ) {

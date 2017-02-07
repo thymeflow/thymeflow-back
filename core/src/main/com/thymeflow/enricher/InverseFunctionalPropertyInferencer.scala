@@ -2,7 +2,7 @@ package com.thymeflow.enricher
 
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import org.eclipse.rdf4j.model.Statement
 import org.eclipse.rdf4j.repository.RepositoryConnection
 
@@ -18,7 +18,7 @@ class InverseFunctionalPropertyInferencer(newRepositoryConnection: () => Reposit
   private val valueFactory = repositoryConnection.getValueFactory
   private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "inverseFunctionalInferencerOutput")
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     repositoryConnection.begin()
 
     //add

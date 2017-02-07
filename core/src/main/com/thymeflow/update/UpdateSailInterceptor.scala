@@ -1,6 +1,6 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.rdf.sail.SailInterceptor
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
@@ -20,20 +20,20 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
   }
 
   override def onSparqlAddStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*)(implicit valueFactory: ValueFactory): Boolean = {
-    applyUpdate(new ModelDiff(
+    applyUpdate(new StatementSetDiff(
       modelFromStatement(subject, predicate, `object`, contexts),
       StatementSet.empty
     ))
   }
 
   override def onSparqlRemoveStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*)(implicit valueFactory: ValueFactory): Boolean = {
-    applyUpdate(new ModelDiff(
+    applyUpdate(new StatementSetDiff(
       StatementSet.empty,
       modelFromStatement(subject, predicate, `object`, contexts)
     ))
   }
 
-  private def applyUpdate(diff: ModelDiff): Boolean = {
+  private def applyUpdate(diff: StatementSetDiff): Boolean = {
     updater.apply(diff).foreach(results => {
       results.added.foreach {
         case (statement, Ok(_)) => logger.info(s"statement $statement has been successfully added")

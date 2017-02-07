@@ -12,7 +12,7 @@ import com.github.sardine.{DavResource, Sardine}
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service._
 import com.thymeflow.service.source.DavSource
 import com.thymeflow.sync.Synchronizer
@@ -110,7 +110,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       )
     }
 
-    private def applyDiff(diff: ModelDiff): UpdateResults = {
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       UpdateResults.merge(diff.contexts().map(context => {
         val contextDiff = diff.filter(_.getContext == context)
         UpdateResults.merge(
@@ -223,7 +223,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       new URIBuilder(base).setPath(path).toString
     }
 
-    def applyDiff(diff: ModelDiff): UpdateResults = {
+    def applyDiff(diff: StatementSetDiff): UpdateResults = {
       UpdateResults.merge(diff.contexts().map(context => {
         val documentUrl = new URI(context.toString)
         val oldVersion = IOUtils.toString(sardine.get(documentUrl.toString))
@@ -244,7 +244,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
       }))
     }
 
-    protected def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults)
+    protected def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults)
   }
 }
 

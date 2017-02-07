@@ -9,7 +9,7 @@ import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service._
 import com.thymeflow.service.source.PathSource
 import com.thymeflow.sync.Synchronizer.Update
@@ -308,7 +308,7 @@ object FileSynchronizer extends Synchronizer {
       registeredExtensions(FilenameUtils.getExtension(path.toString))
     }
 
-    private def applyDiff(diff: ModelDiff): UpdateResults = {
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       //We tag file:// contexts as failed
       UpdateResults.merge(
         diff.contexts()

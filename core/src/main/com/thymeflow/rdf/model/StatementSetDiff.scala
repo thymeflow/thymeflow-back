@@ -5,8 +5,8 @@ import org.eclipse.rdf4j.model._
 /**
   * @author Thomas Pellissier Tanon
   */
-class ModelDiff(val added: StatementSet, val removed: StatementSet) {
-  def apply(diff: ModelDiff): Unit = {
+class StatementSetDiff(val added: StatementSet, val removed: StatementSet) {
+  def apply(diff: StatementSetDiff): Unit = {
     add(diff.added)
     remove(diff.removed)
   }
@@ -36,9 +36,9 @@ class ModelDiff(val added: StatementSet, val removed: StatementSet) {
     contexts ++ removed.contexts
   }
 
-  def filter(f: (Statement) => Boolean): ModelDiff = {
+  def filter(f: (Statement) => Boolean): StatementSetDiff = {
     implicit val valueFactory = added.valueFactory
-    new ModelDiff(
+    new StatementSetDiff(
       added.filter(f),
       removed.filter(f)
     )
@@ -53,9 +53,9 @@ class ModelDiff(val added: StatementSet, val removed: StatementSet) {
   }
 }
 
-object ModelDiff {
-  def merge(diffs: ModelDiff*)(implicit valueFactory: ValueFactory): ModelDiff = {
-    val diff = new ModelDiff(StatementSet.empty, StatementSet.empty)
+object StatementSetDiff {
+  def merge(diffs: StatementSetDiff*)(implicit valueFactory: ValueFactory): StatementSetDiff = {
+    val diff = new StatementSetDiff(StatementSet.empty, StatementSet.empty)
     diffs.foreach(diff.apply)
     diff
   }

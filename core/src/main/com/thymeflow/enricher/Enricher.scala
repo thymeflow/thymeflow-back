@@ -1,6 +1,6 @@
 package com.thymeflow.enricher
 
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import org.eclipse.rdf4j.repository.RepositoryConnection
 
 /**
@@ -15,5 +15,5 @@ trait Enricher {
   /**
     * @return enrichs the repository the Enricher is linked to based on the diff
     */
-  def enrich(diff: ModelDiff): Unit
+  def enrich(diff: StatementSetDiff): Unit
 }

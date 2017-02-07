@@ -3,7 +3,7 @@ package com.thymeflow.update
 import com.thymeflow.Supervisor
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
@@ -21,11 +21,11 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
   private implicit val valueFactory = repositoryConnection.getValueFactory
   private val userDataContext = valueFactory.createIRI(Personal.NAMESPACE, "userData") //TODO: config
 
-  def apply(diff: ModelDiff): Future[UpdateResults] = {
+  def apply(diff: StatementSetDiff): Future[UpdateResults] = {
     val (diffWithoutContext, diffWithContext) = splitGraphFromDiff(diff, null)
     val guessedContextForWithoutContext = addPossibleContexts(diffWithoutContext)
 
-    applyDiffWithContext(ModelDiff.merge(guessedContextForWithoutContext, diffWithContext)).map(updateResult => {
+    applyDiffWithContext(StatementSetDiff.merge(guessedContextForWithoutContext, diffWithContext)).map(updateResult => {
       repositoryConnection.begin()
       val endResult = UpdateResults.merge(
         //Without context
@@ -80,21 +80,21 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
   /**
     * @return The diff for the graph, and the other diff
     */
-  private def splitGraphFromDiff(diff: ModelDiff, context: Resource): (ModelDiff, ModelDiff) = {
+  private def splitGraphFromDiff(diff: StatementSetDiff, context: Resource): (StatementSetDiff, StatementSetDiff) = {
     (
-      new ModelDiff(
+      new StatementSetDiff(
         diff.added.filter(_.getContext == context),
         diff.removed.filter(_.getContext == context)
       ),
-      new ModelDiff(
+      new StatementSetDiff(
         diff.added.filter(_.getContext != context),
         diff.removed.filter(_.getContext != context)
       )
     )
   }
 
-  private def addPossibleContexts(diff: ModelDiff): ModelDiff = {
-    new ModelDiff(
+  private def addPossibleContexts(diff: StatementSetDiff): StatementSetDiff = {
+    new StatementSetDiff(
       addPossibleContextsToAddedStatements(diff.added),
       addPossibleContextsToRemovedStatements(diff.removed)
     )
@@ -144,8 +144,8 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
       statement.getContext == null)
   }
 
-  private def applyDiffWithContext(diff: ModelDiff): Future[UpdateResults] = {
-    val cleanedDiff = new ModelDiff(
+  private def applyDiffWithContext(diff: StatementSetDiff): Future[UpdateResults] = {
+    val cleanedDiff = new StatementSetDiff(
       diff.added.filterNot(hasStatementWithContext(_, false)),
       diff.removed.filter(hasStatementWithContext(_, true))
     )
@@ -154,7 +154,7 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
     sendDiffToSource(sourceGraphDiff).map(UpdateResults.merge(_, userGraphResult))
   }
 
-  private def sendDiffToSource(diff: ModelDiff): Future[UpdateResults] = {
+  private def sendDiffToSource(diff: StatementSetDiff): Future[UpdateResults] = {
     if (diff.isEmpty) {
       Future.successful(UpdateResults())
     } else {
@@ -163,7 +163,7 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
     }
   }
 
-  private def applyDiffToRepository(diff: ModelDiff): UpdateResults = {
+  private def applyDiffToRepository(diff: StatementSetDiff): UpdateResults = {
     UpdateResults(
       diff.added.map(statement => {
         repositoryConnection.add(statement)

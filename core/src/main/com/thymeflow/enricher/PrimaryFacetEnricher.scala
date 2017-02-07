@@ -1,7 +1,7 @@
 package com.thymeflow.enricher
 
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import org.eclipse.rdf4j.model.vocabulary.RDF
 import org.eclipse.rdf4j.model.{Resource, Value}
@@ -29,7 +29,7 @@ class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) 
 
   private val primaryFacetTypes = Set(SchemaOrg.PLACE, SchemaOrg.EVENT, Personal.AGENT)
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     repositoryConnection.begin()
 
     // list resources of type belonging to primaryFacetTypes

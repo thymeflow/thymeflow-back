@@ -10,7 +10,7 @@ import akka.stream.{SourceShape, _}
 import akka.util.Timeout
 import com.thymeflow.Supervisor._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
 import com.thymeflow.sync.Synchronizer
@@ -30,7 +30,7 @@ class Supervisor(config: Config,
                  materializer: Materializer,
                  repository: Repository,
                  synchronizers: Seq[Synchronizer],
-                 enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _]) extends Actor {
+                 enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _]) extends Actor {
   protected var taskCounter = 0L
   protected val taskMap = new scala.collection.mutable.HashMap[ServiceAccountSource, (Long, ServiceAccountSourceTask[_])]
 
@@ -145,7 +145,7 @@ object Supervisor {
 
   def props(repository: Repository,
             synchronizers: Seq[Synchronizer],
-            enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])(implicit config: Config, materializer: Materializer) = Props(classOf[Supervisor], config, materializer, repository, synchronizers, enrichers)
+            enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _])(implicit config: Config, materializer: Materializer) = Props(classOf[Supervisor], config, materializer, repository, synchronizers, enrichers)
 
   object ListTasks
 

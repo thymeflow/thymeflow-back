@@ -10,7 +10,7 @@ import com.thymeflow.enricher.{DelayedBatch, Enricher}
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Negation
-import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service.ServiceAccountSources
 import com.thymeflow.sync.Synchronizer
@@ -30,7 +30,7 @@ import scala.language.postfixOps
   */
 class Pipeline private(repositoryConnection: RepositoryConnection,
                        source: Source[Document, Traversable[ActorRef]],
-                       enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
+                       enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _])
                       (implicit materializer: Materializer)
   extends StrictLogging {
 
@@ -54,11 +54,11 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     }).map(UpdateResults.merge)
   }
 
-  private def buildRepositoryInsertion(): Flow[Document, ModelDiff, NotUsed] = {
+  private def buildRepositoryInsertion(): Flow[Document, StatementSetDiff, NotUsed] = {
     Flow[Document].map(addDocumentToRepository)
   }
 
-  private def addDocumentToRepository(document: Document): ModelDiff = {
+  private def addDocumentToRepository(document: Document): StatementSetDiff = {
     repositoryConnection.begin()
     implicit val valueFactory = document.statements.valueFactory
     //Removes the removed statements from the repository and the already existing statements from statements
@@ -89,7 +89,7 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     repositoryConnection.remove(statementsToRemove.asJavaCollection)
     repositoryConnection.commit()
 
-    new ModelDiff(statementsToAdd, statementsToRemove)
+    new StatementSetDiff(statementsToAdd, statementsToRemove)
   }
 }
 
@@ -97,24 +97,24 @@ object Pipeline {
 
   def apply(repositoryConnection: RepositoryConnection,
             source: Source[Document, Traversable[ActorRef]],
-            enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])(implicit materializer: Materializer) = {
+            enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _])(implicit materializer: Materializer) = {
     new Pipeline(repositoryConnection, source, enrichers)
   }
 
   def create(repository: Repository,
              synchronizers: Seq[Synchronizer],
-             enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])
+             enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _])
             (implicit config: Config, actorFactory: ActorRefFactory, materializer: Materializer) = {
     Supervisor.interactor(actorFactory.actorOf(Supervisor.props(repository, synchronizers, enrichers), name = "ThymeflowSupervisor"))
   }
 
   def delayedBatchToFlow(delay: FiniteDuration) =
-    Flow[ModelDiff].via(DelayedBatch[ModelDiff]((diff1, diff2) => {
+    Flow[StatementSetDiff].via(DelayedBatch[StatementSetDiff]((diff1, diff2) => {
       diff1.apply(diff2)
       diff1
     }, delay))
 
-  def enricherToFlow(enricher: Enricher) = Flow[ModelDiff].map(diff => {
+  def enricherToFlow(enricher: Enricher) = Flow[StatementSetDiff].map(diff => {
     enricher.enrich(diff)
     diff
   })

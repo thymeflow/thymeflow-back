@@ -13,7 +13,7 @@ import com.thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimil
 import com.thymeflow.graph.serialization.GraphML
 import com.thymeflow.graph.{ConnectedComponents, ShortestPath}
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.alignment.TextAlignment
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
@@ -136,7 +136,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
       |}
     """.stripMargin)
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     if (outputAgents) {
       saveAgentsNameEmails()
     }

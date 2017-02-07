@@ -12,7 +12,7 @@ import akka.stream.scaladsl.Source
 import com.sun.mail.imap.{IMAPFolder, IMAPMessage}
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service.source.ImapSource
 import com.thymeflow.service.{Progress, ServiceAccountSource, ServiceAccountSourceTask, ServiceAccountSources, TaskStatus, Done => DoneService, Idle => IdleService, Working => WorkingService}
 import com.thymeflow.sync.Synchronizer.Update
@@ -21,10 +21,9 @@ import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
-import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 
 import scala.annotation.tailrec
-import scala.collection.JavaConverters._
 import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
 import scala.language.postfixOps
@@ -311,14 +310,14 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
         handleFetchersState()
     }
 
-    private def applyDiff(diff: ModelDiff): UpdateResults = {
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       //TODO: support at least email deletion
       //We tag only the messages from IMAP as failed
       UpdateResults.merge(
-        diff.contexts().asScala
+        diff.contexts()
           .filter(_.stringValue().startsWith("imap://"))
           .map(context => UpdateResults.allFailed(
-            diff.filter(null, null, null, context),
+            diff.filter(_.getContext == context),
             new ConverterException("IMAP repository could not be modified")
           ))
       )
@@ -649,16 +648,16 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       val context = messageContext(action.folderURLName, action.uidValidity, action.messageUid)
       action match {
         case action: AddedMessage =>
-          val contextIRI = (model: Model, id: String) => {
+          val contextIRI = (model: StatementSet, id: String) => {
             val iri = valueFactory.createIRI(s"${serviceAccountSource.iri.toString}?id=${URLEncoder.encode(id, "UTF-8")}")
             model.add(iri, Personal.DOCUMENT_OF, serviceAccountSource.iri, iri)
             iri
           }
-          val model = emailMessageConverter.convert(action.message, context, contextIRI)
-          model.add(context, Personal.DOCUMENT_OF, serviceAccountSource.iri, context)
-          Document(context, model)
+          val statements = emailMessageConverter.convert(action.message, context, contextIRI)
+          statements.add(context, Personal.DOCUMENT_OF, serviceAccountSource.iri, context)
+          Document(context, statements)
         case action: RemovedMessage =>
-          Document(context, SimpleHashModel.empty)
+          Document(context, StatementSet.empty(valueFactory))
       }
     }
 

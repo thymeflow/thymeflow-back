@@ -1,10 +1,8 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.utilities.{Error, Ok}
 import org.eclipse.rdf4j.model.Statement
-
-import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -41,14 +39,14 @@ object UpdateResults {
 
   def apply(): UpdateResults = new UpdateResults(Map.empty, Map.empty)
 
-  def allFailed(diff: ModelDiff): UpdateResults = new UpdateResults(
-    diff.added.asScala.map(statement => statement -> Error(List())).toMap,
-    diff.removed.asScala.map(statement => statement -> Error(List())).toMap
+  def allFailed(diff: StatementSetDiff): UpdateResults = new UpdateResults(
+    diff.added.map(statement => statement -> Error(List()))(scala.collection.breakOut),
+    diff.removed.map(statement => statement -> Error(List()))(scala.collection.breakOut)
   )
 
-  def allFailed(diff: ModelDiff, error: Exception): UpdateResults = new UpdateResults(
-    diff.added.asScala.map(statement => statement -> Error(List(error))).toMap,
-    diff.removed.asScala.map(statement => statement -> Error(List(error))).toMap
+  def allFailed(diff: StatementSetDiff, error: Exception): UpdateResults = new UpdateResults(
+    diff.added.map(statement => statement -> Error(List(error)))(scala.collection.breakOut),
+    diff.removed.map(statement => statement -> Error(List(error)))(scala.collection.breakOut)
   )
 
   def merge(results: Traversable[UpdateResults]): UpdateResults = {

@@ -9,7 +9,7 @@ import biweekly.component.VEvent
 import biweekly.property._
 import biweekly.util.{Duration, ICalDate}
 import biweekly.{Biweekly, ICalendar}
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, EmailMessageUriConverter, GeoCoordinatesConverter, UUIDConverter}
 import com.typesafe.config.Config
@@ -31,25 +31,25 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  def convert(str: String, context: Resource): Model = {
+  def convert(str: String, context: Resource): StatementSet = {
     convert(Biweekly.parse(str).all.asScala, context)
   }
 
-  private def convert(calendars: Traversable[ICalendar], context: Resource): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context)
+  private def convert(calendars: Traversable[ICalendar], context: Resource): StatementSet = {
+    val statements = StatementSet.empty(valueFactory)
+    val converter = new ToModelConverter(statements, context)
     for (calendar <- calendars) {
       converter.convert(calendar)
     }
-    model
+    statements
   }
 
-  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (StatementSet, String) => IRI): Iterator[(IRI, StatementSet)] = {
     val wholeContext = context(None)
     Iterator((wholeContext, convert(Biweekly.parse(stream).all.asScala, wholeContext)))
   }
 
-  private class ToModelConverter(model: Model, context: Resource) {
+  private class ToModelConverter(statements: StatementSet, context: Resource) {
     def convert(calendar: ICalendar) {
       for (event <- calendar.getEvents.asScala) {
         convert(event)
@@ -59,34 +59,34 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
 
     private def convert(event: VEvent): Resource = {
       val eventResource = resourceFromId(event.getUid, event.getRecurrenceId, event.getSequence)
-      model.add(eventResource, RDF.TYPE, SchemaOrg.EVENT, context)
+      statements.add(eventResource, RDF.TYPE, SchemaOrg.EVENT, context)
 
       event.getProperties.asScala.foreach(entry =>
         entry.getValue.asScala.foreach {
           //ATTENDEE
-          case attendee: Attendee => model.add(eventResource, SchemaOrg.ATTENDEE, convert(attendee), context)
+          case attendee: Attendee => statements.add(eventResource, SchemaOrg.ATTENDEE, convert(attendee), context)
           //DESCRIPTION
           case description: Description =>
             if (description.getValue != "") {
-              model.add(eventResource, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description.getValue.trim), context)
+              statements.add(eventResource, SchemaOrg.DESCRIPTION, valueFactory.createLiteral(description.getValue.trim), context)
             }
           //DEND
-          case dateEnd: DateEnd => model.add(eventResource, SchemaOrg.END_DATE, convert(dateEnd), context)
+          case dateEnd: DateEnd => statements.add(eventResource, SchemaOrg.END_DATE, convert(dateEnd), context)
           //DSTART
-          case dateStart: DateStart => model.add(eventResource, SchemaOrg.START_DATE, convert(dateStart), context)
+          case dateStart: DateStart => statements.add(eventResource, SchemaOrg.START_DATE, convert(dateStart), context)
           //DURATION
-          case duration: DurationProperty => model.add(eventResource, SchemaOrg.DURATION, convert(duration), context)
+          case duration: DurationProperty => statements.add(eventResource, SchemaOrg.DURATION, convert(duration), context)
           //LOCATION
           case location: Location =>
             if (location.getValue != "") {
-              model.add(eventResource, SchemaOrg.LOCATION, convert(location), context)
+              statements.add(eventResource, SchemaOrg.LOCATION, convert(location), context)
             }
           //ORGANIZER
-          case organizer: Organizer => model.add(eventResource, SchemaOrg.ORGANIZER, convert(organizer), context)
+          case organizer: Organizer => statements.add(eventResource, SchemaOrg.ORGANIZER, convert(organizer), context)
           //SUMMARY
           case summary: Summary =>
             if (summary.getValue != "") {
-              model.add(eventResource, SchemaOrg.NAME, valueFactory.createLiteral(summary.getValue.trim), context)
+              statements.add(eventResource, SchemaOrg.NAME, valueFactory.createLiteral(summary.getValue.trim), context)
             }
           //URL
           case url: Url =>
@@ -94,10 +94,10 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
               val uri = new URI(url.getValue)
               if (uri.getScheme == "message") {
                 val messageResource = emailMessageConverter.convert(uri)
-                model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
-                model.add(messageResource, SchemaOrg.ABOUT, eventResource, context)
+                statements.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+                statements.add(messageResource, SchemaOrg.ABOUT, eventResource, context)
               } else {
-                convert(url).foreach(url => model.add(eventResource, SchemaOrg.URL, url, context))
+                convert(url).foreach(url => statements.add(eventResource, SchemaOrg.URL, url, context))
               }
             } catch {
               case e: IllegalArgumentException =>
@@ -106,7 +106,7 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
             }
           // X-APPLE-STRUCTURED-LOCATION
           case property: RawProperty if property.getName == "X-APPLE-STRUCTURED-LOCATION" =>
-            model.add(eventResource, SchemaOrg.LOCATION, convertXAppleStructuredLocation(property), context)
+            statements.add(eventResource, SchemaOrg.LOCATION, convertXAppleStructuredLocation(property), context)
           case _ =>
         }
       )
@@ -116,18 +116,18 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
 
     private def convert(attendee: Attendee): Resource = {
       val attendeeResource = uuidConverter.createIRI(attendee)
-      model.add(attendeeResource, RDF.TYPE, Personal.AGENT, context)
+      statements.add(attendeeResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(attendee.getCommonName).foreach(name =>
-        model.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+        statements.add(attendeeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
       )
       Option(attendee.getEmail).foreach(email =>
-        emailAddressConverter.convert(email, model).foreach {
-          resource => model.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
+        emailAddressConverter.convert(email, statements).foreach {
+          resource => statements.add(attendeeResource, SchemaOrg.EMAIL, resource, context)
         }
       )
       Option(attendee.getUri).foreach(url => {
-        model.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
+        statements.add(attendeeResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
         logger.info("Attendee address that is not a mailto URI: " + url)
       })
 
@@ -172,25 +172,25 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
 
     private def convert(location: Location): Resource = {
       val placeResource = uuidConverter.createBNode(location)
-      model.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
-      model.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue.replaceAll("\n", " ").trim), context)
+      statements.add(placeResource, RDF.TYPE, SchemaOrg.PLACE, context)
+      statements.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(location.getValue.replaceAll("\n", " ").trim), context)
       placeResource
     }
 
     private def convert(organizer: Organizer): Resource = {
       val organizerResource = uuidConverter.createIRI(organizer)
-      model.add(organizerResource, RDF.TYPE, Personal.AGENT, context)
+      statements.add(organizerResource, RDF.TYPE, Personal.AGENT, context)
 
       Option(organizer.getCommonName).foreach(name =>
-        model.add(organizerResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
+        statements.add(organizerResource, SchemaOrg.NAME, valueFactory.createLiteral(name), context)
       )
       Option(organizer.getEmail).foreach(email =>
-        emailAddressConverter.convert(email, model).foreach {
-          resource => model.add(organizerResource, SchemaOrg.EMAIL, resource, context)
+        emailAddressConverter.convert(email, statements).foreach {
+          resource => statements.add(organizerResource, SchemaOrg.EMAIL, resource, context)
         }
       )
       Option(organizer.getUri).foreach(url => {
-        model.add(organizerResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
+        statements.add(organizerResource, SchemaOrg.URL, valueFactory.createIRI(url), context)
         logger.info("Organizer address that is not a mailto URI: " + url)
       })
 
@@ -210,8 +210,8 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
 
     private def convertXAppleStructuredLocation(xAppleStructuredLocation: RawProperty): Resource = {
       val placeResource = convert(new Location(xAppleStructuredLocation.getParameter("X-TITLE")))
-      geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, model).foreach(
-        coordinatesResource => model.add(placeResource, SchemaOrg.GEO, coordinatesResource, context)
+      geoCoordinatesConverter.convertGeoUri(xAppleStructuredLocation.getValue, statements).foreach(
+        coordinatesResource => statements.add(placeResource, SchemaOrg.GEO, coordinatesResource, context)
       )
       placeResource
     }

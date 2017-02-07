@@ -5,7 +5,7 @@ import javax.xml.bind.DatatypeConverter
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.spatial.geographic.metric.models.WGS84SphereHaversinePointMetric
 import com.thymeflow.spatial.geographic.{Geography, Point}
@@ -63,7 +63,7 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
   /**
     * Run the enrichments defined by this Enricher
     */
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     val events = getEvents.toBuffer
 
     Await.result(getStays.map(stay =>

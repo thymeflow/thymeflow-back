@@ -10,6 +10,7 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.service._
@@ -17,7 +18,7 @@ import com.thymeflow.service.source.FacebookGraphApiSource
 import com.thymeflow.sync.Synchronizer
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.typesafe.config.Config
-import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 import spray.json._
 
 
@@ -37,7 +38,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
   case class Initial(task: ServiceAccountSourceTask[TaskStatus], token: String) extends FacebookState
 
-  case class Scroll(task: ServiceAccountSourceTask[Working], token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
+  case class Scroll(task: ServiceAccountSourceTask[Working], token: String, context: IRI, statements: StatementSet, eventIds: Vector[String]) extends FacebookState
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
@@ -66,7 +67,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                 Unmarshal(entity.withContentType(ContentTypes.`application/json`)).to[Map[String, Event]].map {
                   events =>
                     events.foreach {
-                      case (_, event) => facebookConverter.convert(event, scroll.model, scroll.context)
+                      case (_, event) => facebookConverter.convert(event, scroll.statements, scroll.context)
                     }
                 }
             }.recover {
@@ -90,9 +91,9 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                     case _ =>
                       scroll.task
                   }
-                  scroll.model.add(scroll.context, Personal.DOCUMENT_OF, scroll.task.source.iri, scroll.context)
+                  scroll.statements.add(scroll.context, Personal.DOCUMENT_OF, scroll.task.source.iri, scroll.context)
                   supervisor ! resultTask
-                  Result(None, Vector(Document(scroll.context, scroll.model)))
+                  Result(None, Vector(Document(scroll.context, scroll.statements)))
                 }
             }
           case initial: Initial =>
@@ -112,10 +113,10 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                   me =>
                     val context = valueFactory.createIRI(namespace)
                     val events = me.events.data.map(_.id)
-                    val model = facebookConverter.convert(me, context)
+                    val statements = facebookConverter.convert(me, context)
                     val resultTask = initialTask.copy(status = initialTaskStatus.copy(progress = Some(Progress(value = 0L, total = events.size))))
                     supervisor ! resultTask
-                    Result(Some(Scroll(resultTask, initial.token, context, model, events)), Vector.empty)
+                    Result(Some(Scroll(resultTask, initial.token, context, statements, events)), Vector.empty)
                 }
             }
             f.recover {

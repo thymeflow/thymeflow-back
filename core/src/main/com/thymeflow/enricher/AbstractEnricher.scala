@@ -1,8 +1,6 @@
 package com.thymeflow.enricher
 
-import java.util
-
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
 import org.eclipse.rdf4j.model.{Resource, Statement}
 import org.eclipse.rdf4j.query.QueryLanguage
@@ -24,24 +22,20 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Add an inferred statements to the repository if it is not already existing
     */
-  protected def addStatements(diff: ModelDiff, statements: util.Collection[Statement]): Unit = {
-    val newStatements = statements.asScala
-      .filterNot(repositoryConnection.hasStatement(_, false))
-      .filterNot(statement => repositoryConnection.hasStatement(
-        statement.getSubject,
-        Negation.not(statement.getPredicate),
-        statement.getObject,
-        true
-      ))
-      .asJavaCollection
+  protected def addStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+    val newStatements = statements
+      .filter(statement =>
+        !repositoryConnection.hasStatement(statement, false) &&
+          !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
+      )
     diff.add(newStatements)
-    repositoryConnection.add(newStatements)
+    repositoryConnection.add(newStatements.asJavaCollection)
   }
 
   /**
     * Add an inferred statement to the repository if it is not already existing
     */
-  protected def addStatement(diff: ModelDiff, statement: Statement): Unit = {
+  protected def addStatement(diff: StatementSetDiff, statement: Statement): Unit = {
     if (
       !repositoryConnection.hasStatement(statement, false) &&
       !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
@@ -54,18 +48,17 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Remove inferred statements from the repository if it is existing
     */
-  protected def removeStatements(diff: ModelDiff, statements: util.Collection[Statement]): Unit = {
-    val existingStatements = statements.asScala
+  protected def removeStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+    val existingStatements = statements
       .filter(repositoryConnection.hasStatement(_, false))
-      .asJavaCollection
     diff.remove(existingStatements)
-    repositoryConnection.remove(existingStatements)
+    repositoryConnection.remove(existingStatements.asJavaCollection)
   }
 
   /**
     * Remove an inferred statement from the repository if it is existing
     */
-  protected def removeStatement(diff: ModelDiff, statement: Statement): Unit = {
+  protected def removeStatement(diff: StatementSetDiff, statement: Statement): Unit = {
     if (repositoryConnection.hasStatement(statement, false)) {
       diff.remove(statement)
       repositoryConnection.remove(statement)

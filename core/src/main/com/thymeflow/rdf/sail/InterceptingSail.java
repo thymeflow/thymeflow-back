@@ -25,6 +25,6 @@ public class InterceptingSail extends NotifyingSailWrapper {
 
     @Override
     public NotifyingSailConnection getConnection() throws SailException {
-        return new InterceptingSailConnection(super.getConnection(), interceptor);
+        return new InterceptingSailConnection(super.getConnection(), getValueFactory(), interceptor);
     }
 }

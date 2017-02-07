@@ -5,7 +5,7 @@ import javax.mail.Message.RecipientType
 import javax.mail.internet.{AddressException, InternetAddress, MimeMessage}
 import javax.mail.{Address, Message, Multipart, Part}
 
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.sync.converter.utils.{EmailAddressConverter, EmailAddressNameConverter, EmailMessageUriConverter, UUIDConverter}
 import com.typesafe.config.Config
@@ -24,31 +24,31 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
   private val emailMessageUriConverter = new EmailMessageUriConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (StatementSet, String) => IRI): Iterator[(IRI, StatementSet)] = {
     val wholeContext = context(None)
     Iterator((wholeContext, convert(new MimeMessage(null, stream), wholeContext, createSourceContext)))
   }
 
-  def convert(message: Message, context: Resource, createSourceContext: (Model, String) => IRI): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context, createSourceContext)
+  def convert(message: Message, context: Resource, createSourceContext: (StatementSet, String) => IRI): StatementSet = {
+    val statements = StatementSet.empty(valueFactory)
+    val converter = new ToModelConverter(statements, context, createSourceContext)
     converter.convert(message)
-    model
+    statements
   }
 
-  private class ToModelConverter(model: Model, context: Resource, createSourceContext: (Model, String) => IRI) {
+  private class ToModelConverter(statements: StatementSet, context: Resource, createSourceContext: (StatementSet, String) => IRI) {
     def convert(message: Message): Resource = {
       val messageResource = resourceForMessage(message)
-      model.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
+      statements.add(messageResource, RDF.TYPE, SchemaOrg.EMAIL_MESSAGE, context)
 
       Option(message.getSentDate).foreach(date =>
-        model.add(messageResource, SchemaOrg.DATE_SENT, valueFactory.createLiteral(date), context)
+        statements.add(messageResource, SchemaOrg.DATE_SENT, valueFactory.createLiteral(date), context)
       )
       Option(message.getReceivedDate).foreach(date =>
-        model.add(messageResource, SchemaOrg.DATE_RECEIVED, valueFactory.createLiteral(date), context)
+        statements.add(messageResource, SchemaOrg.DATE_RECEIVED, valueFactory.createLiteral(date), context)
       )
       Option(message.getSubject).foreach(subject =>
-        model.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
+        statements.add(messageResource, SchemaOrg.HEADLINE, valueFactory.createLiteral(subject), context)
       )
 
       addAddresses({
@@ -73,7 +73,7 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
         Option(addresses).foreach(addresses =>
           addresses.foreach(address =>
             relations.foreach(relation =>
-              convert(address).foreach(personResource => model.add(messageResource, relation, personResource, context))
+              convert(address).foreach(personResource => statements.add(messageResource, relation, personResource, context))
             )
           )
         )
@@ -92,27 +92,27 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
     }
 
     private def convert(address: InternetAddress): Option[Resource] = {
-      emailAddressConverter.convert(address.getAddress, model).map(emailAddressResource => {
-        val personResource = uuidConverter.createIRI(address, id => createSourceContext(model, id))
-        model.add(personResource, RDF.TYPE, Personal.AGENT, personResource)
+      emailAddressConverter.convert(address.getAddress, statements).map(emailAddressResource => {
+        val personResource = uuidConverter.createIRI(address, id => createSourceContext(statements, id))
+        statements.add(personResource, RDF.TYPE, Personal.AGENT, personResource)
         Option(address.getPersonal).foreach(name =>
           emailAddressNameConverter.convert(name, address.getAddress).foreach(name =>
-            model.add(personResource, SchemaOrg.NAME, name, personResource)
+            statements.add(personResource, SchemaOrg.NAME, name, personResource)
           )
         )
-        model.add(personResource, SchemaOrg.EMAIL, emailAddressResource, personResource)
+        statements.add(personResource, SchemaOrg.EMAIL, emailAddressResource, personResource)
         personResource
       })
     }
 
     private def addMimeMessageExtra(message: MimeMessage, messageResource: Resource): Unit = {
       Option(message.getContentLanguage).foreach(_.foreach(language =>
-        model.add(messageResource, SchemaOrg.IN_LANGUAGE, valueFactory.createLiteral(language), context) //TODO: is it valid ISO code? if yes, use good XSD type
+        statements.add(messageResource, SchemaOrg.IN_LANGUAGE, valueFactory.createLiteral(language), context) //TODO: is it valid ISO code? if yes, use good XSD type
       ))
 
       Option(message.getHeader("In-Reply-To", null)).map(inReplyTo =>
         try {
-          model.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
+          statements.add(messageResource, Personal.IN_REPLY_TO, emailMessageUriConverter.convert(inReplyTo), context)
         } catch {
           case e: IllegalArgumentException =>
         }
@@ -131,7 +131,7 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
       if (part.isMimeType("message/rfc822")) {
         part.getContent match {
           case content: Message =>
-            model.add(messageResource, SchemaOrg.HAS_PART, convert(content), context)
+            statements.add(messageResource, SchemaOrg.HAS_PART, convert(content), context)
           case _ =>
             logger.warn("Badly encoded message/rfc822 message content")
         }
@@ -149,7 +149,7 @@ class EmailMessageConverter(valueFactory: ValueFactory)(implicit config: Config)
       } else if (part.isMimeType("text/plain")) {
         part.getContent match {
           case content: String =>
-            model.add(messageResource, SchemaOrg.TEXT, valueFactory.createLiteral(content), context)
+            statements.add(messageResource, SchemaOrg.TEXT, valueFactory.createLiteral(content), context)
           case _ =>
             logger.warn("Badly encoded text/plain message content")
         }

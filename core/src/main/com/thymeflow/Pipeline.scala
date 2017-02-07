@@ -10,7 +10,7 @@ import com.thymeflow.enricher.{DelayedBatch, Enricher}
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Negation
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service.ServiceAccountSources
 import com.thymeflow.sync.Synchronizer
@@ -60,13 +60,15 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
 
   private def addDocumentToRepository(document: Document): ModelDiff = {
     repositoryConnection.begin()
+    implicit val valueFactory = document.statements.valueFactory
     //Removes the removed statements from the repository and the already existing statements from statements
-    val documentStatements = new SimpleHashModel(repositoryConnection.getValueFactory, document.model)
-    val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
+    val documentStatements = StatementSet.empty
+    val statementsToRemove = StatementSet.empty
+    documentStatements ++= document.statements
 
     if (document.iri != null) {
       repositoryConnection.getStatements(null, null, null, document.iri).foreach(existingStatement =>
-        if (document.model.contains(existingStatement)) {
+        if (document.statements.contains(existingStatement)) {
           documentStatements.remove(existingStatement)
         } else {
           statementsToRemove.add(existingStatement)
@@ -75,21 +77,16 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
     }
 
     //Do not add already existing statements or with already a negation
-    val statementsToAdd = new SimpleHashModel(
-      repositoryConnection.getValueFactory,
-      documentStatements.asScala
-        .filterNot(statement => repositoryConnection.hasStatement(statement, false))
-        .filterNot(statement => repositoryConnection.hasStatement(
+    val statementsToAdd = documentStatements.filter(statement =>
+      !repositoryConnection.hasStatement(statement, false) && !repositoryConnection.hasStatement(
           statement.getSubject,
           Negation.not(statement.getPredicate),
           statement.getObject,
           true
         ))
-        .asJava
-    )
 
-    repositoryConnection.add(statementsToAdd)
-    repositoryConnection.remove(statementsToRemove)
+    repositoryConnection.add(statementsToAdd.asJavaCollection)
+    repositoryConnection.remove(statementsToRemove.asJavaCollection)
     repositoryConnection.commit()
 
     new ModelDiff(statementsToAdd, statementsToRemove)

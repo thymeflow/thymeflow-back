@@ -3,14 +3,13 @@ package com.thymeflow.update
 import com.thymeflow.Supervisor
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
-import org.eclipse.rdf4j.model.{Model, Resource, Statement}
+import org.eclipse.rdf4j.model.{Resource, Statement}
 import org.eclipse.rdf4j.repository.RepositoryConnection
 
-import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 
@@ -19,7 +18,7 @@ import scala.concurrent.Future
   */
 class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor.Interactor) extends StrictLogging {
 
-  private val valueFactory = repositoryConnection.getValueFactory
+  private implicit val valueFactory = repositoryConnection.getValueFactory
   private val userDataContext = valueFactory.createIRI(Personal.NAMESPACE, "userData") //TODO: config
 
   def apply(diff: ModelDiff): Future[UpdateResults] = {
@@ -31,8 +30,8 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
       val endResult = UpdateResults.merge(
         //Without context
         UpdateResults(
-          diffWithoutContext.added.asScala.map(statement =>
-            statement -> findWithoutContext(guessedContextForWithoutContext.added, statement).asScala.flatMap(updateResult.added.get)
+          diffWithoutContext.added.map(statement =>
+            statement -> findWithoutContext(guessedContextForWithoutContext.added, statement).flatMap(updateResult.added.get)
           ).toMap
             .mapValues(results => if (results.isEmpty) {
               Some(Error(None)).asInstanceOf[Traversable[UpdateResult]]
@@ -46,8 +45,8 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
                 (statement, Error(l))
               case v => v
             },
-          diffWithoutContext.removed.asScala.map(statement =>
-            statement -> findWithoutContext(guessedContextForWithoutContext.removed, statement).asScala.flatMap(updateResult.removed.get)
+          diffWithoutContext.removed.map(statement =>
+            statement -> findWithoutContext(guessedContextForWithoutContext.removed, statement).flatMap(updateResult.removed.get)
           ).toMap
             .mapValues(results => if (results.isEmpty) {
               Some(Error(None)).asInstanceOf[Traversable[UpdateResult]]
@@ -65,10 +64,10 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
         ),
         //With context
         UpdateResults(
-          diffWithContext.added.asScala.map(statement =>
+          diffWithContext.added.map(statement =>
             statement -> updateResult.added.getOrElse(statement, noGraphEditorFound(statement.getContext))
           ).toMap,
-          diffWithContext.removed.asScala.map(statement =>
+          diffWithContext.removed.map(statement =>
             statement -> updateResult.removed.getOrElse(statement, noGraphEditorFound(statement.getContext))
           ).toMap
         )
@@ -84,14 +83,14 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
   private def splitGraphFromDiff(diff: ModelDiff, context: Resource): (ModelDiff, ModelDiff) = {
     (
       new ModelDiff(
-        new SimpleHashModel(valueFactory, diff.added.asScala.filter(_.getContext == context).asJava),
-        new SimpleHashModel(valueFactory, diff.removed.asScala.filter(_.getContext == context).asJava)
+        diff.added.filter(_.getContext == context),
+        diff.removed.filter(_.getContext == context)
       ),
       new ModelDiff(
-        new SimpleHashModel(valueFactory, diff.added.asScala.filter(_.getContext != context).asJava),
-        new SimpleHashModel(valueFactory, diff.removed.asScala.filter(_.getContext != context).asJava)
+        diff.added.filter(_.getContext != context),
+        diff.removed.filter(_.getContext != context)
       )
-      )
+    )
   }
 
   private def addPossibleContexts(diff: ModelDiff): ModelDiff = {
@@ -101,12 +100,12 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
     )
   }
 
-  private def addPossibleContextsToAddedStatements(statements: Model): Model = {
-    new SimpleHashModel(valueFactory, statements.asScala.flatMap(statement =>
+  private def addPossibleContextsToAddedStatements(statements: StatementSet): StatementSet = {
+    statements.flatMap(statement =>
       findPossibleContextsForAddedStatement(statement)
         .map(statementWithContext(statement, _))
         .filterNot(statement => repositoryConnection.hasStatement(statement, false, statement.getContext))
-    ).asJava)
+    )
   }
 
   private def findPossibleContextsForAddedStatement(statement: Statement): Iterator[Resource] = {
@@ -117,10 +116,10 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
       )
   }
 
-  private def addPossibleContextsToRemovedStatements(statements: Model): Model = {
-    new SimpleHashModel(valueFactory, statements.asScala.flatMap(statement =>
+  private def addPossibleContextsToRemovedStatements(statements: StatementSet): StatementSet = {
+    statements.flatMap(statement =>
       findExistingStatementsFor(statement)
-    ).asJava)
+    )
   }
 
   private def findExistingStatementsFor(statement: Statement): Iterator[Statement] = {
@@ -138,14 +137,17 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
     valueFactory.createStatement(statement.getSubject, statement.getPredicate, statement.getObject, context)
   }
 
-  private def findWithoutContext(model: Model, statement: Statement): Model = {
-    model.filter(statement.getSubject, statement.getPredicate, statement.getObject, null)
+  private def findWithoutContext(statements: StatementSet, statementToFind: Statement): StatementSet = {
+    statements.filter(statement => statement.getSubject == statementToFind.getSubject &&
+      statement.getPredicate == statementToFind.getPredicate &&
+      statement.getObject == statementToFind.getObject &&
+      statement.getContext == null)
   }
 
   private def applyDiffWithContext(diff: ModelDiff): Future[UpdateResults] = {
     val cleanedDiff = new ModelDiff(
-      new SimpleHashModel(valueFactory, diff.added.asScala.filterNot(hasStatementWithContext(_, false)).asJava),
-      new SimpleHashModel(valueFactory, diff.removed.asScala.filter(hasStatementWithContext(_, true)).asJava)
+      diff.added.filterNot(hasStatementWithContext(_, false)),
+      diff.removed.filter(hasStatementWithContext(_, true))
     )
     val (userGraphDiff, sourceGraphDiff) = splitGraphFromDiff(cleanedDiff, userDataContext)
     val userGraphResult = applyDiffToRepository(userGraphDiff)
@@ -154,9 +156,7 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
 
   private def sendDiffToSource(diff: ModelDiff): Future[UpdateResults] = {
     if (diff.isEmpty) {
-      Future {
-        UpdateResults()
-      }
+      Future.successful(UpdateResults())
     } else {
       implicit val timeout = com.thymeflow.actors.timeout
       supervisor.applyUpdate(Update(diff))
@@ -165,11 +165,11 @@ class Updater(repositoryConnection: RepositoryConnection, supervisor: Supervisor
 
   private def applyDiffToRepository(diff: ModelDiff): UpdateResults = {
     UpdateResults(
-      diff.added.asScala.map(statement => {
+      diff.added.map(statement => {
         repositoryConnection.add(statement)
         statement -> Ok()
       }).toMap,
-      diff.removed.asScala.map(statement => {
+      diff.removed.map(statement => {
         repositoryConnection.remove(statement)
         statement -> Ok()
       }).toMap

@@ -3,7 +3,7 @@ package com.thymeflow.rdf.repository
 import java.nio.file.{Path, Paths}
 
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.model.vocabulary.Personal
 import com.thymeflow.rdf.query.algebra.evaluation.function
 import com.thymeflow.rdf.sail.inferencer.ForwardChainingSimpleOWLInferencer
@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.sail.memory.MemoryStore
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore
 import org.eclipse.rdf4j.sail.{NotifyingSail, Sail}
 import org.eclipse.rdf4j.{IsolationLevel, IsolationLevels}
+
+import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -198,7 +200,7 @@ object RepositoryFactory extends StrictLogging {
 
   private def loadOntology(repositoryConnection: RepositoryConnection): Boolean = {
     val context = Personal.ONTOLOGY_DEFINITION
-    val statementsToAdd = new SimpleHashModel(repositoryConnection.getValueFactory)
+    val statementsToAdd = StatementSet.empty(repositoryConnection.getValueFactory)
     val namespacesBuilder = Vector.newBuilder[(String, String)]
 
     val rdfHandler = new RDFHandler {
@@ -223,7 +225,7 @@ object RepositoryFactory extends StrictLogging {
       RDFFormat.TURTLE,
       rdfHandler)
 
-    val statementsToRemove = new SimpleHashModel(repositoryConnection.getValueFactory)
+    val statementsToRemove = StatementSet.empty(repositoryConnection.getValueFactory)
     repositoryConnection.getStatements(null, null, null, Personal.ONTOLOGY_DEFINITION).foreach(existingStatement =>
       if (statementsToAdd.contains(existingStatement)) {
         statementsToAdd.remove(existingStatement)
@@ -235,10 +237,10 @@ object RepositoryFactory extends StrictLogging {
     val namespacesChanged = namespacesBuilder.result().map {
       case (prefix, name) => setNamespaceIfChanged(repositoryConnection, prefix, name)
     }.count(identity)
-    repositoryConnection.add(statementsToAdd)
-    repositoryConnection.remove(statementsToRemove)
+    repositoryConnection.add(statementsToAdd.asJavaCollection)
+    repositoryConnection.remove(statementsToRemove.asJavaCollection)
 
-    logger.info(s"Ontology ${Personal.ONTOLOGY_DEFINITION} loaded: $namespacesChanged namespaces changed, ${statementsToAdd.size()} statement(s) added, ${statementsToRemove.size()} statement(s) removed.")
+    logger.info(s"Ontology ${Personal.ONTOLOGY_DEFINITION} loaded: $namespacesChanged namespaces changed, ${statementsToAdd.size} statement(s) added, ${statementsToRemove.size} statement(s) removed.")
     !(statementsToAdd.isEmpty && statementsToRemove.isEmpty && namespacesChanged == 0)
   }
 

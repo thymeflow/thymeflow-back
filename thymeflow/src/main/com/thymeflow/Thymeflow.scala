@@ -59,7 +59,7 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.newConnection)))
         .map(diff => {
           val durationSinceStart = Duration(System.currentTimeMillis() - pipelineStartTime, TimeUnit.MILLISECONDS)
-          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")
+          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size} additions and ${diff.removed.size} deletions at time $durationSinceStart")
           diff
         })
     )

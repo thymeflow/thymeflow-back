@@ -11,7 +11,7 @@ import com.thymeflow.location.Clustering
 import com.thymeflow.location.cluster.MaxLikelihoodCluster
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
 import com.thymeflow.utilities.TimeExecution
@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.{IRI, Literal, Resource}
 import org.eclipse.rdf4j.query.QueryLanguage
 import org.eclipse.rdf4j.repository.RepositoryConnection
 
+import scala.collection.JavaConverters._
 import scala.concurrent.Await
 
 /**
@@ -42,7 +43,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
 
   override def enrich(diff: ModelDiff): Unit = {
     if (
-      !diff.added.contains(null, RDF.TYPE, Personal.LOCATION)
+      !diff.added.exists(statement => statement.getPredicate == RDF.TYPE && statement.getObject == Personal.LOCATION)
     ) {
       //No change in data
       return
@@ -189,17 +190,17 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
                             cluster: ClusterObservation,
                             locations: Traversable[Location], `type`: IRI, context: IRI) = {
     repositoryConnection.begin()
-    val model = new SimpleHashModel(valueFactory)
+    val statements = StatementSet.empty(valueFactory)
     val clusterResource = uuidConverter.createBNode(cluster)
-    val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
-    model.add(clusterResource, RDF.TYPE, `type`, context)
-    model.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
-    model.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
-    model.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
+    val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), statements)
+    statements.add(clusterResource, RDF.TYPE, `type`, context)
+    statements.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
+    statements.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
+    statements.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
     locations.foreach(location =>
-      model.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
+      statements.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
     )
-    repositoryConnection.add(model)
+    repositoryConnection.add(statements.asJavaCollection)
     repositoryConnection.commit()
   }
 

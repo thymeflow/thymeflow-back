@@ -6,15 +6,15 @@ import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
-import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.service.source.{CalDavSource, DavSource}
 import com.thymeflow.service.{ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.converter.ICalConverter
 import com.thymeflow.sync.dav.{BaseDavSynchronizer, CalendarMultigetReport, CalendarQueryReport}
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
-import org.eclipse.rdf4j.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.{Resource, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -48,7 +48,7 @@ object CalDavSynchronizer extends BaseDavSynchronizer {
       new CalendarMultigetReport(paths)
     }
 
-    override protected def convert(str: String, context: Resource): Model = {
+    override protected def convert(str: String, context: Resource): StatementSet = {
       iCalConverter.convert(str, context)
     }
 

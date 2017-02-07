@@ -1,12 +1,10 @@
 package com.thymeflow.enricher
 
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import org.eclipse.rdf4j.model.{Model, Statement}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
+import org.eclipse.rdf4j.model.Statement
 import org.eclipse.rdf4j.repository.RepositoryConnection
-
-import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
@@ -36,20 +34,20 @@ class InverseFunctionalPropertyInferencer(newRepositoryConnection: () => Reposit
     repositoryConnection.commit()
   }
 
-  private def getInferencesWithOnePremiseInWithInverseFunctionalProperty(model: Model): Traversable[Statement] = {
+  private def getInferencesWithOnePremiseInWithInverseFunctionalProperty(statements: StatementSet): Traversable[Statement] = {
     inverseFunctionalProperties.flatMap(inverseFunctionalProperty => {
-      model.filter(null, inverseFunctionalProperty, null).asScala.flatMap(statement1 =>
-        (
-          model.filter(null, inverseFunctionalProperty, statement1.getObject).asScala
-            ++
-            repositoryConnection.getStatements(null, inverseFunctionalProperty, statement1.getObject, true)
-          ).map(_.getSubject).filterNot(isDifferentFrom(statement1.getSubject, _))
+      statements.filter(_.getPredicate == inverseFunctionalProperty).flatMap(
+        statement1 =>
+          (statements.filter(statement => statement.getPredicate == inverseFunctionalProperty && statement.getObject == statement1.getObject) ++
+            repositoryConnection.getStatements(null, inverseFunctionalProperty, statement1.getObject, true))
+            .map(_.getSubject)
+            .filterNot(isDifferentFrom(statement1.getSubject, _))
           .flatMap(subject2 =>
-          Array(
-            valueFactory.createStatement(statement1.getSubject, Personal.SAME_AS, subject2, inferencerContext),
-            valueFactory.createStatement(subject2, Personal.SAME_AS, statement1.getSubject, inferencerContext)
+            Array(
+              valueFactory.createStatement(statement1.getSubject, Personal.SAME_AS, subject2, inferencerContext),
+              valueFactory.createStatement(subject2, Personal.SAME_AS, statement1.getSubject, inferencerContext)
+            )
           )
-        )
       )
     })
   }

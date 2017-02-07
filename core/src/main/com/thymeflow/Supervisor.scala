@@ -10,7 +10,7 @@ import akka.stream.{SourceShape, _}
 import akka.util.Timeout
 import com.thymeflow.Supervisor._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
 import com.thymeflow.sync.Synchronizer
@@ -18,9 +18,9 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.VectorExtensions
 import com.typesafe.config.Config
-import org.eclipse.rdf4j.model.Model
 import org.eclipse.rdf4j.model.vocabulary.RDF
 
+import scala.collection.JavaConverters._
 import scala.concurrent.Future
 
 /**
@@ -64,7 +64,7 @@ class Supervisor(config: Config,
   }
 
   def serviceAccountModel(serviceAccount: ServiceAccount) = {
-    val model = new SimpleHashModel()
+    val model = StatementSet.empty(repository.valueFactory)
     val serviceNode = serviceIRI(serviceAccount.service)
     val accountNode = repository.valueFactory.createIRI(serviceNode.toString, "/" + URLEncoder.encode(serviceAccount.accountId, "UTF-8"))
     model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
@@ -85,11 +85,11 @@ class Supervisor(config: Config,
     (model, sources)
   }
 
-  def convertService(model: Model, service: Service) = {
+  def convertService(statements: StatementSet, service: Service) = {
     val serviceNode = serviceIRI(service)
-    model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
-    model.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name))
-    model
+    statements.add(serviceNode, RDF.TYPE, Personal.SERVICE)
+    statements.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name))
+    statements
   }
 
   override def receive: Receive = {
@@ -103,14 +103,14 @@ class Supervisor(config: Config,
       sender() ! taskMap.values.toVector
     case AddServices(services) =>
       connection.begin()
-      connection.add(services.foldLeft(new SimpleHashModel(): Model) {
-        case (model, service) => convertService(model, service)
-      })
+      connection.add(services.foldLeft(StatementSet.empty(connection.getValueFactory)) {
+        case (statements, service) => convertService(statements, service)
+      }.asJavaCollection)
       connection.commit()
     case AddServiceAccount(serviceAccount) =>
-      val (model, sources) = serviceAccountModel(serviceAccount)
+      val (statements, sources) = serviceAccountModel(serviceAccount)
       connection.begin()
-      connection.add(model)
+      connection.add(statements.asJavaCollection)
       connection.commit()
       pipeline.addServiceAccount(ServiceAccountSources(sources))
     case ApplyUpdate(update) =>

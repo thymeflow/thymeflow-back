@@ -1,10 +1,10 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.rdf.sail.SailInterceptor
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
-import org.eclipse.rdf4j.model.{IRI, Model, Resource, Value}
+import org.eclipse.rdf4j.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -19,16 +19,16 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
     this.updater = updater
   }
 
-  override def onSparqlAddStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*): Boolean = {
+  override def onSparqlAddStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*)(implicit valueFactory: ValueFactory): Boolean = {
     applyUpdate(new ModelDiff(
       modelFromStatement(subject, predicate, `object`, contexts),
-      SimpleHashModel.empty
+      StatementSet.empty
     ))
   }
 
-  override def onSparqlRemoveStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*): Boolean = {
+  override def onSparqlRemoveStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*)(implicit valueFactory: ValueFactory): Boolean = {
     applyUpdate(new ModelDiff(
-      SimpleHashModel.empty,
+      StatementSet.empty,
       modelFromStatement(subject, predicate, `object`, contexts)
     ))
   }
@@ -47,15 +47,15 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
     false
   }
 
-  private def modelFromStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Seq[Resource]): Model = {
-    val model = new SimpleHashModel()
+  private def modelFromStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Seq[Resource])(implicit valueFactory: ValueFactory): StatementSet = {
+    val statements = StatementSet.empty
     if (contexts.isEmpty) {
-      model.add(subject, predicate, `object`)
+      statements.add(subject, predicate, `object`)
     } else {
       contexts.map(context =>
-        model.add(subject, predicate, `object`, context)
+        statements.add(subject, predicate, `object`, context)
       )
     }
-    model
+    statements
   }
 }

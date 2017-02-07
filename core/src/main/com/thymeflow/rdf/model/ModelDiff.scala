@@ -1,15 +1,11 @@
 package com.thymeflow.rdf.model
 
-import java.util
-
 import org.eclipse.rdf4j.model._
-
-import scala.collection.JavaConverters._
 
 /**
   * @author Thomas Pellissier Tanon
   */
-class ModelDiff(val added: Model, val removed: Model) {
+class ModelDiff(val added: StatementSet, val removed: StatementSet) {
   def apply(diff: ModelDiff): Unit = {
     add(diff.added)
     remove(diff.removed)
@@ -20,9 +16,9 @@ class ModelDiff(val added: Model, val removed: Model) {
     added.add(statement)
   }
 
-  def add(statements: util.Collection[Statement]) {
-    removed.removeAll(statements)
-    added.addAll(statements)
+  def add(statements: Traversable[Statement]) {
+    removed --= statements
+    added ++= statements
   }
 
   def remove(statement: Statement) {
@@ -30,21 +26,21 @@ class ModelDiff(val added: Model, val removed: Model) {
     removed.add(statement)
   }
 
-  def remove(statements: util.Collection[Statement]) {
-    added.removeAll(statements)
-    removed.addAll(statements)
+  def remove(statements: Traversable[Statement]) {
+    added --= statements
+    removed ++= statements
   }
 
-  def contexts(): util.Set[Resource] = {
-    val contexts = added.contexts()
-    contexts.addAll(removed.contexts())
-    contexts
+  def contexts(): Set[Resource] = {
+    val contexts = added.contexts
+    contexts ++ removed.contexts
   }
 
-  def filter(subj: Resource, pred: IRI, obj: Value, contexts: Resource = null): ModelDiff = {
+  def filter(f: (Statement) => Boolean): ModelDiff = {
+    implicit val valueFactory = added.valueFactory
     new ModelDiff(
-      added.filter(subj, pred, obj, contexts),
-      removed.filter(subj, pred, obj, contexts)
+      added.filter(f),
+      removed.filter(f)
     )
   }
 
@@ -53,13 +49,13 @@ class ModelDiff(val added: Model, val removed: Model) {
   }
 
   override def toString: String = {
-    (this.added.asScala.map("+ " + _.toString) ++ this.removed.asScala.map("- " + _.toString)).mkString("\n")
+    (this.added.view.map("+ " + _.toString) ++ this.removed.view.map("- " + _.toString)).mkString("\n")
   }
 }
 
 object ModelDiff {
-  def merge(diffs: ModelDiff*): ModelDiff = {
-    val diff = new ModelDiff(new SimpleHashModel(), new SimpleHashModel())
+  def merge(diffs: ModelDiff*)(implicit valueFactory: ValueFactory): ModelDiff = {
+    val diff = new ModelDiff(StatementSet.empty, StatementSet.empty)
     diffs.foreach(diff.apply)
     diff
   }

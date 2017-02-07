@@ -7,9 +7,9 @@ import java.util.zip.ZipFile
 
 import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
-import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.service._
 import com.thymeflow.service.source.PathSource
 import com.thymeflow.sync.Synchronizer.Update
@@ -18,7 +18,7 @@ import com.thymeflow.sync.publisher.ScrollDocumentPublisher
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
 import org.apache.commons.io.FilenameUtils
-import org.eclipse.rdf4j.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -259,16 +259,17 @@ object FileSynchronizer extends Synchronizer {
           valueFactory.createIRI(s"$baseUri?part=${URLEncoder.encode(part, "UTF-8")}")
         case None => valueFactory.createIRI(baseUri)
       }
-      def createSourceContext(model: Model, id: String): IRI = {
+
+      def createSourceContext(statements: StatementSet, id: String): IRI = {
         val iri = valueFactory.createIRI(s"${convertibleFile.serviceAccountSource.iri.toString}?id=${URLEncoder.encode(id, "UTF-8")}")
-        model.add(iri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, iri)
+        statements.add(iri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, iri)
         iri
       }
       try {
         val documentIterator = convertibleFile.converter.convert(convertibleFile.inputStream, context, createSourceContext).map {
-          case (documentIri, model) =>
-            model.add(documentIri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, documentIri)
-            Document(documentIri, model)
+          case (documentIri, statements) =>
+            statements.add(documentIri, Personal.DOCUMENT_OF, convertibleFile.serviceAccountSource.iri, documentIri)
+            Document(documentIri, statements)
         }
         new Iterator[Document] {
           override def hasNext: Boolean = {
@@ -310,10 +311,10 @@ object FileSynchronizer extends Synchronizer {
     private def applyDiff(diff: ModelDiff): UpdateResults = {
       //We tag file:// contexts as failed
       UpdateResults.merge(
-        diff.contexts().asScala
+        diff.contexts()
           .filter(_.stringValue().startsWith("file://"))
           .map(context => UpdateResults.allFailed(
-            diff.filter(null, null, null, context),
+            diff.filter(_.getContext == context),
             new ConverterException("Files could not be modified")
           ))
       )

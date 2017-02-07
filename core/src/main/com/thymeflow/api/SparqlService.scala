@@ -9,12 +9,11 @@ import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
 import akka.stream.scaladsl.{Keep, Sink, Source, StreamConverters}
 import com.thymeflow.api.SparqlService.SparqlQuery
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.repository.Repository
 import com.typesafe.scalalogging.StrictLogging
 import org.eclipse.rdf4j.common.lang.FileFormat
 import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry
-import org.eclipse.rdf4j.model.Model
 import org.eclipse.rdf4j.model.vocabulary.{RDF, SD}
 import org.eclipse.rdf4j.query._
 import org.eclipse.rdf4j.query.parser.QueryParserUtil
@@ -159,7 +158,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   private def executeDescription(accept: Option[Accept]): Route = {
     writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json") match {
       case Some(writerFactory) =>
-        completeStream(writerFactory.getRDFFormat, os => Rio.write(sparqlServiceDescription, writerFactory.getWriter(os)))
+        completeStream(writerFactory.getRDFFormat, os => Rio.write(sparqlServiceDescription.asJavaCollection, writerFactory.getWriter(os)))
       case None => complete {
         StatusCodes.UnsupportedMediaType
       }
@@ -199,31 +198,31 @@ trait SparqlService extends StrictLogging with CorsSupport {
     })
   }
 
-  private def sparqlServiceDescription: Model = {
+  private def sparqlServiceDescription: StatementSet = {
     val valueFactory = repository.valueFactory
-    val model = new SimpleHashModel(valueFactory)
+    val statements = StatementSet.empty(valueFactory)
 
     val service = valueFactory.createBNode()
-    model.add(service, RDF.TYPE, SD.SERVICE)
+    statements.add(service, RDF.TYPE, SD.SERVICE)
     //TODO model.add(service, SD.ENDPOINT, )
-    model.add(service, SD.FEATURE_PROPERTY, SD.UNION_DEFAULT_GRAPH)
-    model.add(service, SD.FEATURE_PROPERTY, SD.BASIC_FEDERATED_QUERY)
-    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_10_QUERY)
-    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_11_QUERY)
+    statements.add(service, SD.FEATURE_PROPERTY, SD.UNION_DEFAULT_GRAPH)
+    statements.add(service, SD.FEATURE_PROPERTY, SD.BASIC_FEDERATED_QUERY)
+    statements.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_10_QUERY)
+    statements.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_11_QUERY)
 
     TupleQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getTupleQueryResultFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
     BooleanQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getBooleanQueryResultFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
     RDFWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getRDFFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
 
@@ -233,7 +232,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
       model.add(service, SD.EXTENSION_FUNCTION, functionURI)
     }) TODO: remove not extension functions*/
 
-    model
+    statements
   }
 
   private def isSPARQLQuery(operation: String): Boolean = {

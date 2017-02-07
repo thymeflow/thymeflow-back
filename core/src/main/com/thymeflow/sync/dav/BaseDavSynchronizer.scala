@@ -10,9 +10,9 @@ import com.github.sardine.impl.SardineImpl
 import com.github.sardine.report.SardineReport
 import com.github.sardine.{DavResource, Sardine}
 import com.thymeflow.actors._
-import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.service._
 import com.thymeflow.service.source.DavSource
 import com.thymeflow.sync.Synchronizer
@@ -22,7 +22,7 @@ import com.thymeflow.update.UpdateResults
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.commons.io.IOUtils
 import org.apache.http.client.utils.URIBuilder
-import org.eclipse.rdf4j.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.{Resource, ValueFactory}
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -111,8 +111,8 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def applyDiff(diff: ModelDiff): UpdateResults = {
-      UpdateResults.merge(diff.contexts().asScala.map(context => {
-        val contextDiff = diff.filter(null, null, null, context)
+      UpdateResults.merge(diff.contexts().map(context => {
+        val contextDiff = diff.filter(_.getContext == context)
         UpdateResults.merge(
           getFetchersForUri(context.toString)
             .map(_.applyDiff(contextDiff))
@@ -213,7 +213,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     protected def buildMultigetReport(paths: Traversable[String]): SardineReport[Traversable[DavResource]]
 
-    protected def convert(str: String, context: Resource): Model
+    protected def convert(str: String, context: Resource): StatementSet
 
     private def getDirectoryUris(base: String): Traversable[String] = {
       sardine.list(base.toString, 0).asScala.map(resource => buildUriFromBaseAndPath(base, resource.getPath))
@@ -224,10 +224,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     def applyDiff(diff: ModelDiff): UpdateResults = {
-      UpdateResults.merge(diff.contexts().asScala.map(context => {
+      UpdateResults.merge(diff.contexts().map(context => {
         val documentUrl = new URI(context.toString)
         val oldVersion = IOUtils.toString(sardine.get(documentUrl.toString))
-        val (newVersion, result) = applyDiff(oldVersion, diff.filter(null, null, null, context))
+        val (newVersion, result) = applyDiff(oldVersion, diff.filter(_.getContext == context))
         if (newVersion == oldVersion) {
           logger.info(s"No change for vCard $documentUrl")
           return result

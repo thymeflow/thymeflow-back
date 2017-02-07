@@ -4,7 +4,7 @@ import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.spatial.geographic.Geography
 import com.typesafe.scalalogging.StrictLogging
@@ -44,7 +44,7 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
 
   override def enrich(diff: ModelDiff): Unit = {
     repositoryConnection.begin()
-    val model = new SimpleHashModel(valueFactory)
+    val statements = StatementSet.empty(valueFactory)
 
     val process = Source.fromIterator(() => eventsWithStaysWithoutPlacesWithGeocoodinatesQuery.evaluate().toVector.iterator).mapAsyncUnordered(parallelism) {
       bindingSet =>
@@ -73,25 +73,25 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
       case Some((resource, stayResource, resultsFromStayAndEventPlace, resultsFromStay)) =>
         // TODO: We keep only the first feature
         resultsFromStayAndEventPlace.headOption.foreach(feature => {
-          val featureResource = featureConverter.convert(feature, model)
+          val featureResource = featureConverter.convert(feature, statements)
           resource match {
             case Left(event) =>
             case Right((place, _)) =>
               if (!isDifferentFrom(place, featureResource)) {
-                model.add(place, Personal.SAME_AS, featureResource, stayResource)
-                model.add(featureResource, Personal.SAME_AS, place, stayResource)
+                statements.add(place, Personal.SAME_AS, featureResource, stayResource)
+                statements.add(featureResource, Personal.SAME_AS, place, stayResource)
               }
           }
         })
         if (resultsFromStayAndEventPlace.isEmpty) {
           resultsFromStay.headOption.foreach(feature => {
-            val featureResource = featureConverter.convert(feature, model)
+            val featureResource = featureConverter.convert(feature, statements)
             resource match {
               case Left(event) =>
-                model.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
+                statements.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
               case Right((place, event)) =>
                 if (!isDifferentFrom(place, featureResource)) {
-                  model.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
+                  statements.add(event, SchemaOrg.LOCATION, featureResource, stayResource)
                 }
             }
           })
@@ -105,7 +105,7 @@ class EventsWithStaysGeocoderEnricher(newRepositoryConnection: () => RepositoryC
         // TODO: Can we try later if this is due to an API rate limit ?
         logger.error(s"Error while running the ${this.getClass.getName}.", e)
     }
-    addStatements(diff, model)
+    addStatements(diff, statements)
     repositoryConnection.commit()
   }
 }

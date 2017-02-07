@@ -4,7 +4,7 @@ import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{ModelDiff, StatementSet}
 import com.thymeflow.spatial.geocoding.Geocoder
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.typesafe.scalalogging.StrictLogging
@@ -12,7 +12,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF
 import org.eclipse.rdf4j.model.{Literal, Resource}
 import org.eclipse.rdf4j.repository.RepositoryConnection
 
-import scala.collection.JavaConverters._
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 
@@ -35,11 +34,14 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
   private val uncertainInferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "UncertainPlacesGeocoderEnricher")
 
   override def enrich(diff: ModelDiff): Unit = {
-    val places = diff.added.filter(null, RDF.TYPE, SchemaOrg.PLACE).subjects().asScala
+    val places = diff.added.collect {
+      case statement if statement.getPredicate == RDF.TYPE && statement.getObject == SchemaOrg.PLACE =>
+        statement.getSubject
+    }
 
     if (places.nonEmpty) {
       repositoryConnection.begin()
-      val model = new SimpleHashModel(valueFactory)
+      val statements = StatementSet.empty(valueFactory)
       val process = Source.fromIterator(() => places.iterator).mapConcat[(Resource, Option[Point], String)] {
         placeResource =>
           if (
@@ -83,11 +85,11 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
               inferencerContext
             }
           geocoderResults.headOption
-            .map(featureConverter.convert(_, model))
+            .map(featureConverter.convert(_, statements))
             .filterNot(isDifferentFrom(_, placeResource))
             .foreach(resource => {
-              model.add(placeResource, Personal.SAME_AS, resource, context)
-              model.add(resource, Personal.SAME_AS, placeResource, context)
+              statements.add(placeResource, Personal.SAME_AS, resource, context)
+              statements.add(resource, Personal.SAME_AS, placeResource, context)
             })
       }
       try {
@@ -98,7 +100,7 @@ class PlacesGeocoderEnricher(newRepositoryConnection: () => RepositoryConnection
           // TODO: Can we try later if this is due to an API rate limit ?
           logger.error(s"Error while running the ${this.getClass.getName}.", e)
       }
-      addStatements(diff, model)
+      addStatements(diff, statements)
       repositoryConnection.commit()
     }
   }

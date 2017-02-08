@@ -313,13 +313,10 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
     private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       //TODO: support at least email deletion
       //We tag only the messages from IMAP as failed
-      UpdateResults.merge(
-        diff.contexts()
-          .filter(_.stringValue().startsWith("imap://"))
-          .map(context => UpdateResults.allFailed(
-            diff.filter(_.getContext == context),
-            new ConverterException("IMAP repository could not be modified")
-          ))
+      val failedContexts = diff.contexts().filter(_.stringValue().startsWith("imap://"))
+      UpdateResults.allFailed(
+        diff.filter(statement => failedContexts.contains(statement.getContext)),
+        new ConverterException("IMAP repository modification is not yet supported.")
       )
     }
   }

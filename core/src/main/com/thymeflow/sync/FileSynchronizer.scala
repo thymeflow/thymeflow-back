@@ -310,13 +310,10 @@ object FileSynchronizer extends Synchronizer {
 
     private def applyDiff(diff: StatementSetDiff): UpdateResults = {
       //We tag file:// contexts as failed
-      UpdateResults.merge(
-        diff.contexts()
-          .filter(_.stringValue().startsWith("file://"))
-          .map(context => UpdateResults.allFailed(
-            diff.filter(_.getContext == context),
-            new ConverterException("Files could not be modified")
-          ))
+      val failedContexts = diff.contexts().filter(_.stringValue().startsWith("file://"))
+      UpdateResults.allFailed(
+        diff.filter(statement => failedContexts.contains(statement.getContext)),
+        new ConverterException("File modification is not yet supported.")
       )
     }
   }

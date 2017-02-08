@@ -59,4 +59,6 @@ object StatementSetDiff {
     diffs.foreach(diff.apply)
     diff
   }
+
+  def apply(added: StatementSet, removed: StatementSet) = new StatementSetDiff(added, removed)
 }

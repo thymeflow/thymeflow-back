@@ -11,85 +11,53 @@ case class UpdateResults(
                           added: Map[Statement, UpdateResult],
                           removed: Map[Statement, UpdateResult]
                         ) {
-
-  /**
-    * Merges update results. An insertion is considered as Ok it has been done at least once and a deletion is considered
-    * as Error if it has failed at least once.
-    */
-  def merge(results: UpdateResults): UpdateResults = {
-    UpdateResults(
-      (added.keys ++ results.added.keys).map(statement =>
-        (added.getOrElse(statement, Error(List())), results.added.getOrElse(statement, Error(List()))) match {
-          case (Ok(_), _) => statement -> Ok()
-          case (_, Ok(_)) => statement -> Ok()
-          case (Error(ex1: List[Exception]), Error(ex2: List[Exception])) => statement -> Error(ex1 ++ ex2)
-        }).toMap,
-      (removed.keys ++ results.removed.keys).map(statement =>
-        (added.getOrElse(statement, Ok()), results.added.getOrElse(statement, Ok())) match {
-          case (Error(ex1: List[Exception]), Error(ex2: List[Exception])) => statement -> Error(ex1 ++ ex2)
-          case (Error(ex), _) => statement -> Error(ex)
-          case (_, Error(ex)) => statement -> Error(ex)
-          case (Ok(_), Ok(_)) => statement -> Ok()
-        }).toMap
-    )
-  }
 }
 
 object UpdateResults {
 
   def apply(): UpdateResults = new UpdateResults(Map.empty, Map.empty)
 
-  def allFailed(diff: StatementSetDiff): UpdateResults = new UpdateResults(
-    diff.added.map(statement => statement -> Error(List()))(scala.collection.breakOut),
-    diff.removed.map(statement => statement -> Error(List()))(scala.collection.breakOut)
-  )
-
   def allFailed(diff: StatementSetDiff, error: Exception): UpdateResults = new UpdateResults(
-    diff.added.map(statement => statement -> Error(List(error)))(scala.collection.breakOut),
-    diff.removed.map(statement => statement -> Error(List(error)))(scala.collection.breakOut)
+    diff.added.map(statement => statement -> Error(Seq(error)))(scala.collection.breakOut),
+    diff.removed.map(statement => statement -> Error(Seq(error)))(scala.collection.breakOut)
   )
-
-  def merge(results: Traversable[UpdateResults]): UpdateResults = {
-    if (results.isEmpty) {
-      UpdateResults()
-    } else {
-      results.reduce(UpdateResults.merge)
-    }
-  }
-
-  def merge(results: UpdateResults*): UpdateResults = {
-    merge(results)
-  }
 
   /**
     * Merges update results. An insertion is considered as Ok it has been done at least once and a deletion is considered
     * as Error if it has failed at least once.
     */
-  def merge(results1: UpdateResults, results2: UpdateResults): UpdateResults = {
+  def merge(results: UpdateResults*): UpdateResults = merge(results)
+
+  def merge(results: Traversable[UpdateResults]): UpdateResults = {
     UpdateResults(
-      (results1.added.keys ++ results2.added.keys).map(statement =>
-        statement -> mergeAdded(results1.added.getOrElse(statement, Error(List())), results2.added.getOrElse(statement, Error(List())))
-      ).toMap,
-      (results1.removed.keys ++ results2.removed.keys).map(statement =>
-        statement -> mergeRemoved(results1.added.getOrElse(statement, Ok()), results2.added.getOrElse(statement, Ok()))
-      ).toMap
+      results.flatMap(_.added.keys).toVector.distinct.map(statement =>
+        statement -> mergeAdded(results.map(_.added.getOrElse(statement, Error(Seq()))))
+      )(scala.collection.breakOut),
+      results.flatMap(_.removed.keys).toVector.distinct.map(statement =>
+        statement -> mergeRemoved(results.map(_.removed.getOrElse(statement, Ok())))
+      )(scala.collection.breakOut)
     )
   }
 
-  def mergeAdded(result1: UpdateResult, result2: UpdateResult): UpdateResult = {
-    (result1, result2) match {
-      case (Ok(_), _) => Ok()
-      case (_, Ok(_)) => Ok()
-      case (Error(ex1: List[Exception]), Error(ex2: List[Exception])) => Error(ex1 ++ ex2)
+  def mergeAdded(results: Traversable[UpdateResult]): UpdateResult = {
+    if (results.exists(_.isOk)) {
+      Ok()
+    } else {
+      Error(results.flatMap {
+        case Error(ex: Seq[Exception]) => ex
+        case _ => Seq.empty
+      }(scala.collection.breakOut))
     }
   }
 
-  def mergeRemoved(result1: UpdateResult, result2: UpdateResult): UpdateResult = {
-    (result1, result2) match {
-      case (Error(ex1: List[Exception]), Error(ex2: List[Exception])) => Error(ex1 ++ ex2)
-      case (Error(ex), _) => Error(ex)
-      case (_, Error(ex)) => Error(ex)
-      case (Ok(_), Ok(_)) => Ok()
+  def mergeRemoved(results: Traversable[UpdateResult]): UpdateResult = {
+    if (results.exists(_.isError)) {
+      Error(results.flatMap {
+        case Error(ex: Seq[Exception]) => ex
+        case _ => Seq.empty
+      }(scala.collection.breakOut))
+    } else {
+      Ok()
     }
   }
 }

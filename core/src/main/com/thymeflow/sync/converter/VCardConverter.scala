@@ -51,19 +51,18 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
   }
 
   override def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults) = {
-    val updateResult = UpdateResults()
-    (Ezvcard.write(Ezvcard.parse(str).all().asScala.map(vCard => {
-      val diffAppplication = new DiffApplication(vCard)
-      updateResult.merge(UpdateResults(
-        diff.added.map(statement =>
-          statement -> diffAppplication.add(statement)
-        ).toMap,
-        diff.removed.map(statement =>
-          statement -> diffAppplication.remove(statement)
-        ).toMap
-      ))
-      vCard
-    }).asJava).go(), updateResult)
+    val results = Ezvcard.parse(str).all().asScala.map(vCard => {
+      val diffApplication = new DiffApplication(vCard)
+      val removed = diff.removed.flatMap(statement =>
+        diffApplication.remove(statement).map(statement -> _)
+      )(scala.collection.breakOut): Map[Statement, UpdateResult]
+      val added = diff.added.flatMap(statement =>
+        diffApplication.add(statement).map(statement -> _)
+      )(scala.collection.breakOut): Map[Statement, UpdateResult]
+      (UpdateResults(added, removed), vCard)
+    }).toVector
+    val written = Ezvcard.write(results.map(_._2).asJava).go()
+    (written, UpdateResults.merge(results.map(_._1): _*))
   }
 
   private def resourceForVCard(vCard: VCard): Resource = {
@@ -277,21 +276,18 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
   }
 
   private class DiffApplication(vCard: VCard) {
-    //TODO: dramma: what to do for (agent, schema:organization, org) /\ (org, schema:name, name) ???
+    //TODO: drama: what to do for (agent, schema:organization, org) /\ (org, schema:name, name) ???
     //The add method should always be called after remove in case of edit
-    def add(statement: Statement): UpdateResult = {
+    def add(statement: Statement): Option[UpdateResult] = {
       if (statement.getSubject == resourceForVCard(vCard)) {
         try {
-          if (addCardStatement(statement)) {
-            Ok()
-          } else {
-            Error(List())
-          }
+          addCardStatement(statement)
+          Some(Ok())
         } catch {
-          case e: ConverterException => Error(List(e))
+          case e: ConverterException => Some(Error(List(e)))
         }
       } else {
-        Error(List())
+        None
       }
     }
 
@@ -342,16 +338,16 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
       }
     }
 
-    def remove(statement: Statement): UpdateResult = {
+    def remove(statement: Statement): Option[UpdateResult] = {
       if (statement.getSubject == resourceForVCard(vCard)) {
         try {
           removeCardStatement(statement)
-          Ok()
+          Some(Ok())
         } catch {
-          case e: ConverterException => Error(List(e))
+          case e: ConverterException => Some(Error(List(e)))
         }
       } else {
-        Error(List())
+        None
       }
     }
 

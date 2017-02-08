@@ -23,7 +23,7 @@ trait MainApiDef extends Api {
   override protected val services = Vector(Google, Microsoft, Facebook, Email, FileService)
 
   supervisor.addServices(services)
-  sailInterceptor.setUpdater(new Updater(repository.newConnection(), supervisor))
+  sailInterceptor.setUpdater(new Updater(repository.valueFactory, () => repository.newConnection(), supervisor))
 
   def main(args: Array[String]): Unit = {
     if (args.length < 1) {

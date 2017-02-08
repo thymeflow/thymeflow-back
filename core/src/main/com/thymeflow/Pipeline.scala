@@ -78,7 +78,7 @@ class Pipeline private(repositoryConnection: RepositoryConnection,
 
     //Do not add already existing statements or with already a negation
     val statementsToAdd = documentStatements.filter(statement =>
-      !repositoryConnection.hasStatement(statement, false) && !repositoryConnection.hasStatement(
+      !repositoryConnection.hasStatement(statement, false, statement.getContext) && !repositoryConnection.hasStatement(
           statement.getSubject,
           Negation.not(statement.getPredicate),
           statement.getObject,

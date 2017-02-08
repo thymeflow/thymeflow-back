@@ -10,13 +10,16 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
-import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service._
 import com.thymeflow.service.source.FacebookGraphApiSource
 import com.thymeflow.sync.Synchronizer
+import com.thymeflow.sync.Synchronizer.Update
+import com.thymeflow.sync.converter.ConverterException
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
+import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
 import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 import spray.json._
@@ -54,6 +57,15 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
             supervisor ! task
           case _ =>
         }
+      case Update(diff) => sender() ! applyDiff(diff)
+    }
+
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
+      val failedContexts = diff.contexts().filter(_.stringValue().startsWith(namespace))
+      UpdateResults.allFailed(
+        diff.filter(statement => failedContexts.contains(statement.getContext)),
+        new ConverterException("Facebook modification is not yet supported.")
+      )
     }
 
     override protected def queryBuilder = {

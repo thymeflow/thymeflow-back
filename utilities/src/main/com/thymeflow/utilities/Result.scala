@@ -38,5 +38,4 @@ final case class Error[+E](value: E) extends Result[Nothing, E] {
 }
 
 object Error {
-  def apply(): Error[Unit] = Error(())
 }

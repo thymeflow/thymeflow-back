@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF
 
 import scala.collection.JavaConverters._
 import scala.concurrent.Future
+import scala.util.Try
 
 /**
   * @author David Montoya
@@ -115,7 +116,11 @@ class Supervisor(config: Config,
       pipeline.addServiceAccount(ServiceAccountSources(sources))
     case ApplyUpdate(update) =>
       implicit val timeout = com.thymeflow.actors.timeout
-      sender() ! pipeline.applyUpdate(update)
+      implicit val ec = materializer.executionContext
+      val s = sender()
+      pipeline.applyUpdate(update).onComplete {
+        t => s ! t
+      }
   }
 
 }
@@ -134,8 +139,8 @@ object Supervisor {
       (supervisor ? ListTasks).asInstanceOf[Future[Seq[(Long, ServiceAccountSourceTask[TaskStatus])]]]
     }
 
-    def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {
-      (supervisor ? ApplyUpdate(update)).asInstanceOf[Future[UpdateResults]]
+    def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[Try[UpdateResults]] = {
+      (supervisor ? ApplyUpdate(update)).asInstanceOf[Future[Try[UpdateResults]]]
     }
 
     def addServices(services: Seq[Service]) = {

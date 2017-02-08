@@ -111,13 +111,10 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
     }
 
     private def applyDiff(diff: StatementSetDiff): UpdateResults = {
-      UpdateResults.merge(diff.contexts().map(context => {
+      UpdateResults.merge(diff.contexts().flatMap(context => {
         val contextDiff = diff.filter(_.getContext == context)
-        UpdateResults.merge(
-          getFetchersForUri(context.toString)
-            .map(_.applyDiff(contextDiff))
-        )
-      }))
+        getFetchersForUri(context.toString).map(_.applyDiff(contextDiff))
+      })(scala.collection.breakOut): _*)
     }
 
     private def getFetchersForUri(uri: String): Traversable[BaseDavDocumentsFetcher] = {
@@ -228,11 +225,6 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         val documentUrl = new URI(context.toString)
         val oldVersion = IOUtils.toString(sardine.get(documentUrl.toString))
         val (newVersion, result) = applyDiff(oldVersion, diff.filter(_.getContext == context))
-        if (newVersion == oldVersion) {
-          logger.info(s"No change for vCard $documentUrl")
-          return result
-        }
-
         var headers = Map(
           "Content-Type" -> mimeType
         )
@@ -241,7 +233,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
         )
         sardine.put(documentUrl.toString, new ByteArrayInputStream(newVersion.getBytes), headers.asJava)
         result
-      }))
+      })(scala.collection.breakOut))
     }
 
     protected def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults)

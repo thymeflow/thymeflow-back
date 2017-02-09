@@ -234,6 +234,9 @@ schema:url a rdf:Property ;
     rdfs:domain schema:Thing ;
     rdfs:range rdfs:Resource .
 
+schema:item a rdf:Property ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range rdfs:Resource .
 
 # personal classes
 

@@ -48,7 +48,6 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
       //No change in data
       return
     }
-
     val clustering = new Clustering {}
     val minimumStayDuration = Duration.ofMinutes(15)
     val observationEstimatorDuration = Duration.ofMinutes(60)
@@ -76,6 +75,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
     )
 
     val createClusterRepositoryConnection = newRepositoryConnection()
+    createClusterRepositoryConnection.begin()
     try {
       val locationCount = countLocations
       Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
@@ -118,8 +118,11 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
           Done
       }, scala.concurrent.duration.Duration.Inf)
       deleteTempInferencerGraph()
-
+      createClusterRepositoryConnection.commit()
       logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
+    } catch {
+      case e: Exception =>
+        createClusterRepositoryConnection.rollback()
     } finally {
       createClusterRepositoryConnection.close()
     }

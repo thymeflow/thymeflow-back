@@ -65,7 +65,7 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
     */
   override def enrich(diff: StatementSetDiff): Unit = {
     val events = getEvents.toBuffer
-
+    repositoryConnection.begin()
     Await.result(getStays.map(stay =>
       events
         .filter(event => event.start <= stay.end && stay.start <= event.end)
@@ -78,6 +78,7 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
     ).runFold(0)(_ + _).map(addedConnections => {
       logger.info(s"$addedConnections added between events and stay locations")
     }), Duration.Inf)
+    repositoryConnection.commit()
   }
 
   private def isSharedIntervalBiggerThanRatioOfEvent(stay: TimeIntervalResource, event: TimeIntervalResource): Boolean = {

@@ -32,7 +32,7 @@ import scala.concurrent.Await
   *         TODO: not nice usage of Await
   *         TODO: add modified triples to the diff
   */
-class LocationStayEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends Enricher with StrictLogging {
+class LocationStayEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends AbstractEnricher(newRepositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
@@ -74,8 +74,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
       }
     )
 
-    val createClusterRepositoryConnection = newRepositoryConnection()
-    createClusterRepositoryConnection.begin()
+    val diffRepositoryConnection = newRepositoryConnection()
     try {
       val locationCount = countLocations
       Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
@@ -88,14 +87,14 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
         case (cluster, locations) =>
           // clusters are temporary
           // TODO: save them in some temporary storage
-          createCluster(createClusterRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
+          createCluster(diffRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
       }.recover {
         case throwable =>
           logger.error("[location-stay-enricher] - Error during stage 1.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
 
-      deleteGraph(inferencerContext) // We only need to delete the previously added inferences at this stage
+      deleteGraph(diffRepositoryConnection, inferencerContext) // We only need to delete the previously added inferences at this stage
       //TODO: This quite early drop may lead of failures of next enrichers (but they will be run again after this one so it will lead after some time to a good state)
       Await.result(getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
         case (observationsAndClusters) =>
@@ -111,28 +110,20 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
             point = cluster.mean), cluster.observations)
       }.runForeach {
         case (cluster, locations) =>
-          createStay(createClusterRepositoryConnection, cluster, locations)
+          createStay(diffRepositoryConnection, cluster, locations, Some(diff))
       }.recover {
         case throwable =>
           logger.error("[location-stay-enricher] - Error during stage 2/3.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
-      deleteTempInferencerGraph()
-      createClusterRepositoryConnection.commit()
+      deleteGraph(diffRepositoryConnection, tempInferencerContext)
       logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
-    } catch {
-      case e: Exception =>
-        createClusterRepositoryConnection.rollback()
     } finally {
-      createClusterRepositoryConnection.close()
+      diffRepositoryConnection.close()
     }
   }
 
-  private def deleteTempInferencerGraph() = {
-    deleteGraph(tempInferencerContext)
-  }
-
-  private def deleteGraph(iri: IRI) = {
+  private def deleteGraph(repositoryConnection: RepositoryConnection, iri: IRI) = {
     repositoryConnection.begin()
     repositoryConnection.remove(null: Resource, null, null, iri)
     repositoryConnection.commit()
@@ -185,16 +176,17 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
 
   private def createStay(repositoryConnection: RepositoryConnection,
                          stay: ClusterObservation,
-                         locations: Traversable[Location]) = {
-    createCluster(repositoryConnection, stay, locations, Personal.STAY, inferencerContext)
+                         locations: Traversable[Location],
+                         diffOption: Option[StatementSetDiff]) = {
+    createCluster(repositoryConnection, stay, locations, Personal.STAY, inferencerContext, diffOption)
   }
 
   private def createCluster(repositoryConnection: RepositoryConnection,
                             cluster: ClusterObservation,
-                            locations: Traversable[Location], `type`: IRI, context: IRI) = {
+                            locations: Traversable[Location], `type`: IRI, context: IRI, diffOption: Option[StatementSetDiff] = None) = {
     repositoryConnection.begin()
     val statements = StatementSet.empty(valueFactory)
-    val clusterResource = uuidConverter.createBNode(cluster)
+    val clusterResource = valueFactory.createBNode(cluster.toString)
     val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), statements)
     statements.add(clusterResource, RDF.TYPE, `type`, context)
     statements.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
@@ -203,7 +195,10 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
     locations.foreach(location =>
       statements.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
     )
-    repositoryConnection.add(statements.asJavaCollection)
+    diffOption match {
+      case Some(diff) => addStatements(diff, statements)
+      case None => repositoryConnection.add(statements.asJavaCollection)
+    }
     repositoryConnection.commit()
   }
 
@@ -254,10 +249,6 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
     }.collect {
       case Some(x) => x
     }
-  }
-
-  private def deleteInferencerGraph() = {
-    deleteGraph(inferencerContext)
   }
 
   private class TimeStage[T](processName: String, target: Long, step: Long = 1) extends GraphStage[FlowShape[T, T]] {

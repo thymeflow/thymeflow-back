@@ -33,6 +33,9 @@ object Thymeflow extends StrictLogging {
     args.map(x => File.account(Paths.get(x))).foreach {
       accountFuture => accountFuture.foreach(pipeline.addServiceAccount)
     }
+    sys.addShutdownHook {
+      repository.shutdown()
+    }
   }
 
   def initialize(repository: Repository)(implicit config: Config, actorSystem: ActorSystem, materializer: Materializer) = {

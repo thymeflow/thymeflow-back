@@ -10,4 +10,6 @@ trait Repository {
   def newConnection(): RepositoryConnection
 
   def valueFactory: ValueFactory
+
+  def shutdown(): Unit
 }

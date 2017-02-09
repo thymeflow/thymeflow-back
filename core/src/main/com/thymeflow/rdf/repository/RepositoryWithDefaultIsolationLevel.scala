@@ -1,5 +1,6 @@
 package com.thymeflow.rdf.repository
 
+import com.typesafe.scalalogging.StrictLogging
 import org.eclipse.rdf4j.IsolationLevel
 import org.eclipse.rdf4j.model.ValueFactory
 import org.eclipse.rdf4j.repository.RepositoryConnection
@@ -11,13 +12,19 @@ import org.eclipse.rdf4j.repository.RepositoryConnection
   */
 case class RepositoryWithDefaultIsolationLevel(repository: org.eclipse.rdf4j.repository.Repository,
                                                defaultIsolationLevel: IsolationLevel)
-  extends Repository {
+  extends Repository with StrictLogging {
 
-  def newConnection: RepositoryConnection = {
+  def newConnection(): RepositoryConnection = {
     val connection = repository.getConnection
     connection.setIsolationLevel(defaultIsolationLevel)
     connection
   }
 
   def valueFactory: ValueFactory = repository.getValueFactory
+
+  def shutdown(): Unit = {
+    logger.info("[repository-shutdown] - Shutdown initiated.")
+    repository.shutDown()
+    logger.info("[repository-shutdown] - Shutdown done.")
+  }
 }

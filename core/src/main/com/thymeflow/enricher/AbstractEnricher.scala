@@ -22,10 +22,10 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Add an inferred statements to the repository if it is not already existing
     */
-  protected def addStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+  protected def addStatements(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
     val newStatements = statements
       .filter(statement =>
-        !repositoryConnection.hasStatement(statement, false) &&
+        !repositoryConnection.hasStatement(statement, false, statement.getContext) &&
           !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
       )
     diff.add(newStatements)
@@ -35,9 +35,9 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Add an inferred statement to the repository if it is not already existing
     */
-  protected def addStatement(diff: StatementSetDiff, statement: Statement): Unit = {
+  protected def addStatement(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statement: Statement): Unit = {
     if (
-      !repositoryConnection.hasStatement(statement, false) &&
+      !repositoryConnection.hasStatement(statement, false, statement.getContext) &&
       !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
     ) {
       diff.add(statement)
@@ -48,9 +48,9 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Remove inferred statements from the repository if it is existing
     */
-  protected def removeStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+  protected def removeStatements(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
     val existingStatements = statements
-      .filter(repositoryConnection.hasStatement(_, false))
+      .filter(statement => repositoryConnection.hasStatement(statement, false, statement.getContext))
     diff.remove(existingStatements)
     repositoryConnection.remove(existingStatements.asJavaCollection)
   }
@@ -58,11 +58,27 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   /**
     * Remove an inferred statement from the repository if it is existing
     */
-  protected def removeStatement(diff: StatementSetDiff, statement: Statement): Unit = {
-    if (repositoryConnection.hasStatement(statement, false)) {
+  protected def removeStatement(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statement: Statement): Unit = {
+    if (repositoryConnection.hasStatement(statement, false, statement.getContext)) {
       diff.remove(statement)
       repositoryConnection.remove(statement)
     }
+  }
+
+  protected def addStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+    addStatements(repositoryConnection)(diff, statements)
+  }
+
+  protected def addStatement(diff: StatementSetDiff, statement: Statement): Unit = {
+    addStatement(repositoryConnection)(diff, statement)
+  }
+
+  protected def removeStatements(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
+    removeStatements(repositoryConnection)(diff, statements)
+  }
+
+  protected def removeStatement(diff: StatementSetDiff, statement: Statement): Unit = {
+    removeStatement(repositoryConnection)(diff, statement)
   }
 
   protected def isDifferentFrom(facet1: Resource, facet2: Resource): Boolean = {

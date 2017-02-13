@@ -196,7 +196,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
       statements.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
     )
     diffOption match {
-      case Some(diff) => addStatements(diff, statements)
+      case Some(diff) => addStatements(repositoryConnection)(diff, statements)
       case None => repositoryConnection.add(statements.asJavaCollection)
     }
     repositoryConnection.commit()

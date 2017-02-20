@@ -1,6 +1,7 @@
 package com.thymeflow.api
 
 import java.io.{OutputStream, PipedInputStream, PipedOutputStream}
+import java.util.concurrent.Executors
 
 import akka.http.scaladsl.model.headers.Accept
 import akka.http.scaladsl.model.{HttpEntity, _}
@@ -23,7 +24,7 @@ import org.eclipse.rdf4j.rio.{RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
 /**
@@ -33,6 +34,7 @@ import scala.language.implicitConversions
 trait SparqlService extends StrictLogging with CorsSupport {
   val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
   implicit protected val sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
+  protected val requestExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1))
   protected val sparqlRoute = {
     corsHandler {
       optionalHeaderValueByType[Accept]() { accept =>
@@ -179,7 +181,6 @@ trait SparqlService extends StrictLogging with CorsSupport {
   }
 
   private def completeStream[V](format: FileFormat, f: OutputStream => V): Route = {
-    import com.thymeflow.actors._
     val in = new PipedInputStream
     val out = new PipedOutputStream(in)
     val source = StreamConverters.fromInputStream(() => in)
@@ -189,7 +190,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
       } finally {
         out.close()
       }
-    }
+    }(requestExecutionContext)
     complete(HttpEntity(contentTypeForFormat(format), source))
   }
 

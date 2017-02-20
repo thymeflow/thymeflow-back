@@ -1,13 +1,13 @@
 package com.thymeflow.api
 
-import java.io.OutputStream
+import java.io.{OutputStream, PipedInputStream, PipedOutputStream}
 
 import akka.http.scaladsl.model.headers.Accept
 import akka.http.scaladsl.model.{HttpEntity, _}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
-import akka.stream.scaladsl.{Keep, Sink, Source, StreamConverters}
+import akka.stream.scaladsl.StreamConverters
 import com.thymeflow.api.SparqlService.SparqlQuery
 import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.repository.Repository
@@ -180,7 +180,9 @@ trait SparqlService extends StrictLogging with CorsSupport {
 
   private def completeStream[V](format: FileFormat, f: OutputStream => V): Route = {
     import com.thymeflow.actors._
-    val (out, pub) = StreamConverters.asOutputStream().toMat(Sink.asPublisher(false))(Keep.both).run()
+    val in = new PipedInputStream
+    val out = new PipedOutputStream(in)
+    val source = StreamConverters.fromInputStream(() => in)
     Future {
       try {
         f(out)
@@ -188,7 +190,6 @@ trait SparqlService extends StrictLogging with CorsSupport {
         out.close()
       }
     }
-    val source = Source.fromPublisher(pub)
     complete(HttpEntity(contentTypeForFormat(format), source))
   }
 

@@ -1,13 +1,14 @@
 package com.thymeflow.api
 
-import java.io.OutputStream
+import java.io.{OutputStream, PipedInputStream, PipedOutputStream}
+import java.util.concurrent.Executors
 
 import akka.http.scaladsl.model.headers.Accept
 import akka.http.scaladsl.model.{HttpEntity, _}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
-import akka.stream.scaladsl.{Keep, Sink, Source, StreamConverters}
+import akka.stream.scaladsl.StreamConverters
 import com.thymeflow.api.SparqlService.SparqlQuery
 import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.repository.Repository
@@ -23,7 +24,7 @@ import org.eclipse.rdf4j.rio.{RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
 /**
@@ -33,6 +34,7 @@ import scala.language.implicitConversions
 trait SparqlService extends StrictLogging with CorsSupport {
   val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
   implicit protected val sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
+  protected val requestExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1))
   protected val sparqlRoute = {
     corsHandler {
       optionalHeaderValueByType[Accept]() { accept =>
@@ -179,16 +181,16 @@ trait SparqlService extends StrictLogging with CorsSupport {
   }
 
   private def completeStream[V](format: FileFormat, f: OutputStream => V): Route = {
-    import com.thymeflow.actors._
-    val (out, pub) = StreamConverters.asOutputStream().toMat(Sink.asPublisher(false))(Keep.both).run()
+    val in = new PipedInputStream
+    val out = new PipedOutputStream(in)
+    val source = StreamConverters.fromInputStream(() => in)
     Future {
       try {
         f(out)
       } finally {
         out.close()
       }
-    }
-    val source = Source.fromPublisher(pub)
+    }(requestExecutionContext)
     complete(HttpEntity(contentTypeForFormat(format), source))
   }
 

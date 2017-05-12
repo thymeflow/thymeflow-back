@@ -68,15 +68,15 @@ class Supervisor(config: Config,
     val model = StatementSet.empty(repository.valueFactory)
     val serviceNode = serviceIRI(serviceAccount.service)
     val accountNode = repository.valueFactory.createIRI(serviceNode.toString, "/" + URLEncoder.encode(serviceAccount.accountId, "UTF-8"))
-    model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
-    model.add(accountNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(serviceAccount.accountId))
-    model.add(accountNode, Personal.ACCOUNT_OF, serviceNode)
+    model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT, Personal.SERVICE_GRAPH)
+    model.add(accountNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(serviceAccount.accountId), Personal.SERVICE_GRAPH)
+    model.add(accountNode, Personal.ACCOUNT_OF, serviceNode, Personal.SERVICE_GRAPH)
     val sources = serviceAccount.sources.toVector.map {
       case (sourceName, source) =>
         val sourceNode = repository.valueFactory.createIRI(accountNode.toString, "/" + URLEncoder.encode(sourceName, "UTF-8"))
-        model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE)
-        model.add(sourceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(sourceName))
-        model.add(sourceNode, Personal.SOURCE_OF, accountNode)
+        model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE, Personal.SERVICE_GRAPH)
+        model.add(sourceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(sourceName), Personal.SERVICE_GRAPH)
+        model.add(sourceNode, Personal.SOURCE_OF, accountNode, Personal.SERVICE_GRAPH)
         (ServiceAccountSource(
           service = serviceAccount.service,
           accountId = serviceAccount.accountId,
@@ -88,8 +88,8 @@ class Supervisor(config: Config,
 
   def convertService(statements: StatementSet, service: Service) = {
     val serviceNode = serviceIRI(service)
-    statements.add(serviceNode, RDF.TYPE, Personal.SERVICE)
-    statements.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name))
+    statements.add(serviceNode, RDF.TYPE, Personal.SERVICE, Personal.SERVICE_GRAPH)
+    statements.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name), Personal.SERVICE_GRAPH)
     statements
   }
 

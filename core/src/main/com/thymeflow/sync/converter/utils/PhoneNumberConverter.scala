@@ -24,9 +24,9 @@ class PhoneNumberConverter(valueFactory: ValueFactory, defaultRegion: String) ex
   def convert(rawNumber: String, statements: StatementSet): Option[IRI] = {
     parseNumber(rawNumber).map(number => {
       val phoneNumberResource = valueFactory.createIRI(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.RFC3966))
-      statements.add(phoneNumberResource, RDF.TYPE, Personal.PHONE_NUMBER)
-      statements.add(phoneNumberResource, RDF.TYPE, classForPhoneNumberType(phoneUtil.getNumberType(number)))
-      statements.add(phoneNumberResource, SchemaOrg.NAME, valueFactory.createLiteral(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)))
+      statements.add(phoneNumberResource, RDF.TYPE, Personal.PHONE_NUMBER, phoneNumberResource)
+      statements.add(phoneNumberResource, RDF.TYPE, classForPhoneNumberType(phoneUtil.getNumberType(number)), phoneNumberResource)
+      statements.add(phoneNumberResource, SchemaOrg.NAME, valueFactory.createLiteral(phoneUtil.format(number, PhoneNumberUtil.PhoneNumberFormat.INTERNATIONAL)), phoneNumberResource)
       phoneNumberResource
     })
   }

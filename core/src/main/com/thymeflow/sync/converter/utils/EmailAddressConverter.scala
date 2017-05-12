@@ -70,10 +70,10 @@ class EmailAddressConverter(valueFactory: ValueFactory) extends StrictLogging {
     val localPartLowerCase = localPart.toLowerCase(Locale.ROOT)
     val address = EmailAddressConverter.concatenateLocalPartAndDomain(localPartLowerCase, domainLowerCase)
     val addressResource = valueFactory.createIRI("mailto:" + address)
-    statements.add(addressResource, Personal.LOCAL_PART, valueFactory.createLiteral(localPartLowerCase))
-    statements.add(addressResource, Personal.DOMAIN, valueFactory.createLiteral(domain))
-    statements.add(addressResource, RDF.TYPE, Personal.EMAIL_ADDRESS)
-    statements.add(addressResource, SchemaOrg.NAME, valueFactory.createLiteral(address))
+    statements.add(addressResource, Personal.LOCAL_PART, valueFactory.createLiteral(localPartLowerCase), addressResource)
+    statements.add(addressResource, Personal.DOMAIN, valueFactory.createLiteral(domain), addressResource)
+    statements.add(addressResource, RDF.TYPE, Personal.EMAIL_ADDRESS, addressResource)
+    statements.add(addressResource, SchemaOrg.NAME, valueFactory.createLiteral(address), addressResource)
     Some(addressResource)
   }
 }

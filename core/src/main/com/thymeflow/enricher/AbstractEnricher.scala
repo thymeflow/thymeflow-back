@@ -2,6 +2,7 @@ package com.thymeflow.enricher
 
 import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
+import com.thymeflow.rdf.repository.Repository
 import org.eclipse.rdf4j.model.{Resource, Statement}
 import org.eclipse.rdf4j.query.QueryLanguage
 import org.eclipse.rdf4j.repository.RepositoryConnection
@@ -25,7 +26,7 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
   protected def addStatements(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
     val newStatements = statements
       .filter(statement =>
-        !repositoryConnection.hasStatement(statement, false, statement.getContext) &&
+        !Repository.hasStatementWithContext(statement, includeInferred = false)(repositoryConnection) &&
           !repositoryConnection.hasStatement(statement.getSubject, Negation.not(statement.getPredicate), statement.getObject, true)
       )
     diff.add(newStatements)
@@ -44,7 +45,7 @@ abstract class AbstractEnricher(override val newRepositoryConnection: () => Repo
     */
   protected def removeStatements(repositoryConnection: RepositoryConnection)(diff: StatementSetDiff, statements: Iterable[Statement]): Unit = {
     val existingStatements = statements
-      .filter(statement => repositoryConnection.hasStatement(statement, false, statement.getContext))
+      .filter(statement => Repository.hasStatementWithContext(statement, includeInferred = false)(repositoryConnection))
     diff.remove(existingStatements)
     repositoryConnection.remove(existingStatements.asJavaCollection)
   }

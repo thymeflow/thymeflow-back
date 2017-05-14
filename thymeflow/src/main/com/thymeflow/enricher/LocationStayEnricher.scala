@@ -193,7 +193,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
     statements.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
     statements.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
     locations.foreach(location =>
-      statements.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
+      statements.add(clusterResource, SchemaOrg.ITEM, location.resource, context)
     )
     diffOption match {
       case Some(diff) => addStatements(repositoryConnection)(diff, statements)
@@ -214,7 +214,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
          |       <${Personal.UNCERTAINTY}> ?uncertainty .
          |  OPTIONAL {
-         |       ?location <${SchemaOrg.ITEM}> ?cluster .
+         |       ?cluster <${SchemaOrg.ITEM}> ?location .
          |       ?cluster a <${Personal.CLUSTER_EVENT}> ;
          |                <${SchemaOrg.GEO}> ?clusterGeo ;
          |                <${SchemaOrg.START_DATE}> ?clusterFrom ;

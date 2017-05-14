@@ -65,20 +65,21 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
     */
   override def enrich(diff: StatementSetDiff): Unit = {
     val events = getEvents.toBuffer
-    repositoryConnection.begin()
-    Await.result(getStays.map(stay =>
-      events
+    Await.result(getStays.map(stay => {
+      repositoryConnection.begin()
+      val size = events
         .filter(event => event.start <= stay.end && stay.start <= event.end)
         .filter(isSharedIntervalBiggerThanRatioOfEvent(stay, _))
         .filter(isNear(stay, _))
         .map(event => {
           addStatement(diff, valueFactory.createStatement(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext))
           event
-      }).size
-    ).runFold(0)(_ + _).map(addedConnections => {
+        }).size
+      repositoryConnection.commit()
+      size
+    }).runFold(0)(_ + _).map(addedConnections => {
       logger.info(s"$addedConnections added between events and stay locations")
     }), Duration.Inf)
-    repositoryConnection.commit()
   }
 
   private def isSharedIntervalBiggerThanRatioOfEvent(stay: TimeIntervalResource, event: TimeIntervalResource): Boolean = {

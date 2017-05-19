@@ -50,19 +50,20 @@ class GeoCoordinatesConverter(valueFactory: ValueFactory) extends StrictLogging 
     val uriBuilder = new GeoUri.Builder(latitude, longitude)
     elevationOption.foreach(uriBuilder.coordC(_))
     uncertaintyOption.foreach(uriBuilder.uncertainty(_))
-    statements.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES)
-    statements.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude))
-    statements.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude))
+    statements.add(geoResource, RDF.TYPE, SchemaOrg.GEO_COORDINATES, geoResource)
+    statements.add(geoResource, SchemaOrg.LATITUDE, valueFactory.createLiteral(latitude), geoResource)
+    statements.add(geoResource, SchemaOrg.LONGITUDE, valueFactory.createLiteral(longitude), geoResource)
     uncertaintyOption.foreach(uncertainty =>
-      statements.add(geoResource, Personal.UNCERTAINTY, valueFactory.createLiteral(uncertainty))
+      statements.add(geoResource, Personal.UNCERTAINTY, valueFactory.createLiteral(uncertainty), geoResource)
     )
     elevationOption.foreach(elevation =>
-      statements.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation))
+      statements.add(geoResource, SchemaOrg.ELEVATION, valueFactory.createLiteral(elevation), geoResource)
     )
     statements.add(
       geoResource,
       GEO.AS_WKT,
-      valueFactory.createLiteral(s"POINT (${longitude.toString} ${latitude.toString})", GEO.WKT_LITERAL)
+      valueFactory.createLiteral(s"POINT (${longitude.toString} ${latitude.toString})", GEO.WKT_LITERAL),
+      geoResource
     )
     geoResource
   }

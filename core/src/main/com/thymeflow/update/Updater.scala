@@ -4,6 +4,7 @@ import com.thymeflow.Supervisor
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Negation, Personal}
 import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
+import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.utilities.{Error, Ok}
 import com.typesafe.scalalogging.StrictLogging
@@ -116,7 +117,7 @@ class Updater(valueFactory: ValueFactory, newRepositoryConnection: () => Reposit
     statements.flatMap(statement =>
       findPossibleContextsForAddedStatement(statement)
         .map(statementWithContext(statement, _))
-        .filterNot(statement => hasStatementWithContext(statement, includeInferred = false))
+        .filterNot(statement => Repository.hasStatementWithContext(statement, includeInferred = false))
     )
   }
 
@@ -158,9 +159,9 @@ class Updater(valueFactory: ValueFactory, newRepositoryConnection: () => Reposit
   private def getUserAndSourceGraphDiff(diffWithPossibleContexts: StatementSetDiff, diffWithExplicitContext: StatementSetDiff)(implicit repositoryConnection: RepositoryConnection): (StatementSetDiff, StatementSetDiff) = {
     val diff = StatementSetDiff.merge(diffWithPossibleContexts, diffWithExplicitContext)
     // filter out statements to add that are already in the repository
-    val toAdd = diff.added.filter(!hasStatementWithContext(_, includeInferred = false))
+    val toAdd = diff.added.filter(!Repository.hasStatementWithContext(_, includeInferred = false))
     // and filter out statements to remove that are not.
-    val toRemove = diff.removed.filter(hasStatementWithContext(_, includeInferred = true))
+    val toRemove = diff.removed.filter(Repository.hasStatementWithContext(_, includeInferred = true))
     val filteredDiff = new StatementSetDiff(toAdd, toRemove)
     // separate user graph statements
     splitGraphFromDiff(filteredDiff, userDataContext)
@@ -189,10 +190,6 @@ class Updater(valueFactory: ValueFactory, newRepositoryConnection: () => Reposit
         statement -> Ok()
       }).toMap
     )
-  }
-
-  private def hasStatementWithContext(statement: Statement, includeInferred: Boolean)(implicit repositoryConnection: RepositoryConnection): Boolean = {
-    repositoryConnection.hasStatement(statement, includeInferred, statement.getContext)
   }
 
   private def noGraphEditorFound(context: Resource): UpdateResult =

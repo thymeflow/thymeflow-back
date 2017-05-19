@@ -40,16 +40,4 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
       case t => logger.error(s"Error applying update ($diff): ${t.getMessage}", t)
     }
   }
-
-  private def modelFromStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Seq[Resource])(implicit valueFactory: ValueFactory): StatementSet = {
-    val statements = StatementSet.empty
-    if (contexts.isEmpty) {
-      statements.add(subject, predicate, `object`)
-    } else {
-      contexts.map(context =>
-        statements.add(subject, predicate, `object`, context)
-      )
-    }
-    statements
-  }
 }

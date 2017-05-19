@@ -4,9 +4,12 @@ import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
 object Personal {
-  val NAMESPACE: String = "http://thymeflow.com/personal#"
+  val NAMESPACE: String = "http://thymeflow.com/personal/"
   val PREFIX: String = "personal"
-  val ONTOLOGY_DEFINITION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ontologyDefinition")
+
+  val DEFAULT_GRAPH: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "defaultGraph")
+  val SERVICE_GRAPH: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "serviceGraph")
+  val ONTOLOGY_DEFINITION: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ontologyGraph")
 
   val SERVICE: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "Service")
   val SERVICE_ACCOUNT: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "ServiceAccount")

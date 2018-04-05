@@ -51,6 +51,9 @@ val spatialProject = Project(
   libraryDependencies += "net.sf.geographiclib" % "GeographicLib-Java" % "1.43"
 ).dependsOn(utilitiesProject, graphProject, mathematicsProject)
 
+val akkaVersion = "2.4.18"
+val akkaHttpVersion = "10.0.6"
+
 val coreProject = Project(
   id = "core",
   base = file("core")
@@ -79,10 +82,10 @@ val coreProject = Project(
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",
   libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+",
   libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.4.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-http" % "10.0.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % "10.0.+"
+  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % akkaVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion
 ).dependsOn(utilitiesProject)
 
 // TODO: Consider making thymeflowProject the root one.

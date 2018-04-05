@@ -76,16 +76,25 @@ class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) 
     }
 
     val newPrimaryFacets = equivalentClassesListBuilder.result().map {
-      case equivalenceClass =>
+      equivalenceClass =>
         // sameAsFacetClass is never empty
         facetsWithoutPrimaryFacetBuilder ++= equivalenceClass.tail
-        equivalenceClass.head
+        (equivalenceClass.head, equivalenceClass)
     }
 
     addStatements(diff, newPrimaryFacets
-      .map(repositoryConnection.getValueFactory.createStatement(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext)))
+      .map(x => repositoryConnection.getValueFactory.createStatement(x._1, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext)))
+
+    newPrimaryFacets.foreach {
+      case (primary, others) =>
+        addStatements(diff, others.map(repositoryConnection.getValueFactory.createStatement(_, Personal.PRIMARY_FACET_PROPERTY, primary, enricherContext)))
+    }
+
     removeStatements(diff, facetsWithoutPrimaryFacetBuilder.result()
-      .flatMap(repositoryConnection.getStatements(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
+      .flatMap(facet =>
+        repositoryConnection.getStatements(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext) ++
+          repositoryConnection.getStatements(null, Personal.PRIMARY_FACET_PROPERTY, facet, enricherContext)
+      )
     )
 
     repositoryConnection.commit()

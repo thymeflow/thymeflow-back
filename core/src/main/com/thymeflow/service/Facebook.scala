@@ -20,8 +20,9 @@ object Facebook extends Service with OAuth2Service with DefaultJsonProtocol with
   val name = "Facebook"
   val routeName = "facebook"
 
-  final val apiEndpoint = Uri("https://graph.facebook.com")
-  final val apiPath = Path("/v2.6")
+  val namespace = "http://graph.facebook.com/"
+  val apiEndpoint = Uri("https://graph.facebook.com")
+  val apiPath = Path("/v2.8")
 
   case class Me(id: String, name: Option[String], email: Option[String])
 
@@ -46,7 +47,7 @@ object Facebook extends Service with OAuth2Service with DefaultJsonProtocol with
 
   def oAuth2(redirectUri: String)(implicit config: Config) = OAuth2(
     "https://www.facebook.com/dialog/oauth",
-    "https://graph.facebook.com/v2.6/oauth/access_token",
+    apiEndpoint.withPath(apiPath / "oauth" / "access_token").toString(),
     clientId = config.getString("thymeflow.oauth.facebook.client-id"),
     clientSecret = config.getString("thymeflow.oauth.facebook.client-secret"),
     redirectUri

@@ -1,12 +1,12 @@
 package com.thymeflow.rdf.sail.inferencer
 
 import com.thymeflow.rdf.Converters._
-import org.openrdf.model.impl.TreeModel
-import org.openrdf.model.vocabulary.{OWL, RDF, RDFS}
-import org.openrdf.model.{IRI, Model}
-import org.openrdf.sail.Sail
-import org.openrdf.sail.inferencer.InferencerConnection
-import org.openrdf.sail.inferencer.fc.AbstractForwardChainingInferencerConnection
+import org.eclipse.rdf4j.model.impl.TreeModel
+import org.eclipse.rdf4j.model.vocabulary.{OWL, RDF, RDFS}
+import org.eclipse.rdf4j.model.{IRI, Model}
+import org.eclipse.rdf4j.sail.Sail
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection
+import org.eclipse.rdf4j.sail.inferencer.fc.AbstractForwardChainingInferencerConnection
 
 import scala.collection.JavaConverters._
 

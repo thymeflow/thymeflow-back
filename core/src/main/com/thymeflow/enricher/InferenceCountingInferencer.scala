@@ -1,8 +1,8 @@
 package com.thymeflow.enricher
 
-import com.thymeflow.rdf.model.ModelDiff
-import org.openrdf.model.Statement
-import org.openrdf.repository.RepositoryConnection
+import com.thymeflow.rdf.model.StatementSetDiff
+import org.eclipse.rdf4j.model.Statement
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.mutable
 
@@ -17,7 +17,7 @@ abstract class InferenceCountingInferencer(newRepositoryConnection: () => Reposi
     * Add an inferred statement to the repository if it is not already existing
     * In any case increment the counter of the number of inferences of this statement
     */
-  override protected def addStatement(diff: ModelDiff, statement: Statement): Unit = {
+  override protected def addStatement(diff: StatementSetDiff, statement: Statement): Unit = {
     val key = statement.hashCode()
     val oldCount = timesStatementIsInferred.getOrElse(key, 0)
     timesStatementIsInferred.put(key, oldCount + 1)
@@ -33,7 +33,7 @@ abstract class InferenceCountingInferencer(newRepositoryConnection: () => Reposi
     * WARNING: you should add a specific context to triples guessed by your inferencer in order to avoid removal of statements
     * added from an other inferencer/data source
     */
-  override protected def removeStatement(diff: ModelDiff, statement: Statement): Unit = {
+  override protected def removeStatement(diff: StatementSetDiff, statement: Statement): Unit = {
     val key = statement.hashCode()
     timesStatementIsInferred.get(key).foreach(oldCount =>
       if (oldCount == 1) {

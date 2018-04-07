@@ -3,7 +3,6 @@ package com.thymeflow
 import akka.actor.ActorSystem
 import akka.stream.{ActorMaterializer, ActorMaterializerSettings, Supervision}
 import akka.util.Timeout
-import com.thymeflow.utilities.ExceptionUtils
 import com.typesafe.scalalogging.StrictLogging
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -19,7 +18,7 @@ package object actors extends StrictLogging {
   implicit val system = ActorSystem("thymeflow")
 
   val decider: Supervision.Decider = throwable => {
-    logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+    logger.error("Stream error.", throwable)
     Supervision.Stop
   }
 

@@ -10,7 +10,7 @@ import akka.stream.{SourceShape, _}
 import akka.util.Timeout
 import com.thymeflow.Supervisor._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.rdf.repository.Repository
 import com.thymeflow.service._
 import com.thymeflow.sync.Synchronizer
@@ -18,10 +18,11 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.VectorExtensions
 import com.typesafe.config.Config
-import org.openrdf.model.Model
-import org.openrdf.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.vocabulary.RDF
 
+import scala.collection.JavaConverters._
 import scala.concurrent.Future
+import scala.util.Try
 
 /**
   * @author David Montoya
@@ -30,7 +31,7 @@ class Supervisor(config: Config,
                  materializer: Materializer,
                  repository: Repository,
                  synchronizers: Seq[Synchronizer],
-                 enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _]) extends Actor {
+                 enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _]) extends Actor {
   protected var taskCounter = 0L
   protected val taskMap = new scala.collection.mutable.HashMap[ServiceAccountSource, (Long, ServiceAccountSourceTask[_])]
 
@@ -64,18 +65,18 @@ class Supervisor(config: Config,
   }
 
   def serviceAccountModel(serviceAccount: ServiceAccount) = {
-    val model = new SimpleHashModel()
+    val model = StatementSet.empty(repository.valueFactory)
     val serviceNode = serviceIRI(serviceAccount.service)
     val accountNode = repository.valueFactory.createIRI(serviceNode.toString, "/" + URLEncoder.encode(serviceAccount.accountId, "UTF-8"))
-    model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT)
-    model.add(accountNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(serviceAccount.accountId))
-    model.add(accountNode, Personal.ACCOUNT_OF, serviceNode)
+    model.add(accountNode, RDF.TYPE, Personal.SERVICE_ACCOUNT, Personal.SERVICE_GRAPH)
+    model.add(accountNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(serviceAccount.accountId), Personal.SERVICE_GRAPH)
+    model.add(accountNode, Personal.ACCOUNT_OF, serviceNode, Personal.SERVICE_GRAPH)
     val sources = serviceAccount.sources.toVector.map {
       case (sourceName, source) =>
         val sourceNode = repository.valueFactory.createIRI(accountNode.toString, "/" + URLEncoder.encode(sourceName, "UTF-8"))
-        model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE)
-        model.add(sourceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(sourceName))
-        model.add(sourceNode, Personal.SOURCE_OF, accountNode)
+        model.add(sourceNode, RDF.TYPE, Personal.SERVICE_ACCOUNT_SOURCE, Personal.SERVICE_GRAPH)
+        model.add(sourceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(sourceName), Personal.SERVICE_GRAPH)
+        model.add(sourceNode, Personal.SOURCE_OF, accountNode, Personal.SERVICE_GRAPH)
         (ServiceAccountSource(
           service = serviceAccount.service,
           accountId = serviceAccount.accountId,
@@ -85,11 +86,11 @@ class Supervisor(config: Config,
     (model, sources)
   }
 
-  def convertService(model: Model, service: Service) = {
+  def convertService(statements: StatementSet, service: Service) = {
     val serviceNode = serviceIRI(service)
-    model.add(serviceNode, RDF.TYPE, Personal.SERVICE)
-    model.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name))
-    model
+    statements.add(serviceNode, RDF.TYPE, Personal.SERVICE, Personal.SERVICE_GRAPH)
+    statements.add(serviceNode, SchemaOrg.NAME, repository.valueFactory.createLiteral(service.name), Personal.SERVICE_GRAPH)
+    statements
   }
 
   override def receive: Receive = {
@@ -103,19 +104,23 @@ class Supervisor(config: Config,
       sender() ! taskMap.values.toVector
     case AddServices(services) =>
       connection.begin()
-      connection.add(services.foldLeft(new SimpleHashModel(): Model) {
-        case (model, service) => convertService(model, service)
-      })
+      connection.add(services.foldLeft(StatementSet.empty(connection.getValueFactory)) {
+        case (statements, service) => convertService(statements, service)
+      }.asJavaCollection)
       connection.commit()
     case AddServiceAccount(serviceAccount) =>
-      val (model, sources) = serviceAccountModel(serviceAccount)
+      val (statements, sources) = serviceAccountModel(serviceAccount)
       connection.begin()
-      connection.add(model)
+      connection.add(statements.asJavaCollection)
       connection.commit()
       pipeline.addServiceAccount(ServiceAccountSources(sources))
     case ApplyUpdate(update) =>
       implicit val timeout = com.thymeflow.actors.timeout
-      sender() ! pipeline.applyUpdate(update)
+      implicit val ec = materializer.executionContext
+      val s = sender()
+      pipeline.applyUpdate(update).onComplete {
+        t => s ! t
+      }
   }
 
 }
@@ -134,8 +139,8 @@ object Supervisor {
       (supervisor ? ListTasks).asInstanceOf[Future[Seq[(Long, ServiceAccountSourceTask[TaskStatus])]]]
     }
 
-    def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[UpdateResults] = {
-      (supervisor ? ApplyUpdate(update)).asInstanceOf[Future[UpdateResults]]
+    def applyUpdate(update: Update)(implicit timeout: Timeout, sender: ActorRef = Actor.noSender): Future[Try[UpdateResults]] = {
+      (supervisor ? ApplyUpdate(update)).asInstanceOf[Future[Try[UpdateResults]]]
     }
 
     def addServices(services: Seq[Service]) = {
@@ -145,7 +150,7 @@ object Supervisor {
 
   def props(repository: Repository,
             synchronizers: Seq[Synchronizer],
-            enrichers: Graph[FlowShape[ModelDiff, ModelDiff], _])(implicit config: Config, materializer: Materializer) = Props(classOf[Supervisor], config, materializer, repository, synchronizers, enrichers)
+            enrichers: Graph[FlowShape[StatementSetDiff, StatementSetDiff], _])(implicit config: Config, materializer: Materializer) = Props(classOf[Supervisor], config, materializer, repository, synchronizers, enrichers)
 
   object ListTasks
 

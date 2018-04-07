@@ -6,15 +6,15 @@ import akka.actor.{ActorRef, Props}
 import akka.stream.scaladsl.Source
 import com.github.sardine.DavResource
 import com.github.sardine.report.SardineReport
-import com.thymeflow.rdf.model.ModelDiff
 import com.thymeflow.rdf.model.document.Document
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service.source.{CardDavSource, DavSource}
 import com.thymeflow.service.{ServiceAccountSourceTask, TaskStatus}
 import com.thymeflow.sync.converter.VCardConverter
 import com.thymeflow.sync.dav._
 import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
-import org.openrdf.model.{Model, Resource, ValueFactory}
+import org.eclipse.rdf4j.model.{Resource, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon
@@ -26,13 +26,13 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends BaseDavPublisher[DocumentsFetcher](valueFactory, supervisor) {
-    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(valueFactory, task, source)
+    override def newFetcher(source: DavSource, task: ServiceAccountSourceTask[TaskStatus]): DocumentsFetcher = new DocumentsFetcher(supervisor, valueFactory, task, source)
 
     override protected def isValidSource(davSource: DavSource): Boolean = davSource.isInstanceOf[CardDavSource]
   }
 
-  private class DocumentsFetcher(valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
-    extends BaseDavDocumentsFetcher(valueFactory, task, source) {
+  private class DocumentsFetcher(supervisor: ActorRef, valueFactory: ValueFactory, task: ServiceAccountSourceTask[TaskStatus], source: DavSource)(implicit config: Config)
+    extends BaseDavDocumentsFetcher(supervisor, valueFactory, task, source) {
 
     private val CardDavNamespace = "urn:ietf:params:xml:ns:carddav"
     override protected val mimeType = "text/vcard"
@@ -48,11 +48,11 @@ object CardDavSynchronizer extends BaseDavSynchronizer {
       new AddressbookMultigetReport(paths)
     }
 
-    override protected def convert(str: String, context: Resource): Model = {
+    override protected def convert(str: String, context: Resource): StatementSet = {
       vCardConverter.convert(str, context)
     }
 
-    override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
+    override def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults) = {
       vCardConverter.applyDiff(str, diff)
     }
   }

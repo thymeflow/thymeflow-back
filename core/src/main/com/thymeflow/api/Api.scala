@@ -57,7 +57,11 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
                 path("token") {
                   parameter('code) { code =>
                     logger.info(s"${service.name} token received at time $durationSinceStart")
-                    oAuth2.accessToken(code).foreach(oAuth2TokenRenewal(service, _, onOAuth2Token(service)))
+                    val accessTokenResult = oAuth2.accessToken(code)
+                    accessTokenResult.onFailure {
+                      case e => logger.error(s"${service.name} token authorization error", e)
+                    }
+                    accessTokenResult.foreach(oAuth2TokenRenewal(service, _, onOAuth2Token(service)))
                     redirect(frontendUri, StatusCodes.TemporaryRedirect)
                   }
                 }

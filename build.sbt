@@ -1,12 +1,17 @@
 import sbt.Keys._
 
+javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
+
 scalacOptions += "-target:jvm-1.8"
 
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.11.8",
+  javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
   scalacOptions += "-target:jvm-1.8",
-  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+",
+  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+" % "test"
+    exclude("org.scala-lang", "scala-reflect")
+    exclude("org.scala-lang.modules", "scala-xml_2.11"),
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+"
 )
@@ -35,6 +40,7 @@ val graphProject = Project(
   id = "graph",
   base = file("graph")
 ).settings(commonSettings: _*).settings(
+  libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "1.0.4"
 )
 
 val spatialProject = Project(
@@ -45,39 +51,41 @@ val spatialProject = Project(
   libraryDependencies += "net.sf.geographiclib" % "GeographicLib-Java" % "1.43"
 ).dependsOn(utilitiesProject, graphProject, mathematicsProject)
 
+val akkaVersion = "2.4.18"
+val akkaHttpVersion = "10.0.6"
+
 val coreProject = Project(
   id = "core",
   base = file("core")
 ).settings(commonSettings: _*).settings(
   libraryDependencies += "org.apache.james" % "apache-mime4j-core" % "0.7.+",
   libraryDependencies += "org.apache.james" % "apache-mime4j-dom" % "0.7.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-repository-sail" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-memory" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-nativerdf" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-ntriples" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-nquads" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-n3" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfjson" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-rdfxml" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trig" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-trix" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-rio-turtle" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqljson" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-sparqlxml" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryresultio-text" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-queryalgebra-geosparql" % "4.+",
-  libraryDependencies += "org.openrdf.sesame" % "sesame-sail-lucene4" % "4.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-repository-sail" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-memory" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-nativerdf" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-ntriples" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-nquads" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-n3" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-rdfjson" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-rdfxml" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-trig" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-trix" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-rio-turtle" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-sparqljson" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-sparqlxml" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryresultio-text" % "2.1.+",
+  libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-queryalgebra-geosparql" % "2.1.+",
+  //libraryDependencies += "org.eclipse.rdf4j" % "rdf4j-sail-lucene" % "2.1.+",
   libraryDependencies += "commons-logging" % "commons-logging" % "1.+",
   libraryDependencies += "com.googlecode.ez-vcard" % "ez-vcard" % "0.9.+",
   libraryDependencies += "net.sf.biweekly" % "biweekly" % "0.4.+",
   libraryDependencies += "com.googlecode.libphonenumber" % "libphonenumber" % "7.+",
   libraryDependencies += "com.github.lookfirst" % "sardine" % "5.+",
   libraryDependencies += "com.sun.mail" % "javax.mail" % "1.+",
-  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % "2.4.11.2",
-  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % "2.4.11.2",
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-experimental" % "2.4.11.2", //TOOD: migrate to the stable version
-  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json-experimental" % "2.4.11.2",
-  libraryDependencies += "org.apache.lucene" % "lucene-suggest" % "4.+"
+  libraryDependencies += "com.typesafe.akka" %% "akka-actor" % akkaVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-stream" % akkaVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-http" % akkaHttpVersion,
+  libraryDependencies += "com.typesafe.akka" %% "akka-http-spray-json" % akkaHttpVersion
 ).dependsOn(utilitiesProject)
 
 // TODO: Consider making thymeflowProject the root one.

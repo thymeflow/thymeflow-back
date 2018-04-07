@@ -23,28 +23,34 @@ trait MainApiDef extends Api {
   override protected val services = Vector(Google, Microsoft, Facebook, Email, FileService)
 
   supervisor.addServices(services)
-  sailInterceptor.setUpdater(new Updater(repository.newConnection(), supervisor))
+  sailInterceptor.setUpdater(new Updater(repository.valueFactory, () => repository.newConnection(), supervisor))
 
   def main(args: Array[String]): Unit = {
-    if (args.length < 1) {
+    val userGraphSyncOption = if (args.length < 1) {
       logger.info("No file for user graph provided")
+      None
     } else {
       val file = new File(args(0))
       if (file.exists() && !file.isFile) {
         logger.warn(s"$file is not a valid file")
+        None
       } else {
-        val fileSync = FileSynchronization(
+        val userGraphSync = FileSynchronization(
           repository.newConnection(),
           new File(args(0)),
           repository.valueFactory.createIRI(Personal.NAMESPACE, "userData")
         )
         if (file.exists()) {
           logger.info(s"Loading user graph from file $file")
-          fileSync.load()
+          userGraphSync.load()
         }
         logger.info(s"The user graph will be saved on close to file $file")
-        fileSync.saveOnJvmClose()
+        Some(userGraphSync)
       }
+    }
+    sys.addShutdownHook {
+      userGraphSyncOption.foreach(_.save())
+      repository.shutdown()
     }
     start()
   }

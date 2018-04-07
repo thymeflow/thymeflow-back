@@ -1,14 +1,12 @@
 package com.thymeflow.enricher
 
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import org.openrdf.model.vocabulary.RDF
-import org.openrdf.model.{Resource, Value}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
-
-import scala.collection.JavaConverters._
+import org.eclipse.rdf4j.model.vocabulary.RDF
+import org.eclipse.rdf4j.model.{Resource, Value}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 /**
   * @author Thomas Pellissier Tanon
@@ -20,29 +18,33 @@ class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) 
   private val equivalentFacetsOrderedByNumberOfDescriptiveTripleQuery = repositoryConnection.prepareTupleQuery(
     QueryLanguage.SPARQL,
     s"""SELECT ?facet WHERE {
-      ?facet <${Personal.SAME_AS}>* ?startFacet .
-      ?facet ?descriptionProperty ?descriptionValue
+      {
+        SELECT ?facet {
+          ?facet <${Personal.SAME_AS}>* ?startFacet .
+        }
+      }
+      ?facet ?descriptionProperty ?descriptionValue .
     } GROUP BY ?facet ORDER BY DESC(COUNT(?descriptionProperty))"""
   )
 
   private val primaryFacetTypes = Set(SchemaOrg.PLACE, SchemaOrg.EVENT, Personal.AGENT)
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     repositoryConnection.begin()
 
     // list resources of type belonging to primaryFacetTypes
     val resourcesWithCandidatePrimaryFacetType = primaryFacetTypes.flatMap {
-      case facetType =>
+      facetType =>
         List(diff.added, diff.removed)
-          .map(_.filter(null, RDF.TYPE, facetType))
-          .flatMap(model => model.subjects().asScala)
+          .map(_.filter(statement => statement.getPredicate == RDF.TYPE && statement.getObject == facetType))
+          .flatMap(statements => statements.subjects)
           .toSet
     }
 
     // list resources with personal:sameAs relationships
     val resourcesWithSameAsFacets = List(diff.added, diff.removed)
-      .map(_.filter(null, Personal.SAME_AS, null))
-      .flatMap(model => model.subjects().asScala ++ model.objects().asScala.collect { case r: Resource => r })
+      .map(_.filter(_.getPredicate == Personal.SAME_AS))
+      .flatMap(model => model.subjects ++ model.objects.collect { case r: Resource => r })
       .toSet
 
     // candidate resources are either resources with a type belonging to primaryFacetTypes
@@ -74,19 +76,25 @@ class PrimaryFacetEnricher(newRepositoryConnection: () => RepositoryConnection) 
     }
 
     val newPrimaryFacets = equivalentClassesListBuilder.result().map {
-      case equivalenceClass =>
+      equivalenceClass =>
         // sameAsFacetClass is never empty
         facetsWithoutPrimaryFacetBuilder ++= equivalenceClass.tail
-        equivalenceClass.head
+        (equivalenceClass.head, equivalenceClass)
     }
 
     addStatements(diff, newPrimaryFacets
-      .map(repositoryConnection.getValueFactory.createStatement(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
-      .asJavaCollection
-    )
+      .map(x => repositoryConnection.getValueFactory.createStatement(x._1, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext)))
+
+    newPrimaryFacets.foreach {
+      case (primary, others) =>
+        addStatements(diff, others.map(repositoryConnection.getValueFactory.createStatement(_, Personal.PRIMARY_FACET_PROPERTY, primary, enricherContext)))
+    }
+
     removeStatements(diff, facetsWithoutPrimaryFacetBuilder.result()
-      .flatMap(repositoryConnection.getStatements(_, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext))
-      .asJavaCollection
+      .flatMap(facet =>
+        repositoryConnection.getStatements(facet, RDF.TYPE, Personal.PRIMARY_FACET, enricherContext) ++
+          repositoryConnection.getStatements(null, Personal.PRIMARY_FACET_PROPERTY, facet, enricherContext)
+      )
     )
 
     repositoryConnection.commit()

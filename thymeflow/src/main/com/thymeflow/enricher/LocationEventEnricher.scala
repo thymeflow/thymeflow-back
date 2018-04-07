@@ -5,15 +5,15 @@ import javax.xml.bind.DatatypeConverter
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.spatial.geographic.metric.models.WGS84SphereHaversinePointMetric
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.XMLSchema
-import org.openrdf.model.{Literal, Resource}
-import org.openrdf.query.{BindingSet, QueryLanguage}
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.XMLSchema
+import org.eclipse.rdf4j.model.{Literal, Resource}
+import org.eclipse.rdf4j.query.{BindingSet, QueryLanguage}
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -33,11 +33,15 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
 
   private val eventsQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
     s"""SELECT ?event ?start ?end ?lat ?lon WHERE {
-      ?event a <${SchemaOrg.EVENT}> ;
-             <${SchemaOrg.START_DATE}> ?start ;
+      GRAPH ?eventSource {
+        ?event a <${SchemaOrg.EVENT}> .
+      }
+      ?event <${SchemaOrg.START_DATE}> ?start ;
              <${SchemaOrg.END_DATE}> ?end .
       OPTIONAL {
-        ?event <${SchemaOrg.LOCATION}>/<${Personal.SAME_AS}>* ?location .
+        GRAPH ?eventSource {
+          ?event <${SchemaOrg.LOCATION}> ?location .
+        }
         ?location a <${SchemaOrg.PLACE}> ;
                   <${SchemaOrg.GEO}> ?geo .
         ?geo <${SchemaOrg.LATITUDE}> ?lat ;
@@ -59,19 +63,21 @@ class LocationEventEnricher(newRepositoryConnection: () => RepositoryConnection,
   /**
     * Run the enrichments defined by this Enricher
     */
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     val events = getEvents.toBuffer
-
-    Await.result(getStays.map(stay =>
-      events
+    Await.result(getStays.map(stay => {
+      repositoryConnection.begin()
+      val size = events
         .filter(event => event.start <= stay.end && stay.start <= event.end)
         .filter(isSharedIntervalBiggerThanRatioOfEvent(stay, _))
         .filter(isNear(stay, _))
         .map(event => {
           addStatement(diff, valueFactory.createStatement(event.resource, SchemaOrg.LOCATION, stay.resource, inferencerContext))
           event
-      }).size
-    ).runFold(0)(_ + _).map(addedConnections => {
+        }).size
+      repositoryConnection.commit()
+      size
+    }).runFold(0)(_ + _).map(addedConnections => {
       logger.info(s"$addedConnections added between events and stay locations")
     }), Duration.Inf)
   }

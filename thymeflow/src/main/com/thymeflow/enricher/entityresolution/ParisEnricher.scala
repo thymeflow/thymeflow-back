@@ -9,14 +9,14 @@ import com.thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimil
 import com.thymeflow.enricher.entityresolution.ParisEnricher.{EqualityStore, ParisLiteral}
 import com.thymeflow.graph.ConnectedComponents
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{IRI, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.immutable.NumericRange
 import scala.concurrent.Await
@@ -77,7 +77,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
   /**
     * @return enrichs the repository the Enricher is linked to based on the diff
     */
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     val agentNames = getAgentNames
     val agentEmails = getAgentEmails
     val literalToAgent = (agentNames.toIndexedSeq.flatMap {
@@ -181,7 +181,7 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
         }
     }
     result.onFailure {
-      case throwable => logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+      case throwable => logger.error("[paris-enricher] - Failure.", throwable)
     }
     Await.ready(result, scala.concurrent.duration.Duration.Inf)
   }

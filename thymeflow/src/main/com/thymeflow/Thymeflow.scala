@@ -33,6 +33,9 @@ object Thymeflow extends StrictLogging {
     args.map(x => File.account(Paths.get(x))).foreach {
       accountFuture => accountFuture.foreach(pipeline.addServiceAccount)
     }
+    sys.addShutdownHook {
+      repository.shutdown()
+    }
   }
 
   def initialize(repository: Repository)(implicit config: Config, actorSystem: ActorSystem, materializer: Materializer) = {
@@ -59,7 +62,7 @@ object Thymeflow extends StrictLogging {
         .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.newConnection)))
         .map(diff => {
           val durationSinceStart = Duration(System.currentTimeMillis() - pipelineStartTime, TimeUnit.MILLISECONDS)
-          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size()} additions and ${diff.removed.size()} deletions at time $durationSinceStart")
+          logger.info(s"A diff went at the end of the pipeline with ${diff.added.size} additions and ${diff.removed.size} deletions at time $durationSinceStart")
           diff
         })
     )

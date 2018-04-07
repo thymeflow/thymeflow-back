@@ -11,16 +11,17 @@ import com.thymeflow.location.Clustering
 import com.thymeflow.location.cluster.MaxLikelihoodCluster
 import com.thymeflow.rdf.Converters._
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.spatial.geographic.{Geography, Point}
 import com.thymeflow.sync.converter.utils.{GeoCoordinatesConverter, UUIDConverter}
-import com.thymeflow.utilities.{ExceptionUtils, TimeExecution}
+import com.thymeflow.utilities.TimeExecution
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
-import org.openrdf.model.{IRI, Literal, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model.{IRI, Literal, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
+import scala.collection.JavaConverters._
 import scala.concurrent.Await
 
 /**
@@ -31,7 +32,7 @@ import scala.concurrent.Await
   *         TODO: not nice usage of Await
   *         TODO: add modified triples to the diff
   */
-class LocationStayEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends Enricher with StrictLogging {
+class LocationStayEnricher(override val newRepositoryConnection: () => RepositoryConnection) extends AbstractEnricher(newRepositoryConnection) with StrictLogging {
 
   private val valueFactory = repositoryConnection.getValueFactory
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
@@ -40,14 +41,13 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
   private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricher")
   private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     if (
-      !diff.added.contains(null, RDF.TYPE, Personal.LOCATION)
+      !diff.added.exists(statement => statement.getPredicate == RDF.TYPE && statement.getObject == Personal.LOCATION)
     ) {
       //No change in data
       return
     }
-
     val clustering = new Clustering {}
     val minimumStayDuration = Duration.ofMinutes(15)
     val observationEstimatorDuration = Duration.ofMinutes(60)
@@ -74,7 +74,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
       }
     )
 
-    val createClusterRepositoryConnection = newRepositoryConnection()
+    val diffRepositoryConnection = newRepositoryConnection()
     try {
       val locationCount = countLocations
       Await.result(getLocations.via(new TimeStage("location-stay-enricher-stage-1", locationCount)).via(stage1).map {
@@ -87,14 +87,14 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
         case (cluster, locations) =>
           // clusters are temporary
           // TODO: save them in some temporary storage
-          createCluster(createClusterRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
+          createCluster(diffRepositoryConnection, cluster, locations, Personal.CLUSTER_EVENT, tempInferencerContext)
       }.recover {
         case throwable =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          logger.error("[location-stay-enricher] - Error during stage 1.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
 
-      deleteGraph(inferencerContext) // We only need to delete the previously added inferences at this stage
+      deleteGraph(diffRepositoryConnection, inferencerContext) // We only need to delete the previously added inferences at this stage
       //TODO: This quite early drop may lead of failures of next enrichers (but they will be run again after this one so it will lead after some time to a good state)
       Await.result(getLocationsWithCluster.via(new TimeStage("location-stay-enricher-stage-2", locationCount)).via(stage2).mapConcat {
         case (observationsAndClusters) =>
@@ -110,25 +110,20 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
             point = cluster.mean), cluster.observations)
       }.runForeach {
         case (cluster, locations) =>
-          createStay(createClusterRepositoryConnection, cluster, locations)
+          createStay(diffRepositoryConnection, cluster, locations, Some(diff))
       }.recover {
         case throwable =>
-          logger.error(ExceptionUtils.getUnrolledStackTrace(throwable))
+          logger.error("[location-stay-enricher] - Error during stage 2/3.", throwable)
           Done
       }, scala.concurrent.duration.Duration.Inf)
-      deleteTempInferencerGraph()
-
+      deleteGraph(diffRepositoryConnection, tempInferencerContext)
       logger.info("[location-stay-enricher] - Done extracting Location StayEvents.")
     } finally {
-      createClusterRepositoryConnection.close()
+      diffRepositoryConnection.close()
     }
   }
 
-  private def deleteTempInferencerGraph() = {
-    deleteGraph(tempInferencerContext)
-  }
-
-  private def deleteGraph(iri: IRI) = {
+  private def deleteGraph(repositoryConnection: RepositoryConnection, iri: IRI) = {
     repositoryConnection.begin()
     repositoryConnection.remove(null: Resource, null, null, iri)
     repositoryConnection.commit()
@@ -181,25 +176,29 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
 
   private def createStay(repositoryConnection: RepositoryConnection,
                          stay: ClusterObservation,
-                         locations: Traversable[Location]) = {
-    createCluster(repositoryConnection, stay, locations, Personal.STAY, inferencerContext)
+                         locations: Traversable[Location],
+                         diffOption: Option[StatementSetDiff]) = {
+    createCluster(repositoryConnection, stay, locations, Personal.STAY, inferencerContext, diffOption)
   }
 
   private def createCluster(repositoryConnection: RepositoryConnection,
                             cluster: ClusterObservation,
-                            locations: Traversable[Location], `type`: IRI, context: IRI) = {
+                            locations: Traversable[Location], `type`: IRI, context: IRI, diffOption: Option[StatementSetDiff] = None) = {
     repositoryConnection.begin()
-    val model = new SimpleHashModel(valueFactory)
-    val clusterResource = uuidConverter.createBNode(cluster)
-    val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), model)
-    model.add(clusterResource, RDF.TYPE, `type`, context)
-    model.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
-    model.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
-    model.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
+    val statements = StatementSet.empty(valueFactory)
+    val clusterResource = valueFactory.createBNode(cluster.toString)
+    val clusterGeoResource = geoCoordinatesConverter.convert(cluster.point.longitude, cluster.point.latitude, None, Some(cluster.accuracy), statements)
+    statements.add(clusterResource, RDF.TYPE, `type`, context)
+    statements.add(clusterResource, SchemaOrg.START_DATE, valueFactory.createLiteral(cluster.from.toString, XMLSchema.DATETIME), context)
+    statements.add(clusterResource, SchemaOrg.END_DATE, valueFactory.createLiteral(cluster.to.toString, XMLSchema.DATETIME), context)
+    statements.add(clusterResource, SchemaOrg.GEO, clusterGeoResource, context)
     locations.foreach(location =>
-      model.add(location.resource, SchemaOrg.ITEM, clusterResource, context)
+      statements.add(clusterResource, SchemaOrg.ITEM, location.resource, context)
     )
-    repositoryConnection.add(model)
+    diffOption match {
+      case Some(diff) => addStatements(repositoryConnection)(diff, statements)
+      case None => repositoryConnection.add(statements.asJavaCollection)
+    }
     repositoryConnection.commit()
   }
 
@@ -215,7 +214,7 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
          |       <${SchemaOrg.LONGITUDE}> ?longitude ;
          |       <${Personal.UNCERTAINTY}> ?uncertainty .
          |  OPTIONAL {
-         |       ?location <${SchemaOrg.ITEM}> ?cluster .
+         |       ?cluster <${SchemaOrg.ITEM}> ?location .
          |       ?cluster a <${Personal.CLUSTER_EVENT}> ;
          |                <${SchemaOrg.GEO}> ?clusterGeo ;
          |                <${SchemaOrg.START_DATE}> ?clusterFrom ;
@@ -250,10 +249,6 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
     }.collect {
       case Some(x) => x
     }
-  }
-
-  private def deleteInferencerGraph() = {
-    deleteGraph(inferencerContext)
   }
 
   private class TimeStage[T](processName: String, target: Long, step: Long = 1) extends GraphStage[FlowShape[T, T]] {

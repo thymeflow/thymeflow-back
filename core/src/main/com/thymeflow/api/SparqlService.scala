@@ -1,35 +1,40 @@
 package com.thymeflow.api
 
-import java.io.ByteArrayOutputStream
+import java.io.{OutputStream, PipedInputStream, PipedOutputStream}
+import java.util.concurrent.Executors
 
-import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.Accept
+import akka.http.scaladsl.model.{HttpEntity, _}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{MissingFormFieldRejection, Route}
 import akka.http.scaladsl.unmarshalling.FromEntityUnmarshaller
+import akka.stream.scaladsl.StreamConverters
 import com.thymeflow.api.SparqlService.SparqlQuery
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.thymeflow.rdf.repository.Repository
 import com.typesafe.scalalogging.StrictLogging
-import info.aduna.lang.FileFormat
-import info.aduna.lang.service.FileFormatServiceRegistry
-import org.openrdf.model.Model
-import org.openrdf.model.vocabulary.{RDF, SD}
-import org.openrdf.query._
-import org.openrdf.query.parser.QueryParserUtil
-import org.openrdf.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.openrdf.rio.{RDFWriterRegistry, Rio}
+import org.eclipse.rdf4j.common.lang.FileFormat
+import org.eclipse.rdf4j.common.lang.service.FileFormatServiceRegistry
+import org.eclipse.rdf4j.model.vocabulary.{RDF, SD}
+import org.eclipse.rdf4j.query._
+import org.eclipse.rdf4j.query.parser.QueryParserUtil
+import org.eclipse.rdf4j.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
+import org.eclipse.rdf4j.repository.RepositoryException
+import org.eclipse.rdf4j.rio.{RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
+import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
 /**
   * @author Thomas Pellissier Tanon
+  * @author David Montoya
   */
 trait SparqlService extends StrictLogging with CorsSupport {
   val `application/sparql-query` = MediaType.applicationWithFixedCharset("sparql-query", HttpCharsets.`UTF-8`)
   implicit protected val sparqlQueryUnmarshaller = implicitly[FromEntityUnmarshaller[String]].map(SparqlQuery.apply).forContentTypes(`application/sparql-query`)
+  protected val requestExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1))
   protected val sparqlRoute = {
     corsHandler {
       optionalHeaderValueByType[Accept]() { accept =>
@@ -71,54 +76,66 @@ trait SparqlService extends StrictLogging with CorsSupport {
   protected def repository: Repository
 
   private def executeQuery(queryStr: String, accept: Option[Accept]): Route = {
-    val repositoryConnection = repository.newConnection()
     try {
-      repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr) match {
-        case query: BooleanQuery => executeQuery(query, accept)
-        case query: GraphQuery => executeQuery(query, accept)
-        case query: TupleQuery => executeQuery(query, accept)
+      val repositoryConnection = repository.newConnection()
+      try {
+        val query = repositoryConnection.prepareQuery(QueryLanguage.SPARQL, queryStr)
+        executeQuery(query, accept) {
+          () => repositoryConnection.close()
+        }
+      } catch {
+        case e: MalformedQueryException =>
+          repositoryConnection.close()
+          complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
+        case e: RepositoryException =>
+          repositoryConnection.close()
+          complete(StatusCodes.InternalServerError, s"Error preparing query: ${e.getMessage}")
       }
     } catch {
-      case e: MalformedQueryException => complete(StatusCodes.BadRequest, "Malformed query: " + e.getMessage)
-      case e: QueryInterruptedException => complete(StatusCodes.InternalServerError, "Query times out: " + e.getMessage)
-      case e: QueryEvaluationException =>
-        logger.error("Query evaluation error: " + e.getMessage, e)
-        complete(StatusCodes.InternalServerError, "Query evaluation error: " + e.getMessage)
-    } finally {
-      repositoryConnection.close()
+      case e: RepositoryException =>
+        complete(StatusCodes.InternalServerError, s"Error retrieving repository connection: ${e.getMessage}")
     }
   }
 
-  private def executeQuery(query: BooleanQuery, accept: Option[Accept]): Route = {
-    writerFactoryForAccept(BooleanQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json") match {
-      case Some(writerFactory) =>
-        val outputStream = new ByteArrayOutputStream()
-        writerFactory.getWriter(outputStream).handleBoolean(query.evaluate())
-        completeStream(outputStream, writerFactory.getBooleanQueryResultFormat)
-      case None => complete {
-        StatusCodes.UnsupportedMediaType
-      }
-    }
-  }
-
-  private def executeQuery(query: GraphQuery, accept: Option[Accept]): Route = {
-    writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json") match {
-      case Some(writerFactory) =>
-        val outputStream = new ByteArrayOutputStream()
-        query.evaluate(writerFactory.getWriter(outputStream))
-        completeStream(outputStream, writerFactory.getRDFFormat)
-      case None => complete {
-        StatusCodes.UnsupportedMediaType
-      }
-    }
-  }
-
-  private def executeQuery(query: TupleQuery, accept: Option[Accept]): Route = {
-    writerFactoryForAccept(TupleQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json") match {
-      case Some(writerFactory) =>
-        val outputStream = new ByteArrayOutputStream()
-        query.evaluate(writerFactory.getWriter(outputStream))
-        completeStream(outputStream, writerFactory.getTupleQueryResultFormat)
+  private def executeQuery(query: Query, accept: Option[Accept])(close: () => Unit): Route = {
+    (query match {
+      case query: BooleanQuery =>
+        writerFactoryForAccept(BooleanQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json").map {
+          writerFactory =>
+            (writerFactory.getBooleanQueryResultFormat, (os: OutputStream) => writerFactory.getWriter(os).handleBoolean(query.evaluate()))
+        }
+      case query: GraphQuery =>
+        writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json").map {
+          writerFactory =>
+            (writerFactory.getRDFFormat, (os: OutputStream) => query.evaluate(writerFactory.getWriter(os)))
+        }
+      case query: TupleQuery =>
+        writerFactoryForAccept(TupleQueryResultWriterRegistry.getInstance(), accept, "application/sparql-results+json").map {
+          writerFactory =>
+            (writerFactory.getTupleQueryResultFormat, (os: OutputStream) => query.evaluate(writerFactory.getWriter(os)))
+        }
+    }) match {
+      case Some((format, f)) =>
+        completeStream(format, os =>
+          try {
+            f(os)
+          } catch {
+            case e: QueryInterruptedException =>
+              val message = s"Query timeout error: ${e.getMessage}"
+              logger.error(message, e)
+            case e: QueryEvaluationException =>
+              val message = s"Query evaluation error: ${e.getMessage}"
+              logger.error(message, e)
+            case e: QueryResultHandlerException =>
+              val message = s"Query result handler exception: ${e.getMessage}"
+              logger.error(message, e)
+            case e: Exception =>
+              val message = s"Unexpected error during query evaluation."
+              logger.error(message, e)
+          } finally {
+            close()
+          }
+        )
       case None => complete {
         StatusCodes.UnsupportedMediaType
       }
@@ -143,9 +160,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   private def executeDescription(accept: Option[Accept]): Route = {
     writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/rdf+json") match {
       case Some(writerFactory) =>
-        val outputStream = new ByteArrayOutputStream()
-        Rio.write(sparqlServiceDescription, writerFactory.getWriter(outputStream))
-        completeStream(outputStream, writerFactory.getRDFFormat)
+        completeStream(writerFactory.getRDFFormat, os => Rio.write(sparqlServiceDescription.asJavaCollection, writerFactory.getWriter(os)))
       case None => complete {
         StatusCodes.UnsupportedMediaType
       }
@@ -165,10 +180,18 @@ trait SparqlService extends StrictLogging with CorsSupport {
       .headOption
   }
 
-  private def completeStream(outputStream: ByteArrayOutputStream, format: FileFormat): Route = {
-    val byteArray = outputStream.toByteArray
-    outputStream.close()
-    complete(HttpEntity(contentTypeForFormat(format), byteArray))
+  private def completeStream[V](format: FileFormat, f: OutputStream => V): Route = {
+    val in = new PipedInputStream
+    val out = new PipedOutputStream(in)
+    val source = StreamConverters.fromInputStream(() => in)
+    Future {
+      try {
+        f(out)
+      } finally {
+        out.close()
+      }
+    }(requestExecutionContext)
+    complete(HttpEntity(contentTypeForFormat(format), source))
   }
 
   private def contentTypeForFormat(format: FileFormat): ContentType = {
@@ -177,31 +200,31 @@ trait SparqlService extends StrictLogging with CorsSupport {
     })
   }
 
-  private def sparqlServiceDescription: Model = {
+  private def sparqlServiceDescription: StatementSet = {
     val valueFactory = repository.valueFactory
-    val model = new SimpleHashModel(valueFactory)
+    val statements = StatementSet.empty(valueFactory)
 
     val service = valueFactory.createBNode()
-    model.add(service, RDF.TYPE, SD.SERVICE)
+    statements.add(service, RDF.TYPE, SD.SERVICE)
     //TODO model.add(service, SD.ENDPOINT, )
-    model.add(service, SD.FEATURE_PROPERTY, SD.UNION_DEFAULT_GRAPH)
-    model.add(service, SD.FEATURE_PROPERTY, SD.BASIC_FEDERATED_QUERY)
-    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_10_QUERY)
-    model.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_11_QUERY)
+    statements.add(service, SD.FEATURE_PROPERTY, SD.UNION_DEFAULT_GRAPH)
+    statements.add(service, SD.FEATURE_PROPERTY, SD.BASIC_FEDERATED_QUERY)
+    statements.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_10_QUERY)
+    statements.add(service, SD.SUPPORTED_LANGUAGE, SD.SPARQL_11_QUERY)
 
     TupleQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getTupleQueryResultFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
     BooleanQueryResultWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getBooleanQueryResultFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
     RDFWriterRegistry.getInstance().getAll.asScala.foreach(writer =>
       Option(writer.getRDFFormat.getStandardURI).foreach(formatURI =>
-        model.add(service, SD.RESULT_FORMAT, formatURI)
+        statements.add(service, SD.RESULT_FORMAT, formatURI)
       )
     )
 
@@ -211,7 +234,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
       model.add(service, SD.EXTENSION_FUNCTION, functionURI)
     }) TODO: remove not extension functions*/
 
-    model
+    statements
   }
 
   private def isSPARQLQuery(operation: String): Boolean = {

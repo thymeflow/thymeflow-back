@@ -1,9 +1,9 @@
 package com.thymeflow.rdf.sail;
 
-import org.openrdf.sail.NotifyingSail;
-import org.openrdf.sail.NotifyingSailConnection;
-import org.openrdf.sail.SailException;
-import org.openrdf.sail.helpers.NotifyingSailWrapper;
+import org.eclipse.rdf4j.sail.NotifyingSail;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 
 /**
  * A sail which allows to block insert/delete
@@ -25,6 +25,6 @@ public class InterceptingSail extends NotifyingSailWrapper {
 
     @Override
     public NotifyingSailConnection getConnection() throws SailException {
-        return new InterceptingSailConnection(super.getConnection(), interceptor);
+        return new InterceptingSailConnection(super.getConnection(), getValueFactory(), interceptor);
     }
 }

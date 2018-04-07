@@ -5,7 +5,7 @@ import java.text.SimpleDateFormat
 import java.util.{Calendar, Date, GregorianCalendar}
 
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.spatial
 import com.thymeflow.sync.converter.utils._
 import com.thymeflow.update.{UpdateResult, UpdateResults}
@@ -16,8 +16,8 @@ import ezvcard.parameter.{AddressType, EmailType, ImageType, TelephoneType}
 import ezvcard.property._
 import ezvcard.util.{DataUri, TelUri}
 import ezvcard.{Ezvcard, VCard}
-import org.openrdf.model._
-import org.openrdf.model.vocabulary.{RDF, XMLSchema}
+import org.eclipse.rdf4j.model._
+import org.eclipse.rdf4j.model.vocabulary.{RDF, XMLSchema}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
@@ -34,36 +34,35 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
   private val postalAddressConverter = new PostalAddressConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (Model, String) => IRI): Iterator[(IRI, Model)] = {
+  override def convert(stream: InputStream, context: Option[String] => IRI, createSourceContext: (StatementSet, String) => IRI): Iterator[(IRI, StatementSet)] = {
     val wholeContext = context(None)
     Iterator((wholeContext, convert(Ezvcard.parse(stream).all.asScala, wholeContext)))
   }
 
-  def convert(str: String, context: Resource): Model = {
+  def convert(str: String, context: Resource): StatementSet = {
     convert(Ezvcard.parse(str).all.asScala, context)
   }
 
-  private def convert(vCards: Traversable[VCard], context: Resource): Model = {
-    val model = new SimpleHashModel(valueFactory)
-    val converter = new ToModelConverter(model, context)
+  private def convert(vCards: Traversable[VCard], context: Resource): StatementSet = {
+    val statements = StatementSet.empty(valueFactory)
+    val converter = new ToModelConverter(statements, context)
     vCards.foreach(converter.convert)
-    model
+    statements
   }
 
-  override def applyDiff(str: String, diff: ModelDiff): (String, UpdateResults) = {
-    val updateResult = UpdateResults()
-    (Ezvcard.write(Ezvcard.parse(str).all().asScala.map(vCard => {
-      val diffAppplication = new DiffApplication(vCard)
-      updateResult.merge(UpdateResults(
-        diff.added.asScala.map(statement =>
-          statement -> diffAppplication.add(statement)
-        ).toMap,
-        diff.removed.asScala.map(statement =>
-          statement -> diffAppplication.remove(statement)
-        ).toMap
-      ))
-      vCard
-    }).asJava).go(), updateResult)
+  override def applyDiff(str: String, diff: StatementSetDiff): (String, UpdateResults) = {
+    val results = Ezvcard.parse(str).all().asScala.map(vCard => {
+      val diffApplication = new DiffApplication(vCard)
+      val removed = diff.removed.flatMap(statement =>
+        diffApplication.remove(statement).map(statement -> _)
+      )(scala.collection.breakOut): Map[Statement, UpdateResult]
+      val added = diff.added.flatMap(statement =>
+        diffApplication.add(statement).map(statement -> _)
+      )(scala.collection.breakOut): Map[Statement, UpdateResult]
+      (UpdateResults(added, removed), vCard)
+    }).toVector
+    val written = Ezvcard.write(results.map(_._2).asJava).go()
+    (written, UpdateResults.merge(results.map(_._1): _*))
   }
 
   private def resourceForVCard(vCard: VCard): Resource = {
@@ -72,70 +71,70 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
       .getOrElse(uuidConverter.createIRI(vCard))
   }
 
-  private class ToModelConverter(model: Model, context: Resource) {
+  private class ToModelConverter(statements: StatementSet, context: Resource) {
     def convert(vCard: VCard): Resource = {
       val cardResource = resourceForVCard(vCard)
-      model.add(cardResource, RDF.TYPE, Personal.AGENT, context)
+      statements.add(cardResource, RDF.TYPE, Personal.AGENT, context)
 
       vCard.getProperties.asScala.foreach {
         //ADR
-        case address: Address => model.add(cardResource, SchemaOrg.ADDRESS, convert(address), context)
+        case address: Address => statements.add(cardResource, SchemaOrg.ADDRESS, convert(address), context)
         //BDAY
-        case birthday: Birthday => convert(birthday).foreach(date => model.add(cardResource, SchemaOrg.BIRTH_DATE, date, context))
+        case birthday: Birthday => convert(birthday).foreach(date => statements.add(cardResource, SchemaOrg.BIRTH_DATE, date, context))
         //NICKNAME
         case nicknames: Nickname =>
           nicknames.getValues.asScala.foreach(nickname =>
-            model.add(cardResource, Personal.NICKNAME, valueFactory.createLiteral(nickname), context)
+            statements.add(cardResource, Personal.NICKNAME, valueFactory.createLiteral(nickname), context)
           )
         //DEATHDATE
-        case deathdate: Deathdate => convert(deathdate).foreach(date => model.add(cardResource, SchemaOrg.DEATH_DATE, date, context))
+        case deathdate: Deathdate => convert(deathdate).foreach(date => statements.add(cardResource, SchemaOrg.DEATH_DATE, date, context))
         //EMAIL
         case email: Email =>
           convert(email).foreach {
-            resource => model.add(cardResource, SchemaOrg.EMAIL, resource, context)
+            resource => statements.add(cardResource, SchemaOrg.EMAIL, resource, context)
           }
         //FN
-        case formattedName: FormattedName => model.add(cardResource, SchemaOrg.NAME, convert(formattedName), context)
+        case formattedName: FormattedName => statements.add(cardResource, SchemaOrg.NAME, convert(formattedName), context)
         //N
         case structuredName: StructuredName =>
           Option(structuredName.getFamily).foreach(familyName =>
-            model.add(cardResource, SchemaOrg.FAMILY_NAME, valueFactory.createLiteral(familyName), context)
+            statements.add(cardResource, SchemaOrg.FAMILY_NAME, valueFactory.createLiteral(familyName), context)
           )
           Option(structuredName.getGiven).foreach(givenName =>
-            model.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName), context)
+            statements.add(cardResource, SchemaOrg.GIVEN_NAME, valueFactory.createLiteral(givenName), context)
           )
           structuredName.getAdditionalNames.asScala.foreach(additionalName =>
-            model.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName), context)
+            statements.add(cardResource, SchemaOrg.ADDITIONAL_NAME, valueFactory.createLiteral(additionalName), context)
           )
           structuredName.getPrefixes.asScala.foreach(prefix =>
-            model.add(cardResource, SchemaOrg.HONORIFIC_PREFIX, valueFactory.createLiteral(prefix), context)
+            statements.add(cardResource, SchemaOrg.HONORIFIC_PREFIX, valueFactory.createLiteral(prefix), context)
           )
           structuredName.getSuffixes.asScala.foreach(suffix =>
-            model.add(cardResource, SchemaOrg.HONORIFIC_SUFFIX, valueFactory.createLiteral(suffix), context)
+            statements.add(cardResource, SchemaOrg.HONORIFIC_SUFFIX, valueFactory.createLiteral(suffix), context)
           )
         //ORG
-        case organization: Organization => model.add(cardResource, SchemaOrg.MEMBER_OF, convert(organization), context)
+        case organization: Organization => statements.add(cardResource, SchemaOrg.MEMBER_OF, convert(organization), context)
         //PHOTO
         case photo: Photo =>
           convert(photo).foreach(photoResource =>
-            model.add(cardResource, SchemaOrg.IMAGE, photoResource, context)
+            statements.add(cardResource, SchemaOrg.IMAGE, photoResource, context)
           )
         //REVISION
         case _: Revision => //We do not care about last revision time
         //TEL
         case telephone: Telephone =>
           convert(telephone).foreach(telephoneResource =>
-            model.add(cardResource, SchemaOrg.TELEPHONE, telephoneResource, context)
+            statements.add(cardResource, SchemaOrg.TELEPHONE, telephoneResource, context)
           )
         //TITLE
-        case title: Title => model.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue), context)
+        case title: Title => statements.add(cardResource, SchemaOrg.JOB_TITLE, valueFactory.createLiteral(title.getValue), context)
         //UID
         case _: Uid => //We are already used this field to build the resource ID
         //URL
-        case url: Url => convert(url).foreach(url => model.add(cardResource, SchemaOrg.URL, url, context)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
+        case url: Url => convert(url).foreach(url => statements.add(cardResource, SchemaOrg.URL, url, context)) //TODO: Google: support link to other accounts encoded as URLs like http\://www.google.com/profiles/112359482310702047642
         //X-SOCIALPROFILE
         case property: RawProperty if property.getPropertyName == "X-SOCIALPROFILE" =>
-          resourceFromUrl(property.getValue).foreach(url => model.add(cardResource, SchemaOrg.URL, url, context)) //TODO: better relation than schema:url
+          resourceFromUrl(property.getValue).foreach(url => statements.add(cardResource, SchemaOrg.URL, url, context)) //TODO: better relation than schema:url
         case property => logger.info("Unsupported parameter type:" + property)
       }
 
@@ -149,12 +148,12 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
         region = Option(address.getRegion),
         country = Option(address.getCountry),
         postalCode = Option(address.getPostalCode)
-      ), model, context)
+      ), statements, context)
       address.getPoBoxes.asScala.foreach(poBox =>
-        model.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
+        statements.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
       )
       address.getTypes.asScala.foreach(addressType =>
-        model.add(addressResource, RDF.TYPE, classForAddressType(addressType), context)
+        statements.add(addressResource, RDF.TYPE, classForAddressType(addressType), context)
       )
       addressResource
     }
@@ -186,10 +185,10 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
     }
 
     private def convert(email: Email): Option[Resource] = {
-      emailAddressConverter.convert(email.getValue, model).map {
+      emailAddressConverter.convert(email.getValue, statements).map {
         resource =>
           email.getTypes.asScala.foreach(emailType =>
-            model.add(resource, RDF.TYPE, classForEmailType(emailType), context)
+            statements.add(resource, RDF.TYPE, classForEmailType(emailType), context)
           )
           resource
       }
@@ -225,26 +224,26 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
           })
         })
       }).map(photoResource => {
-        model.add(photoResource, RDF.TYPE, SchemaOrg.IMAGE_OBJECT, context)
+        statements.add(photoResource, RDF.TYPE, SchemaOrg.IMAGE_OBJECT, context)
         photoResource
       })
     }
 
     private def convert(organization: Organization): Resource = {
       val organizationResource = uuidConverter.createBNode(organization)
-      model.add(organizationResource, RDF.TYPE, SchemaOrg.ORGANIZATION, context)
-      model.add(organizationResource, SchemaOrg.NAME, valueFactory.createLiteral(organization.getValues.get(0)), context) //TODO: support hierarchy?
+      statements.add(organizationResource, RDF.TYPE, SchemaOrg.ORGANIZATION, context)
+      statements.add(organizationResource, SchemaOrg.NAME, valueFactory.createLiteral(organization.getValues.get(0)), context) //TODO: support hierarchy?
       organizationResource
     }
 
     private def convert(telephone: Telephone): Option[Resource] = {
       Option(telephone.getUri).flatMap(uri => {
-        phoneNumberConverter.convert(uri.toString, model)
+        phoneNumberConverter.convert(uri.toString, statements)
       }).orElse(
-        Option(telephone.getText).flatMap(phoneNumberConverter.convert(_, model))
+        Option(telephone.getText).flatMap(phoneNumberConverter.convert(_, statements))
       ).map(telephoneResource => {
         telephone.getTypes.asScala.foreach(telephoneType =>
-          model.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType), context)
+          statements.add(telephoneResource, RDF.TYPE, classForTelephoneType(telephoneType), context)
         )
         telephoneResource
       })
@@ -277,52 +276,56 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
   }
 
   private class DiffApplication(vCard: VCard) {
-    //TODO: dramma: what to do for (agent, schema:organization, org) /\ (org, schema:name, name) ???
+    //TODO: drama: what to do for (agent, schema:organization, org) /\ (org, schema:name, name) ???
     //The add method should always be called after remove in case of edit
-    def add(statement: Statement): UpdateResult = {
+    def add(statement: Statement): Option[UpdateResult] = {
       if (statement.getSubject == resourceForVCard(vCard)) {
         try {
-          if (addCardStatement(statement)) {
-            Ok()
-          } else {
-            Error(List())
-          }
+          addCardStatement(statement)
+          Some(Ok())
         } catch {
-          case e: ConverterException => Error(List(e))
+          case e: ConverterException => Some(Error(List(e)))
         }
       } else {
-        Error(List())
+        None
       }
     }
 
     private def addCardStatement(statement: Statement): Boolean = {
       //TODO: we do not support alternative representation for structured name (only VCard 4.0)
+      def getOrCreateStructuredName() = {
+        Option(vCard.getStructuredName).getOrElse({
+          val name = new StructuredName()
+          vCard.setStructuredName(name)
+          name
+        })
+      }
       statement.getPredicate match {
         case SchemaOrg.ADDITIONAL_NAME =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getAdditionalNames.add(statement.getObject.toString)
+          getOrCreateStructuredName().getAdditionalNames.add(statement.getObject.stringValue())
         case SchemaOrg.BIRTH_DATE => vCard.getBirthdays.add(toBirthdayProperty(statement.getObject))
         case SchemaOrg.DEATH_DATE => vCard.getDeathdates.add(toDeathdateProperty(statement.getObject))
         case SchemaOrg.EMAIL => vCard.getEmails.add(toEmailProperty(statement.getObject))
         case SchemaOrg.FAMILY_NAME =>
-          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
-          val newFamily = statement.getObject.toString
-          Option(structuredName).filter(_.getFamily != newFamily).foreach(
-            throw new ConverterException("The family name is already set to a different value")
-          )
-          structuredName.setFamily(statement.getObject.toString)
+          val structuredName = getOrCreateStructuredName()
+          val newFamily = statement.getObject.stringValue()
+          Option(structuredName.getFamily).filter(_ != newFamily).foreach {
+            _ => throw new ConverterException("The family name is already set to a different value")
+          }
+          structuredName.setFamily(newFamily)
           true
         case SchemaOrg.GIVEN_NAME =>
-          val structuredName = Option(vCard.getStructuredName).getOrElse(new StructuredName())
-          val newGiven = statement.getObject.toString
-          Option(structuredName).filter(_.getGiven != newGiven).foreach(
-            throw new ConverterException("The given name is already set to a different value")
-          )
-          structuredName.setGiven(statement.getObject.toString)
+          val structuredName = getOrCreateStructuredName()
+          val newGiven = statement.getObject.stringValue()
+          Option(structuredName.getGiven).filter(_ != newGiven).foreach {
+            _ => throw new ConverterException("The given name is already set to a different value")
+          }
+          structuredName.setGiven(newGiven)
           true
         case SchemaOrg.HONORIFIC_PREFIX =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getPrefixes.add(statement.getObject.toString)
+          getOrCreateStructuredName().getPrefixes.add(statement.getObject.stringValue())
         case SchemaOrg.HONORIFIC_SUFFIX =>
-          Option(vCard.getStructuredName).getOrElse(new StructuredName()).getSuffixes.add(statement.getObject.toString)
+          getOrCreateStructuredName().getSuffixes.add(statement.getObject.stringValue())
         case SchemaOrg.IMAGE => vCard.getPhotos.add(toPhotoProperty(statement.getObject))
         case SchemaOrg.JOB_TITLE => vCard.getTitles.add(toTitleProperty(statement.getObject))
         case SchemaOrg.NAME => vCard.getFormattedNames.add(toFormattedNameProperty(statement.getObject))
@@ -335,16 +338,16 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
       }
     }
 
-    def remove(statement: Statement): UpdateResult = {
+    def remove(statement: Statement): Option[UpdateResult] = {
       if (statement.getSubject == resourceForVCard(vCard)) {
         try {
           removeCardStatement(statement)
-          Ok()
+          Some(Ok())
         } catch {
-          case e: ConverterException => Error(List(e))
+          case e: ConverterException => Some(Error(List(e)))
         }
       } else {
-        Error(List())
+        None
       }
     }
 

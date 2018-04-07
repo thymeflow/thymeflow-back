@@ -1,8 +1,8 @@
 package com.thymeflow.sync.converter.utils
 
-import com.thymeflow.rdf.model.SimpleHashModel
+import com.thymeflow.rdf.model.StatementSet
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.impl.SimpleValueFactory
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.util.Random
@@ -19,7 +19,8 @@ class GeoCoordinatesConverterSpec extends FlatSpec with Matchers with StrictLogg
     def generateRandomNumber(from: Double, to: Double, scale: Int) = {
       BigDecimal(rand.nextDouble * (to - from) + from).setScale(scale, BigDecimal.RoundingMode.FLOOR).toDouble
     }
-    val valueFactory = SimpleValueFactory.getInstance()
+
+    implicit val valueFactory = SimpleValueFactory.getInstance()
     val converter = new GeoCoordinatesConverter(valueFactory)
 
     try {
@@ -29,9 +30,10 @@ class GeoCoordinatesConverterSpec extends FlatSpec with Matchers with StrictLogg
           BigDecimal(rand.nextDouble * 360d - 180d).setScale(i % 16, BigDecimal.RoundingMode.FLOOR).toDouble
           val latitude = generateRandomNumber(-89d, 90d, i % 16)
           val elevation = if (rand.nextBoolean) Some(generateRandomNumber(0d, 20000d, i % 16)) else None
-          val uncertainty = if (rand.nextBoolean) Some(generateRandomNumber(0d, 1000d, i % 16)) else None
-          val model = new SimpleHashModel()
-          val geo = converter.convert(longitude, latitude, elevation, uncertainty, model)
+          val uncertainty = if (rand.nextBoolean) Some(generateRandomNumber(0d, 100000d, i % 16)) else None
+          val statements = StatementSet.empty
+          val geo = converter.convert(longitude, latitude, elevation, uncertainty, statements)
+          converter.convertGeoUri(geo.stringValue(), statements).map(_.toString) should contain(geo.stringValue())
           withClue(geo.stringValue()) {
             geo.stringValue() match {
               case geoUriRegex(geoLatitude, geoLongitude, geoElevation, geoCrsn, geoUncertainty) =>

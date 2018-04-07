@@ -13,17 +13,17 @@ import com.thymeflow.enricher.entityresolution.EntityResolution.{LevensteinSimil
 import com.thymeflow.graph.serialization.GraphML
 import com.thymeflow.graph.{ConnectedComponents, ShortestPath}
 import com.thymeflow.rdf.Converters._
-import com.thymeflow.rdf.model.ModelDiff
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.model.vocabulary.{Personal, SchemaOrg}
 import com.thymeflow.text.alignment.TextAlignment
 import com.thymeflow.text.search.elasticsearch.FullTextSearchServer
 import com.thymeflow.utilities.IO
 import com.thymeflow.utilities.email.EmailProviderDomainList
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{BNode, IRI, Literal, Resource}
-import org.openrdf.query.QueryLanguage
-import org.openrdf.query.resultio.text.csv.SPARQLResultsCSVWriter
-import org.openrdf.repository.RepositoryConnection
+import org.eclipse.rdf4j.model.{BNode, IRI, Literal, Resource}
+import org.eclipse.rdf4j.query.QueryLanguage
+import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVWriter
+import org.eclipse.rdf4j.repository.RepositoryConnection
 
 import scala.collection.JavaConverters._
 import scala.collection.immutable.NumericRange
@@ -136,7 +136,7 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
       |}
     """.stripMargin)
 
-  override def enrich(diff: ModelDiff): Unit = {
+  override def enrich(diff: StatementSetDiff): Unit = {
     if (outputAgents) {
       saveAgentsNameEmails()
     }

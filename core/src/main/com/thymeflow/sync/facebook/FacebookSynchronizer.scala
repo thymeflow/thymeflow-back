@@ -5,29 +5,32 @@ import java.time.Instant
 import akka.actor.{ActorRef, Props}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import akka.http.scaladsl.model.Uri.{Path, Query}
+import akka.http.scaladsl.model.Uri.Query
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.scaladsl.Source
 import com.thymeflow.actors._
 import com.thymeflow.rdf.model.document.Document
 import com.thymeflow.rdf.model.vocabulary.Personal
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.service._
 import com.thymeflow.service.source.FacebookGraphApiSource
 import com.thymeflow.sync.Synchronizer
+import com.thymeflow.sync.Synchronizer.Update
+import com.thymeflow.sync.converter.ConverterException
 import com.thymeflow.sync.publisher.ScrollDocumentPublisher
+import com.thymeflow.update.UpdateResults
 import com.typesafe.config.Config
-import org.openrdf.model.{IRI, Model, ValueFactory}
+import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 import spray.json._
+
 
 /**
   * @author David Montoya
   */
 object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
-  final val apiEndpoint = Uri("https://graph.facebook.com")
-  final val namespace = "https://graph.facebook.com"
-  final val apiPath = Path("/v2.6")
+  import Facebook.{apiEndpoint, apiPath, namespace}
 
   def source(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config) =
     Source.actorPublisher[Document](Props(new Publisher(valueFactory, supervisor)))
@@ -38,7 +41,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
 
   case class Initial(task: ServiceAccountSourceTask[TaskStatus], token: String) extends FacebookState
 
-  case class Scroll(task: ServiceAccountSourceTask[Working], token: String, context: IRI, model: Model, eventIds: Vector[String]) extends FacebookState
+  case class Scroll(task: ServiceAccountSourceTask[Working], token: String, context: IRI, statements: StatementSet, eventIds: Vector[String]) extends FacebookState
 
   private class Publisher(valueFactory: ValueFactory, supervisor: ActorRef)(implicit config: Config)
     extends ScrollDocumentPublisher[Document, FacebookState] with BasePublisher with SprayJsonSupport {
@@ -54,6 +57,15 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
             supervisor ! task
           case _ =>
         }
+      case Update(diff) => sender() ! applyDiff(diff)
+    }
+
+    private def applyDiff(diff: StatementSetDiff): UpdateResults = {
+      val failedContexts = diff.contexts().filter(_.stringValue().startsWith(namespace))
+      UpdateResults.allFailed(
+        diff.filter(statement => failedContexts.contains(statement.getContext)),
+        new ConverterException("Facebook modification is not yet supported.")
+      )
     }
 
     override protected def queryBuilder = {
@@ -67,7 +79,7 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                 Unmarshal(entity.withContentType(ContentTypes.`application/json`)).to[Map[String, Event]].map {
                   events =>
                     events.foreach {
-                      case (_, event) => facebookConverter.convert(event, scroll.model, scroll.context)
+                      case (_, event) => facebookConverter.convert(event, scroll.statements, scroll.context)
                     }
                 }
             }.recover {
@@ -91,16 +103,16 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
                     case _ =>
                       scroll.task
                   }
-                  scroll.model.add(scroll.context, Personal.DOCUMENT_OF, scroll.task.source.iri, scroll.context)
+                  scroll.statements.add(scroll.context, Personal.DOCUMENT_OF, scroll.task.source.iri, scroll.context)
                   supervisor ! resultTask
-                  Result(None, Vector(Document(scroll.context, scroll.model)))
+                  Result(None, Vector(Document(scroll.context, scroll.statements)))
                 }
             }
           case initial: Initial =>
             val queryMe = HttpRequest(HttpMethods.GET, apiEndpoint.withPath(apiPath / "me").withQuery(
               Query(
                 ("access_token", initial.token),
-                ("fields", "about,bio,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
+                ("fields", "about,age_range,email,first_name,last_name,gender,education,hometown,updated_time,events.limit(1000){id},taggable_friends.limit(1000)")
               )
             ))
             val startDate = Instant.now
@@ -111,12 +123,12 @@ object FacebookSynchronizer extends Synchronizer with DefaultJsonProtocol {
               case HttpResponse(StatusCodes.OK, _, entity, _) =>
                 Unmarshal(entity.withContentType(ContentTypes.`application/json`)).to[Me].map {
                   me =>
-                    val context = valueFactory.createIRI(s"http://graph.facebook.com")
+                    val context = valueFactory.createIRI(namespace)
                     val events = me.events.data.map(_.id)
-                    val model = facebookConverter.convert(me, context)
+                    val statements = facebookConverter.convert(me, context)
                     val resultTask = initialTask.copy(status = initialTaskStatus.copy(progress = Some(Progress(value = 0L, total = events.size))))
                     supervisor ! resultTask
-                    Result(Some(Scroll(resultTask, initial.token, context, model, events)), Vector.empty)
+                    Result(Some(Scroll(resultTask, initial.token, context, statements, events)), Vector.empty)
                 }
             }
             f.recover {

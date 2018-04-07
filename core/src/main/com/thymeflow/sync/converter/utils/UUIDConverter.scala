@@ -2,7 +2,7 @@ package com.thymeflow.sync.converter.utils
 
 import java.util.UUID
 
-import org.openrdf.model.{BNode, IRI, ValueFactory}
+import org.eclipse.rdf4j.model.{BNode, IRI, ValueFactory}
 
 /**
   * @author Thomas Pellissier Tanon

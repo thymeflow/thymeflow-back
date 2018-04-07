@@ -1,10 +1,10 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.{ModelDiff, SimpleHashModel}
+import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
 import com.thymeflow.rdf.sail.SailInterceptor
-import com.thymeflow.utilities.{Error, Ok}
+import com.thymeflow.utilities.Error
 import com.typesafe.scalalogging.StrictLogging
-import org.openrdf.model.{IRI, Model, Resource, Value}
+import org.eclipse.rdf4j.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -19,43 +19,25 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
     this.updater = updater
   }
 
-  override def onSparqlAddStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*): Boolean = {
-    applyUpdate(new ModelDiff(
-      modelFromStatement(subject, predicate, `object`, contexts),
-      SimpleHashModel.empty
-    ))
-  }
-
-  override def onSparqlRemoveStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Resource*): Boolean = {
-    applyUpdate(new ModelDiff(
-      SimpleHashModel.empty,
-      modelFromStatement(subject, predicate, `object`, contexts)
-    ))
-  }
-
-  private def applyUpdate(diff: ModelDiff): Boolean = {
-    updater.apply(diff).foreach(results => {
+  /**
+    * Method called when an SPARQL UPDATE is tried on the sail
+    */
+  override def onSparqlUpdateDiff(diff: StatementSetDiff) {
+    val updateResults = updater.apply(diff)
+    updateResults.foreach(results => {
       results.added.foreach {
-        case (statement, Ok(_)) => logger.info(s"statement $statement has been successfully added")
-        case (statement, Error(l)) => logger.info(s"statement $statement failed to be added with errors: ${l.mkString}")
+        case (statement, Error(l)) if l.nonEmpty && statement.getContext == null => logger.info(s"Error(s) encountered when propagating $statement. The statement was added to the User Graph. (${l.mkString}) ")
+        case (statement, Error(l)) if l.nonEmpty && statement.getContext != null => logger.info(s"Error(s) encountered when propagating $statement: ${l.mkString}")
+        case _ =>
       }
       results.removed.foreach {
-        case (statement, Ok(_)) => logger.info(s"statement $statement has been successfully removed")
-        case (statement, Error(l)) => logger.info(s"statement $statement failed to be removed with errors: ${l.mkString}")
+        case (statement, Error(l)) if l.nonEmpty && statement.getContext == null => logger.info(s"Error(s) encountered when propagating the removal of $statement. The statement was however removed and a negated version was added to the User Graph. (${l.mkString}) ")
+        case (statement, Error(l)) if l.nonEmpty && statement.getContext != null => logger.info(s"Error(s) encountered when propagating the removal of $statement: ${l.mkString}")
+        case _ =>
       }
     })
-    false
-  }
-
-  private def modelFromStatement(subject: Resource, predicate: IRI, `object`: Value, contexts: Seq[Resource]): Model = {
-    val model = new SimpleHashModel()
-    if (contexts.isEmpty) {
-      model.add(subject, predicate, `object`)
-    } else {
-      contexts.map(context =>
-        model.add(subject, predicate, `object`, context)
-      )
+    updateResults.onFailure {
+      case t => logger.error(s"Error applying update ($diff): ${t.getMessage}", t)
     }
-    model
   }
 }

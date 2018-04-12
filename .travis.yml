@@ -1,9 +1,18 @@
-language: scala
+language: generic
 
-sudo: false
+sudo: required
 
-scala:
-   - 2.11.7
+services:
+  - docker
 
-jdk:
-  - oraclejdk8
+install:
+  - docker build -t thymeflow/back .
+
+script:
+  - docker run thymeflow/back sbt test
+
+deploy:
+  provider: script
+  script: bash docker_push.sh
+  on:
+    branch: master

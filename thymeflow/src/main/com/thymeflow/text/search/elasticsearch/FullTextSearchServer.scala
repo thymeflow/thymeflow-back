@@ -20,6 +20,7 @@ import org.elasticsearch.indices.IndexMissingException
 import org.elasticsearch.node.NodeBuilder._
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.language.postfixOps
 
 /**
  * @author  David Montoya

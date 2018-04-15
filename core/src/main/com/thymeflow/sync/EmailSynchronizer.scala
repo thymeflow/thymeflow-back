@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 import scala.annotation.tailrec
 import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
-import scala.language.postfixOps
+import scala.language.{existentials, postfixOps}
 
 /**
   * @author Thomas Pellissier Tanon

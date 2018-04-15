@@ -13,6 +13,6 @@ script:
 
 deploy:
   provider: script
-  script: bash docker_push.sh
+  script: bash docker_push.sh thymeflow/back
   on:
     branch: master

@@ -65,7 +65,7 @@ class FullTextSearchServer[T] private(indexName: String,
         if (bulkRequest.numberOfActions() > 0) {
           bulkRequest.execute.future.map(handleBulkResponseFailures)
         } else {
-          Future.successful()
+          Future.successful(())
         }
     }.runForeach(_ => ()).map(_ => ())
   }

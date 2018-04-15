@@ -19,7 +19,7 @@ For Knowledge representation, Thymeflow uses the http://schema.org ontology wher
 `thymeflow-back` was principally built using the following technologies:
 
  - [SBT](http://www.scala-sbt.org/) For building the project.
- - [Sesame (now known as RDF4J)](http://rdf4j.org/doc/) for the RDF Store.
+ - [RDF4J](http://rdf4j.org/doc/) for the RDF Store.
  - [Akka Actor System and Streams](http://akka.io/docs/) for the HTTP Server and Clients, and the scheduling of loading and enriching stages.
 
 ## Configuration ##

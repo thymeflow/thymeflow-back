@@ -18,7 +18,7 @@ RUN addgroup -g 1000 app && adduser -u 1000 -G app -D -s /bin/false -h /app app
 
 USER app
 
-RUN mkdir /app/src
+RUN mkdir /app/src /app/logs /app/data && ln -s /app/logs /app/src/logs && ln -s /app/data /app/src/data
 
 WORKDIR /app/src
 

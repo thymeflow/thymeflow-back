@@ -38,8 +38,8 @@ class LocationStayEnricher(override val newRepositoryConnection: () => Repositor
   private val geoCoordinatesConverter = new GeoCoordinatesConverter(valueFactory)
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  private val inferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricher")
-  private val tempInferencerContext = valueFactory.createIRI("http://thymeflow.com/personal#LocationStayStopEnricherTemp")
+  private val inferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationStayStopEnricher")
+  private val tempInferencerContext = valueFactory.createIRI(Personal.NAMESPACE, "LocationStayStopEnricherTemp")
 
   override def enrich(diff: StatementSetDiff): Unit = {
     if (

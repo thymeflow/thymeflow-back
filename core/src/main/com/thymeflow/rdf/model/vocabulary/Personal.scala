@@ -4,7 +4,7 @@ import org.eclipse.rdf4j.model.IRI
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory
 
 object Personal {
-  val NAMESPACE: String = "http://thymeflow.com/personal/"
+  val NAMESPACE: String = "http://thymeflow.com/personal#"
   val PREFIX: String = "personal"
 
   val DEFAULT_GRAPH: IRI = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "defaultGraph")

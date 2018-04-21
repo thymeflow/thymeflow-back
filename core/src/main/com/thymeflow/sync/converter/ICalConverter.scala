@@ -220,7 +220,7 @@ class ICalConverter(valueFactory: ValueFactory)(implicit config: Config) extends
       if (uid == null) {
         valueFactory.createBNode()
       } else {
-        uuidConverter.convert(Vector(uid, Option(recurrenceId).map(_.getValue.toString).getOrElse(""), Option(sequence).map(_.getValue.toString).getOrElse("")).mkString("\0"))
+        uuidConverter.convert(Vector(uid, Option(recurrenceId).map(_.getValue.toString).getOrElse(""), Option(sequence).map(_.getValue.toString).getOrElse("")).mkString("\u0000"))
       }
     }
   }

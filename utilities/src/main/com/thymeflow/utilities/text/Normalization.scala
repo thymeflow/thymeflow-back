@@ -32,7 +32,7 @@ object Normalization {
       if (end - start >= 2) {
         val startCharacter = raw.charAt(start)
         val endCharacter = raw.charAt(end - 1)
-        if ((startCharacter == ''' && endCharacter == ''') || (startCharacter == '"' && endCharacter == '"')) {
+        if ((startCharacter == '\'' && endCharacter == '\'') || (startCharacter == '"' && endCharacter == '"')) {
           rec(start + 1, end - 1)
         } else {
           raw.substring(start, end)

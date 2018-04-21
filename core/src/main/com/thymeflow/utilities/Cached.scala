@@ -11,7 +11,7 @@ import spray.json.{DefaultJsonProtocol, JsonFormat, JsonParser, _}
 
 import scala.collection.mutable
 import scala.concurrent.{ExecutionContext, Future}
-import scala.language.implicitConversions
+import scala.language.{existentials, implicitConversions}
 
 /**
   * Allows the creation of persistent disk caches.

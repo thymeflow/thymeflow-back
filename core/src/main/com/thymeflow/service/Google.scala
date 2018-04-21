@@ -1,7 +1,6 @@
 package com.thymeflow.service
 
 import java.util.Properties
-import javax.mail.Session
 
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model._
@@ -11,6 +10,7 @@ import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source.{CalDavSource, CardDavSource, ImapSource}
 import com.typesafe.config.Config
+import javax.mail.Session
 
 import scala.concurrent.Future
 
@@ -52,7 +52,7 @@ object Google extends Service with OAuth2Service {
                 // CalDav
                 "Calendar" -> CalDavSource(s"https://apidata.googleusercontent.com/caldav/v2/${googleAddress}/events/", accessToken),
                 // Imap
-                "Emails" -> ImapSource(imapConnect, folderNamesToKeep = if (inboxOnly) Some(Set("INBOX")) else None)
+                "Emails" -> ImapSource(() => imapConnect(), folderNamesToKeep = if (inboxOnly) Some(Set("INBOX")) else None)
               )
             )
           }

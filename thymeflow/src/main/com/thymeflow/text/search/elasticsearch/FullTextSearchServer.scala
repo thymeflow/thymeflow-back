@@ -20,6 +20,7 @@ import org.elasticsearch.indices.IndexMissingException
 import org.elasticsearch.node.NodeBuilder._
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.language.postfixOps
 
 /**
  * @author  David Montoya
@@ -64,7 +65,7 @@ class FullTextSearchServer[T] private(indexName: String,
         if (bulkRequest.numberOfActions() > 0) {
           bulkRequest.execute.future.map(handleBulkResponseFailures)
         } else {
-          Future.successful()
+          Future.successful(())
         }
     }.runForeach(_ => ()).map(_ => ())
   }

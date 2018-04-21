@@ -2,16 +2,16 @@ import sbt.Keys._
 
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
 
-scalacOptions += "-target:jvm-1.8"
+scalacOptions ++= Seq("-target:jvm-1.8", "-deprecation", "-feature")
 
 val rootSettings = Seq(
   version := "0.1",
-  scalaVersion := "2.11.8",
+  scalaVersion := "2.12.5",
   javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
-  scalacOptions += "-target:jvm-1.8",
-  libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.+" % "test"
+  scalacOptions ++= Seq("-target:jvm-1.8", "-deprecation", "-feature"),
+  libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.+" % "test"
     exclude("org.scala-lang", "scala-reflect")
-    exclude("org.scala-lang.modules", "scala-xml_2.11"),
+    exclude("org.scala-lang.modules", "scala-xml_2.12"),
   libraryDependencies += "com.typesafe.scala-logging" %% "scala-logging" % "3.+",
   libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.+"
 )
@@ -40,7 +40,7 @@ val graphProject = Project(
   id = "graph",
   base = file("graph")
 ).settings(commonSettings: _*).settings(
-  libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "1.0.4"
+  libraryDependencies += "org.scala-lang.modules" %% "scala-xml" % "1.0.+"
 )
 
 val spatialProject = Project(

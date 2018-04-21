@@ -4,6 +4,7 @@ import org.eclipse.rdf4j.model.{Statement, ValueFactory}
 
 import scala.collection.generic.CanBuildFrom
 import scala.collection.{GenSet, mutable}
+import scala.language.higherKinds
 
 /**
   * @author David Montoya

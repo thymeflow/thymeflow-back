@@ -33,6 +33,7 @@ trait Envelope3DCartesianCalculator extends StrictLogging {
             val c1c2Envelope = segmentEnvelope(c1, c2)
             Some(previousEnvelopeOption.map(_.include(c1c2Envelope)).getOrElse(c1c2Envelope))
         }.get
+      case _ => throw new NotImplementedError(s"geographyEnvelope is not implemented for an object of type ${geography.getClass.getName}")
     }
   }
 

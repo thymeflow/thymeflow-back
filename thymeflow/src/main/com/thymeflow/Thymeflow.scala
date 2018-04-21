@@ -42,6 +42,7 @@ object Thymeflow extends StrictLogging {
     val geocoder = Geocoder.google(Some(Paths.get(System.getProperty("java.io.tmpdir"), "thymeflow/google-api-cache")))
 
     setupSynchronizers()
+    val newConnection = repository.newConnection _
     val pipelineStartTime = System.currentTimeMillis()
     Pipeline.create(
       repository,
@@ -52,14 +53,14 @@ object Thymeflow extends StrictLogging {
         EmailSynchronizer,
         FacebookSynchronizer
       ),
-      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(repository.newConnection))
-        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(repository.newConnection, geocoder)))
+      Pipeline.enricherToFlow(new InverseFunctionalPropertyInferencer(newConnection))
+        .via(Pipeline.enricherToFlow(new PlacesGeocoderEnricher(newConnection, geocoder)))
         .via(Pipeline.delayedBatchToFlow(10 seconds))
-        .via(Pipeline.enricherToFlow(new LocationStayEnricher(repository.newConnection)))
-        .via(Pipeline.enricherToFlow(new LocationEventEnricher(repository.newConnection)))
-        .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(repository.newConnection, geocoder)))
-        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(repository.newConnection)))
-        .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(repository.newConnection)))
+        .via(Pipeline.enricherToFlow(new LocationStayEnricher(newConnection)))
+        .via(Pipeline.enricherToFlow(new LocationEventEnricher(newConnection)))
+        .via(Pipeline.enricherToFlow(new EventsWithStaysGeocoderEnricher(newConnection, geocoder)))
+        .via(Pipeline.enricherToFlow(new AgentMatchEnricher(newConnection)))
+        .via(Pipeline.enricherToFlow(new PrimaryFacetEnricher(newConnection)))
         .map(diff => {
           val durationSinceStart = Duration(System.currentTimeMillis() - pipelineStartTime, TimeUnit.MILLISECONDS)
           logger.info(s"A diff went at the end of the pipeline with ${diff.added.size} additions and ${diff.removed.size} deletions at time $durationSinceStart")

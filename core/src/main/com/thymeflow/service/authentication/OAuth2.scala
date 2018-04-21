@@ -84,8 +84,8 @@ case class OAuth2(authorizeUri: String, tokenUri: String, clientId: String, clie
                     expires_in = refreshedToken.expires_in)
                 })
             }
-            future.onFailure {
-              case e => logger.error("Error refreshing token.", e)
+            future.failed.foreach {
+              e => logger.error("Error refreshing token.", e)
             }
             future
           }

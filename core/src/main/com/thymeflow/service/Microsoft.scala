@@ -1,7 +1,6 @@
 package com.thymeflow.service
 
 import java.util.Properties
-import javax.mail.Session
 
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
@@ -12,6 +11,7 @@ import com.thymeflow.actors.ActorSystemContext
 import com.thymeflow.service.authentication.OAuth2
 import com.thymeflow.service.source._
 import com.typesafe.config.Config
+import javax.mail.Session
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 
 import scala.concurrent.Future
@@ -54,7 +54,7 @@ object Microsoft extends Service with OAuth2Service with DefaultJsonProtocol wit
               store
             }
 
-            Future.successful(ServiceAccount(this, me.emails.account, Map("Emails" -> ImapSource(connect))))
+            Future.successful(ServiceAccount(this, me.emails.account, Map("Emails" -> ImapSource(() => connect()))))
         }
     }
   }

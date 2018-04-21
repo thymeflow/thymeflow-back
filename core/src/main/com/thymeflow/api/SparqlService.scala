@@ -37,7 +37,7 @@ trait SparqlService extends StrictLogging with CorsSupport {
   protected val requestExecutionContext: ExecutionContext = ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors() + 1))
   protected val sparqlRoute = {
     corsHandler {
-      optionalHeaderValueByType[Accept]() { accept =>
+      optionalHeaderValueByType[Accept](()) { accept =>
         get {
           parameter('query) { query =>
             executeQuery(query, accept)

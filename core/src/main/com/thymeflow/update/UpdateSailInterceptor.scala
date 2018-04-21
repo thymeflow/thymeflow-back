@@ -1,10 +1,9 @@
 package com.thymeflow.update
 
-import com.thymeflow.rdf.model.{StatementSet, StatementSetDiff}
+import com.thymeflow.rdf.model.StatementSetDiff
 import com.thymeflow.rdf.sail.SailInterceptor
 import com.thymeflow.utilities.Error
 import com.typesafe.scalalogging.StrictLogging
-import org.eclipse.rdf4j.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -36,8 +35,8 @@ class UpdateSailInterceptor extends SailInterceptor with StrictLogging {
         case _ =>
       }
     })
-    updateResults.onFailure {
-      case t => logger.error(s"Error applying update ($diff): ${t.getMessage}", t)
+    updateResults.failed.foreach {
+      t => logger.error(s"Error applying update ($diff): ${t.getMessage}", t)
     }
   }
 }

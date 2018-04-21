@@ -56,8 +56,8 @@ trait ScrollDocumentPublisher[DOCUMENT, SCROLL] extends ActorPublisher[DOCUMENT]
             future.foreach {
               case result => this.self ! result
             }
-            future.onFailure {
-              case t => this.self ! Failure(t)
+            future.failed.foreach {
+              t => this.self ! Failure(t)
             }
           case _ =>
           // no scroll to query

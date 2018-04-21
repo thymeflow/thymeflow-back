@@ -2,8 +2,6 @@ package com.thymeflow.sync
 
 import java.net.URLEncoder
 import java.time.Instant
-import javax.mail.event._
-import javax.mail.{FolderClosedException, _}
 
 import akka.actor.{ActorRef, Props}
 import akka.stream.actor.ActorPublisher
@@ -21,6 +19,8 @@ import com.thymeflow.update.UpdateResults
 import com.thymeflow.utilities.TimeExecution
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.StrictLogging
+import javax.mail.event._
+import javax.mail.{FolderClosedException, _}
 import org.eclipse.rdf4j.model.{IRI, ValueFactory}
 
 import scala.annotation.tailrec
@@ -193,8 +193,8 @@ object EmailSynchronizer extends Synchronizer with StrictLogging {
       future.foreach {
         result => self ! Result(result)
       }
-      future.onFailure {
-        case t => logger.error(s"Error handling state.", t)
+      future.failed.foreach {
+        t => logger.error(s"Error handling state.", t)
       }
     }
 

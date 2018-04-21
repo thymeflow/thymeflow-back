@@ -180,8 +180,8 @@ class ParisEnricher(newRepositoryConnection: () => RepositoryConnection,
             repositoryConnection.commit()
         }
     }
-    result.onFailure {
-      case throwable => logger.error("[paris-enricher] - Failure.", throwable)
+    result.failed.foreach {
+      throwable => logger.error("[paris-enricher] - Failure.", throwable)
     }
     Await.ready(result, scala.concurrent.duration.Duration.Inf)
   }

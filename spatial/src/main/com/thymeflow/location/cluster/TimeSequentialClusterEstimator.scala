@@ -60,6 +60,7 @@ trait TimeSequentialClusterEstimator[OBSERVATION, SPACE, TIME, CLUSTER <: Cluste
           } else {
             clustersOutsideLookupBounds += candidateCluster
           }
+          ()
       }
       // if there are no clusters within lookup bounds, use the most recent candidate cluster (possibly very old) as only candidate.
       if (clustersWithinLookupBounds.isEmpty && candidateClusters.nonEmpty) {

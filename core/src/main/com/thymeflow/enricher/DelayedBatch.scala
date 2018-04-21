@@ -32,6 +32,7 @@ case class DelayedBatch[In, Out](seed: In => Out, aggregate: (Out, In) => Out, d
           case (actorRef, DelayedBatch.Tick) =>
             pull()
             flush()
+          case _ =>
         }.ref
         tickScheduler = Some(this.materializer.schedulePeriodically(delay, delay,
           new Runnable {

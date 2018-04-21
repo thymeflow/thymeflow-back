@@ -25,6 +25,7 @@ trait GeographyLinearMetric extends LinearMetric[Geography, Linear, Double] {
       case (p: Point, l: Trail) => distance(p, l)
       case (l: Trail, p: Point) => distance(p, l)
       case (l1: Trail, l2: Trail) => distance(l1, l2)
+      case (_, _) => throw new NotImplementedError(s"distance is not implemented between an object of type ${from.getClass.getName} and an object of type ${to.getClass.getName}")
     }
   }
 

@@ -127,10 +127,10 @@ class AgentMatchEnricher(newRepositoryConnection: () => RepositoryConnection,
   )
 
   private val agentsNameEmailQuery = repositoryConnection.prepareTupleQuery(QueryLanguage.SPARQL,
-    """
+    s"""
       |SELECT ?s ?email ?name
       |WHERE {
-      |?s a <http://thomas.pellissier-tanon.fr/personal#Agent> .
+      |?s a <${Personal.AGENT}> .
       |OPTIONAL { ?s <http://schema.org/email>/<http://schema.org/name> ?email } .
       |OPTIONAL{ ?s <http://schema.org/name> ?name }
       |}

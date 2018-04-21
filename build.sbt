@@ -2,13 +2,13 @@ import sbt.Keys._
 
 javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
 
-scalacOptions += "-target:jvm-1.8"
+scalacOptions ++= Seq("-target:jvm-1.8", "-deprecation", "-feature")
 
 val rootSettings = Seq(
   version := "0.1",
   scalaVersion := "2.12.5",
   javacOptions ++= Seq("-source", "1.8", "-target", "1.8"),
-  scalacOptions += "-target:jvm-1.8",
+  scalacOptions ++= Seq("-target:jvm-1.8", "-deprecation", "-feature"),
   libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.+" % "test"
     exclude("org.scala-lang", "scala-reflect")
     exclude("org.scala-lang.modules", "scala-xml_2.12"),

@@ -2,7 +2,6 @@ package com.thymeflow.sync.dav
 
 import java.io.{ByteArrayInputStream, IOException}
 import java.net.URI
-import javax.xml.namespace.QName
 
 import akka.actor.ActorRef
 import akka.stream.actor.ActorPublisherMessage.{Cancel, Request}
@@ -20,6 +19,7 @@ import com.thymeflow.sync.Synchronizer.Update
 import com.thymeflow.sync.dav.BaseDavSynchronizer._
 import com.thymeflow.update.UpdateResults
 import com.typesafe.scalalogging.StrictLogging
+import javax.xml.namespace.QName
 import org.apache.commons.io.IOUtils
 import org.apache.http.client.utils.URIBuilder
 import org.eclipse.rdf4j.model.{Resource, ValueFactory}
@@ -196,7 +196,7 @@ trait BaseDavSynchronizer extends Synchronizer with StrictLogging {
 
     private def documentFromDavResource(davResource: DavResource, directoryUri: String): Option[Document] = {
       elementsEtag.put(davResource.getPath, davResource.getEtag)
-      Option(davResource.getCustomPropsNS.get(dataNodeName)).map(data => {
+      Option(davResource.getCustomPropsNS).flatMap(x => Option(x.get(dataNodeName))).map(data => {
         val documentIri = valueFactory.createIRI(buildUriFromBaseAndPath(directoryUri, davResource.getPath))
         val model = convert(data, documentIri)
         model.add(documentIri, Personal.DOCUMENT_OF, task.source.iri, documentIri)

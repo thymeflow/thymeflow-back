@@ -148,7 +148,7 @@ class VCardConverter(valueFactory: ValueFactory)(implicit config: Config) extend
         region = Option(address.getRegion),
         country = Option(address.getCountry),
         postalCode = Option(address.getPostalCode)
-      ), statements, context)
+      ), statements, Some(context))
       address.getPoBoxes.asScala.foreach(poBox =>
         statements.add(addressResource, SchemaOrg.POST_OFFICE_BOX_NUMBER, valueFactory.createLiteral(poBox), context)
       )

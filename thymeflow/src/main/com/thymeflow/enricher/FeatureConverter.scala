@@ -22,7 +22,7 @@ class FeatureConverter(valueFactory: ValueFactory) {
     feature.name.foreach(name =>
       statements.add(placeResource, SchemaOrg.NAME, valueFactory.createLiteral(name), placeResource)
     )
-    statements.add(placeResource, SchemaOrg.ADDRESS, postalAddressConverter.convert(feature.address, statements, null), placeResource)
+    statements.add(placeResource, SchemaOrg.ADDRESS, postalAddressConverter.convert(feature.address, statements, None), placeResource)
     statements.add(placeResource, SchemaOrg.GEO, geoCoordinatesConverter.convert(feature.point.longitude, feature.point.latitude, None, None, statements), placeResource)
 
     placeResource

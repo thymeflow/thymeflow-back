@@ -15,8 +15,9 @@ class PostalAddressConverter(valueFactory: ValueFactory) {
 
   private val uuidConverter = new UUIDConverter(valueFactory)
 
-  def convert(address: Address, statements: StatementSet, context: Resource): Resource = {
+  def convert(address: Address, statements: StatementSet, contextOption: Option[Resource]): Resource = {
     val addressResource = uuidConverter.createBNode(address)
+    val context = contextOption.getOrElse(addressResource)
     statements.add(addressResource, RDF.TYPE, SchemaOrg.POSTAL_ADDRESS, context)
     val countryResource = address.country.map(country => {
       val countryResource = uuidConverter.createBNode("country:" + country)

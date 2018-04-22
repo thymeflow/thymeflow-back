@@ -162,7 +162,7 @@ class FacebookConverter(valueFactory: ValueFactory) extends StrictLogging {
           override def street: Option[String] = location.street
         }
 
-        val postalAddressResource = postalAddressConverter.convert(address, statements, context)
+        val postalAddressResource = postalAddressConverter.convert(address, statements, Some(context))
         statements.add(placeResource, SchemaOrg.ADDRESS, postalAddressResource, context)
     }
     placeResource

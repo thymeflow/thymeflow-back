@@ -46,6 +46,9 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
     path("sparql") {
       sparqlRoute
     } ~
+      path("export") {
+        exportRoute
+      } ~
       pathPrefix("oauth") {
         oAuth2Services.foldLeft[Route](reject) {
           case (p, service) =>

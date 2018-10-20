@@ -19,8 +19,8 @@ import org.eclipse.rdf4j.model.vocabulary.{RDF, SD}
 import org.eclipse.rdf4j.query._
 import org.eclipse.rdf4j.query.parser.QueryParserUtil
 import org.eclipse.rdf4j.query.resultio.{BooleanQueryResultWriterRegistry, TupleQueryResultWriterRegistry}
-import org.eclipse.rdf4j.repository.RepositoryException
-import org.eclipse.rdf4j.rio.{RDFWriterRegistry, Rio}
+import org.eclipse.rdf4j.repository.{RepositoryConnection, RepositoryException}
+import org.eclipse.rdf4j.rio.{RDFHandlerException, RDFWriterRegistry, Rio}
 
 import scala.collection.JavaConverters._
 import scala.compat.java8.OptionConverters._
@@ -243,6 +243,71 @@ trait SparqlService extends StrictLogging with CorsSupport {
       operationPrefix.startsWith("CONSTRUCT") ||
       operationPrefix.startsWith("DESCRIBE") ||
       operationPrefix.startsWith("ASK")
+  }
+
+  protected val exportRoute = {
+    corsHandler {
+      optionalHeaderValueByType[Accept](()) { accept =>
+        get {
+          executeExport(accept)
+        }
+      }
+    }
+  }
+
+  private def executeExport(accept: Option[Accept]): Route = {
+    try {
+      val repositoryConnection = repository.newConnection()
+      try {
+        executeExport(repositoryConnection, accept) {
+          () => repositoryConnection.close()
+        }
+      } catch {
+        case e: RepositoryException =>
+          repositoryConnection.close()
+          complete(StatusCodes.InternalServerError, s"Error executing query: ${e.getMessage}")
+      }
+    } catch {
+      case e: RepositoryException =>
+        complete(StatusCodes.InternalServerError, s"Error retrieving repository connection: ${e.getMessage}")
+    }
+  }
+
+  private def executeExport(connection: RepositoryConnection, accept: Option[Accept])(close: () => Unit): Route = {
+    writerFactoryForAccept(RDFWriterRegistry.getInstance(), accept, "application/trig").map {
+      writerFactory =>
+        (writerFactory.getRDFFormat, (os: OutputStream) => {
+          val results = connection.getStatements(null, null, null)
+          val writer = writerFactory.getWriter(os)
+          writer.startRDF()
+          while (results.hasNext) {
+            writer.handleStatement(results.next())
+          }
+          writer.endRDF()
+        })
+    } match {
+      case Some((format, f)) =>
+        completeStream(format, os =>
+          try {
+            f(os)
+          } catch {
+            case e: RDFHandlerException =>
+              val message = s"RDF handler error: ${e.getMessage}"
+              logger.error(message, e)
+            case e: RepositoryException =>
+              val message = s"Repository error: ${e.getMessage}"
+              logger.error(message, e)
+            case e: Exception =>
+              val message = s"Unexpected error during export."
+              logger.error(message, e)
+          } finally {
+            close()
+          }
+        )
+      case None => complete {
+        StatusCodes.UnsupportedMediaType
+      }
+    }
   }
 }
 

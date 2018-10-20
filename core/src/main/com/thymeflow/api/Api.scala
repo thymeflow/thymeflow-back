@@ -25,7 +25,9 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
   protected implicit val actorSystemContext: ActorSystemContext
 
   import actorSystemContext.Implicits._
+
   protected implicit def config: Config
+
   private val backendUri = Uri(config.getString("thymeflow.http.backend-uri").replaceAll("/$", ""))
   private val frontendUri = Uri(config.getString("thymeflow.http.frontend-uri"))
   protected override val allowedOrigin = frontendUri.withPath(Path.Empty).toString
@@ -46,6 +48,9 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
     path("sparql") {
       sparqlRoute
     } ~
+      path("export") {
+        exportRoute
+      } ~
       pathPrefix("oauth") {
         oAuth2Services.foldLeft[Route](reject) {
           case (p, service) =>
@@ -109,6 +114,7 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
   protected def repository: Repository
 
   private val executionStart: Long = System.currentTimeMillis()
+
   protected def durationSinceStart: Duration = {
     Duration(System.currentTimeMillis() - executionStart, TimeUnit.MILLISECONDS)
   }
@@ -147,6 +153,7 @@ trait Api extends SparqlService with SystemTasksService with DataServicesService
         }
       }
     }
+
     val prefixedRoute = segments(backendUri.path).foldLeft(route) {
       case (nestedRoute, segment) =>
         pathPrefix(segment) {
